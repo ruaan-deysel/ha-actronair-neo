@@ -1,4 +1,4 @@
-"""API communication with Actron Air Neo system."""
+"""API communication with Actron Neo system."""
 
 import aiohttp
 import asyncio
@@ -76,30 +76,30 @@ class ActronNeoAPI:
         """Retrieve the serial number and zones of the device."""
         try:
             async with self._session.get(
-                f"{BASE_URL}/api/v0/client/user-devices",
+                f"{BASE_URL}/api/v0/client/ac-systems?includeNeo=true",
                 headers=await self._get_headers()
             ) as response:
                 response.raise_for_status()
                 data = await response.json()
-                _LOGGER.debug(f"Received data from user-devices API: {data}")
-                devices = data.get("devices", [])
-                if devices:
-                    device = devices[0]
-                    self._serial_number = device.get("serialNumber")
-                    self._zones = device.get("zones", [])
+                _LOGGER.debug(f"Received data from ac-systems API: {data}")
+                systems = data.get("items", [])
+                if systems:
+                    system = systems[0]
+                    self._serial_number = system.get("serialNumber")
+                    self._zones = system.get("zones", [])
                     _LOGGER.info(f"Retrieved serial number: {self._serial_number} and zones: {self._zones}")
                 else:
-                    _LOGGER.error("No devices found")
+                    _LOGGER.error("No systems found")
         
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to retrieve serial number and zones: {error}")
+            _LOGGER.debug(f"Response content: {await response.text()}")
 
-    
     async def get_status(self):
         """Get current status of the HVAC system."""
         try:
             async with self._session.get(
-                f"{BASE_URL}/api/v0/client/ac-systems/status/latest",
+                f"{BASE_URL}/api/v0/client/ac-systems/status/latest?serial={self._serial_number}",
                 headers=await self._get_headers()
             ) as response:
                 response.raise_for_status()
@@ -113,7 +113,7 @@ class ActronNeoAPI:
         """Set target temperature for a zone."""
         try:
             async with self._session.post(
-                f"{BASE_URL}/api/v0/client/ac-systems/cmds/send",
+                f"{BASE_URL}/api/v0/client/ac-systems/cmds/send?serial={self._serial_number}",
                 json={
                     "command": {
                         f"RemoteZoneInfo[{zone_id}].TemperatureSetpoint_Cool_oC": temperature,
@@ -128,11 +128,11 @@ class ActronNeoAPI:
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to set temperature for zone {zone_id}: {error}")
     
-    async def set_hvac_mode(self, zone_id, mode):
-        """Set HVAC mode for a zone."""
+    async def set_hvac_mode(self, mode):
+        """Set HVAC mode for the system."""
         try:
             async with self._session.post(
-                f"{BASE_URL}/api/v0/client/ac-systems/cmds/send",
+                f"{BASE_URL}/api/v0/client/ac-systems/cmds/send?serial={self._serial_number}",
                 json={
                     "command": {
                         "UserAirconSettings.isOn": True,
@@ -143,16 +143,16 @@ class ActronNeoAPI:
                 headers=await self._get_headers()
             ) as response:
                 response.raise_for_status()
-                _LOGGER.info(f"Set HVAC mode to {mode} for zone {zone_id}")
+                _LOGGER.info(f"Set HVAC mode to {mode}")
         
         except aiohttp.ClientError as error:
-            _LOGGER.error(f"Failed to set HVAC mode for zone {zone_id}: {error}")
+            _LOGGER.error(f"Failed to set HVAC mode: {error}")
 
     async def set_zone_state(self, zone_id, state):
         """Set the state (on/off) for a zone."""
         try:
             async with self._session.post(
-                f"{BASE_URL}/api/v0/client/ac-systems/cmds/send",
+                f"{BASE_URL}/api/v0/client/ac-systems/cmds/send?serial={self._serial_number}",
                 json={
                     "command": {
                         f"UserAirconSettings.EnabledZones[{zone_id}]": state,

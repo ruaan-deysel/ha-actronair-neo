@@ -1,4 +1,4 @@
-"""Platform for Actron Air Neo climate integration."""
+"""Platform for Actron Neo climate integration."""
 
 import logging
 from homeassistant.components.climate import ClimateEntity
@@ -29,9 +29,9 @@ class ActronNeoClimate(ClimateEntity):
         self._api = api
         self._zone_id = zone_id
         self._name = f"Actron Neo Zone {zone_name}"
-        self._hvac_mode = HVAC_MODE_OFF
-        self._target_temperature = None
-        self._current_temperature = None
+        self._attr_hvac_mode = HVAC_MODE_OFF
+        self._attr_target_temperature = None
+        self._attr_current_temperature = None
         self._zone_enabled = None
 
     @property
@@ -52,23 +52,23 @@ class ActronNeoClimate(ClimateEntity):
     @property
     def current_temperature(self):
         """Return the current temperature."""
-        return self._current_temperature
+        return self._attr_current_temperature
 
     @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
-        return self._target_temperature
+        return self._attr_target_temperature
 
     async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
         if ATTR_TEMPERATURE in kwargs:
-            self._target_temperature = kwargs[ATTR_TEMPERATURE]
-            await self._api.set_temperature(self._zone_id, self._target_temperature)
+            self._attr_target_temperature = kwargs[ATTR_TEMPERATURE]
+            await self._api.set_temperature(self._zone_id, self._attr_target_temperature)
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
-        self._hvac_mode = hvac_mode
-        await self._api.set_hvac_mode(self._zone_id, self._hvac_mode)
+        self._attr_hvac_mode = hvac_mode
+        await self._api.set_hvac_mode(self._zone_id, self._attr_hvac_mode)
 
     @property
     def is_on(self):

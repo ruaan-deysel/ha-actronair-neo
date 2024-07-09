@@ -1,4 +1,4 @@
-"""API communication with Actron Neo system."""
+"""API communication with Actron Air Neo system."""
 
 import aiohttp
 import asyncio

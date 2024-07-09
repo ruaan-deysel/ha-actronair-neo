@@ -1,3 +1,3 @@
 """Constants for Actron Air Neo integration."""
 
-DOMAIN = "actron_neo"
+DOMAIN = "actron_air_neo"

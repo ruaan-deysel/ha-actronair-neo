@@ -1,11 +1,11 @@
 {
     "domain": "actron_neo",
     "name": "Actron Neo",
+    "version": "0.1.0",
     "documentation": "https://github.com/domalab/ha-actronair-neo/wiki",
     "requirements": [],
     "dependencies": [],
     "codeowners": ["@domalab"],
     "config_flow": true,
-    "iot_class": "cloud_polling",
-    "version": "0.1.0"
+    "iot_class": "cloud_polling"
   }

@@ -30,9 +30,9 @@ class ActronNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         data_schema = vol.Schema(
             {
-                vol.Required("username"): str,
-                vol.Required("password"): str,
-                vol.Optional("zones", default=""): str,  # Comma-separated list of zones
+                vol.Required("username", description={"suggested_value": "Enter your Actron Neo username"}): str,
+                vol.Required("password", description={"suggested_value": "Enter your Actron Neo password"}): str,
+                vol.Optional("zones", description={"suggested_value": "Comma-separated list of zones"}): str,
             }
         )
         return self.async_show_form(
@@ -66,7 +66,7 @@ class ActronNeoOptionsFlowHandler(config_entries.OptionsFlow):
 
         options = vol.Schema(
             {
-                vol.Optional("zones", default=self.config_entry.options.get("zones", "")): str,
+                vol.Optional("zones", default=self.config_entry.options.get("zones", ""), description={"suggested_value": "Comma-separated list of zones"}): str,
             }
         )
         return self.async_show_form(step_id="init", data_schema=options)

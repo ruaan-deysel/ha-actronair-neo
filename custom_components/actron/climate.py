@@ -1,4 +1,4 @@
-"""Platform for Actron Neo climate integration."""
+"""Platform for Actron Air Neo climate integration."""
 
 import logging
 from homeassistant.components.climate import ClimateEntity

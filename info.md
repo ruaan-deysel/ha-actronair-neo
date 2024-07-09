@@ -1,6 +1,6 @@
-# Actron Neo Home Assistant Integration
+# Actron Air Neo Home Assistant Integration
 
-This is a custom component for Home Assistant that integrates with the Actron Neo HVAC system.
+This is a custom component for Home Assistant that integrates with the Actron Air Neo HVAC system.
 
 ## Installation
 

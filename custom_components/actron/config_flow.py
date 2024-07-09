@@ -1,4 +1,4 @@
-"""Config flow for Actron Neo integration."""
+"""Config flow for Actron Air Neo integration."""
 
 from __future__ import annotations
 from typing import Any, Dict, Optional

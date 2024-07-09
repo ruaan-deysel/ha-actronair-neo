@@ -1,9 +1,9 @@
 {
-    "title": "Actron Neo",
+    "title": "Actron Air Neo",
     "step": {
         "user": {
-            "title": "Configure Actron Neo",
-            "description": "Enter your Actron Neo credentials and zones.",
+            "title": "Configure Actron Aire Neo",
+            "description": "Enter your Actron Air Neo credentials and zones.",
             "data": {
                 "username": "Username",
                 "password": "Password",

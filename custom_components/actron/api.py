@@ -1,6 +1,7 @@
 """API communication with Actron Neo system."""
 
-import requests
+import aiohttp
+import asyncio
 import logging
 
 _LOGGER = logging.getLogger(__name__)
@@ -15,14 +16,14 @@ class ActronNeoAPI:
         self._username = username
         self._password = password
         self._token = None
-        self._session = requests.Session()
-        self.login()
+        self._session = aiohttp.ClientSession()
+        asyncio.create_task(self.login())
     
-    def login(self):
+    async def login(self):
         """Login to the Actron Neo system and obtain a bearer token."""
         try:
             # Step 1: Request pairing token
-            response = self._session.post(
+            async with self._session.post(
                 f"{BASE_URL}/api/v0/client/user-devices",
                 data={
                     "username": self._username,
@@ -34,12 +35,13 @@ class ActronNeoAPI:
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded"
                 }
-            )
-            response.raise_for_status()
-            pairing_token = response.json().get("pairingToken")
+            ) as response:
+                response.raise_for_status()
+                data = await response.json()
+                pairing_token = data.get("pairingToken")
             
             # Step 2: Request bearer token
-            response = self._session.post(
+            async with self._session.post(
                 f"{BASE_URL}/api/v0/oauth/token",
                 data={
                     "grant_type": "refresh_token",
@@ -49,39 +51,40 @@ class ActronNeoAPI:
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded"
                 }
-            )
-            response.raise_for_status()
-            self._token = response.json().get("access_token")
-            _LOGGER.info("Successfully logged into Actron Neo system")
+            ) as response:
+                response.raise_for_status()
+                data = await response.json()
+                self._token = data.get("access_token")
+                _LOGGER.info("Successfully logged into Actron Neo system")
         
-        except requests.RequestException as error:
+        except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to authenticate with Actron Neo API: {error}")
     
-    def _get_headers(self):
+    async def _get_headers(self):
         """Return the headers for API requests."""
         return {
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json"
         }
     
-    def get_status(self):
+    async def get_status(self):
         """Get current status of the HVAC system."""
         try:
-            response = self._session.get(
+            async with self._session.get(
                 f"{BASE_URL}/api/v0/client/ac-systems/status/latest",
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+                headers=await self._get_headers()
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
         
-        except requests.RequestException as error:
+        except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to retrieve status from Actron Neo API: {error}")
             return None
     
-    def set_temperature(self, zone_id, temperature):
+    async def set_temperature(self, zone_id, temperature):
         """Set target temperature for a zone."""
         try:
-            response = self._session.post(
+            async with self._session.post(
                 f"{BASE_URL}/api/v0/client/ac-systems/cmds/send",
                 json={
                     "command": {
@@ -89,18 +92,18 @@ class ActronNeoAPI:
                         "type": "set-settings"
                     }
                 },
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            _LOGGER.info(f"Set temperature to {temperature} for zone {zone_id}")
+                headers=await self._get_headers()
+            ) as response:
+                response.raise_for_status()
+                _LOGGER.info(f"Set temperature to {temperature} for zone {zone_id}")
         
-        except requests.RequestException as error:
+        except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to set temperature for zone {zone_id}: {error}")
     
-    def set_hvac_mode(self, zone_id, mode):
+    async def set_hvac_mode(self, zone_id, mode):
         """Set HVAC mode for a zone."""
         try:
-            response = self._session.post(
+            async with self._session.post(
                 f"{BASE_URL}/api/v0/client/ac-systems/cmds/send",
                 json={
                     "command": {
@@ -109,18 +112,18 @@ class ActronNeoAPI:
                         "type": "set-settings"
                     }
                 },
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            _LOGGER.info(f"Set HVAC mode to {mode} for zone {zone_id}")
+                headers=await self._get_headers()
+            ) as response:
+                response.raise_for_status()
+                _LOGGER.info(f"Set HVAC mode to {mode} for zone {zone_id}")
         
-        except requests.RequestException as error:
+        except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to set HVAC mode for zone {zone_id}: {error}")
 
-    def set_zone_state(self, zone_id, state):
+    async def set_zone_state(self, zone_id, state):
         """Set the state (on/off) for a zone."""
         try:
-            response = self._session.post(
+            async with self._session.post(
                 f"{BASE_URL}/api/v0/client/ac-systems/cmds/send",
                 json={
                     "command": {
@@ -128,11 +131,14 @@ class ActronNeoAPI:
                         "type": "set-settings"
                     }
                 },
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            _LOGGER.info(f"Set state to {state} for zone {zone_id}")
+                headers=await self._get_headers()
+            ) as response:
+                response.raise_for_status()
+                _LOGGER.info(f"Set state to {state} for zone {zone_id}")
         
-        except requests.RequestException as error:
+        except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to set state for zone {zone_id}: {error}")
 
+    async def close_session(self):
+        """Close the aiohttp session."""
+        await self._session.close()

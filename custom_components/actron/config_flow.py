@@ -46,7 +46,8 @@ class ActronNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         from .api import ActronNeoAPI
 
         api = ActronNeoAPI(username, password)
-        if not api.login():
+        await api.login()
+        if not api._token:
             raise Exception("Invalid credentials")
 
     @staticmethod

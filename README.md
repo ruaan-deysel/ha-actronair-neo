@@ -11,7 +11,7 @@ This is a custom component for Home Assistant that integrates with the Actron Ai
     ```bash
     https://github.com/domalab/ha-actronair-neo
     ```
-3. Search for "Actron Neo" in HACS and install it.
+3. Search for "Actron Air Neo" in HACS and install it.
 
 ### Manual Installation
 

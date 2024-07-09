@@ -31,5 +31,10 @@ async def async_setup_entry(hass, config_entry):
 async def async_unload_entry(hass, config_entry):
     """Unload a config entry."""
     await hass.config_entries.async_forward_entry_unload(config_entry, "climate")
+    
+    # Close the aiohttp session
+    api = hass.data[DOMAIN]["api"]
+    await api.close_session()
+    
     hass.data.pop(DOMAIN)
     return True

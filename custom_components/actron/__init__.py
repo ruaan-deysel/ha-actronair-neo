@@ -1,14 +1,14 @@
 """Actron Air Neo integration for Home Assistant."""
 
 import logging
-from homeassistant.helpers.discovery import load_platform
+from homeassistant.helpers.discovery import async_load_platform
 from .api import ActronNeoAPI
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, config_entry):
-    """Set up Actron Neo from a config entry."""
+    """Set up Actron Air Neo from a config entry."""
     api = ActronNeoAPI(
         username=config_entry.data["username"],
         password=config_entry.data["password"]
@@ -22,9 +22,7 @@ async def async_setup_entry(hass, config_entry):
     }
     
     # Discover climate platform
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(config_entry, "climate")
-    )
+    await hass.config_entries.async_forward_entry_setup(config_entry, "climate")
     
     return True
 

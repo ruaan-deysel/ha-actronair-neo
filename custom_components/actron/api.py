@@ -82,10 +82,10 @@ class ActronNeoAPI:
                 response.raise_for_status()
                 data = await response.json()
                 _LOGGER.debug(f"Received data from ac-systems API: {data}")
-                systems = data.get("items", [])
+                systems = data.get("_embedded", {}).get("ac-system", [])
                 if systems:
                     system = systems[0]
-                    self._serial_number = system.get("serialNumber")
+                    self._serial_number = system.get("serial")
                     self._zones = system.get("zones", [])
                     _LOGGER.info(f"Retrieved serial number: {self._serial_number} and zones: {self._zones}")
                 else:

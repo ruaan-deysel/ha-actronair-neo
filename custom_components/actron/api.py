@@ -1,4 +1,4 @@
-"""API communication with Actron Neo system."""
+"""API communication with Actron Air Neo system."""
 
 import aiohttp
 import asyncio
@@ -17,10 +17,12 @@ class ActronNeoAPI:
         self._password = password
         self._token = None
         self._session = aiohttp.ClientSession()
+        self._serial_number = None
+        self._zones = []
         asyncio.create_task(self.login())
     
     async def login(self):
-        """Login to the Actron Neo system and obtain a bearer token."""
+        """Login to the Actron Neo system and obtain a bearer token, serial number, and zones."""
         try:
             # Step 1: Request pairing token
             async with self._session.post(
@@ -56,6 +58,9 @@ class ActronNeoAPI:
                 data = await response.json()
                 self._token = data.get("access_token")
                 _LOGGER.info("Successfully logged into Actron Neo system")
+
+            # Step 3: Retrieve serial number and zones
+            await self._retrieve_serial_number_and_zones()
         
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to authenticate with Actron Neo API: {error}")
@@ -66,6 +71,27 @@ class ActronNeoAPI:
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json"
         }
+    
+    async def _retrieve_serial_number_and_zones(self):
+        """Retrieve the serial number and zones of the device."""
+        try:
+            async with self._session.get(
+                f"{BASE_URL}/api/v0/client/user-devices",
+                headers=await self._get_headers()
+            ) as response:
+                response.raise_for_status()
+                data = await response.json()
+                devices = data.get("devices", [])
+                if devices:
+                    device = devices[0]
+                    self._serial_number = device.get("serialNumber")
+                    self._zones = device.get("zones", [])
+                    _LOGGER.info(f"Retrieved serial number: {self._serial_number} and zones: {self._zones}")
+                else:
+                    _LOGGER.error("No devices found")
+        
+        except aiohttp.ClientError as error:
+            _LOGGER.error(f"Failed to retrieve serial number and zones: {error}")
     
     async def get_status(self):
         """Get current status of the HVAC system."""

@@ -24,9 +24,11 @@ class ActronNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                # Validate the input
-                await self._test_credentials(user_input["username"], user_input["password"])
-                return self.async_create_entry(title="Actron Neo", data=user_input)
+                # Validate the input and fetch the serial number and zones
+                serial_number, zones = await self._test_credentials(user_input["username"], user_input["password"])
+                user_input["serial_number"] = serial_number
+                user_input["zones"] = zones
+                return self.async_create_entry(title=f"Actron Neo {serial_number}", data=user_input)
             except Exception as e:
                 errors["base"] = "auth"
 
@@ -34,7 +36,6 @@ class ActronNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {
                 vol.Required("username"): str,
                 vol.Required("password"): str,
-                vol.Optional("zones", default=""): str,
             }
         )
         return self.async_show_form(
@@ -42,13 +43,14 @@ class ActronNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def _test_credentials(self, username: str, password: str):
-        """Test the credentials provided by the user."""
+        """Test the credentials provided by the user and fetch the serial number and zones."""
         from .api import ActronNeoAPI
 
         api = ActronNeoAPI(username, password)
         await api.login()
         if not api._token:
             raise Exception("Invalid credentials")
+        return api._serial_number, api._zones
 
     @staticmethod
     @callback

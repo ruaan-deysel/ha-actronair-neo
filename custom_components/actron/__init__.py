@@ -21,14 +21,16 @@ async def async_setup_entry(hass, config_entry):
         "zones": [{"id": zone["id"], "name": zone["name"]} for zone in zones]
     }
     
-    # Discover climate platform
-    await hass.config_entries.async_forward_entry_setups(config_entry, ["climate"])
+    # Discover climate, switch, and sensor platforms
+    await hass.config_entries.async_forward_entry_setups(config_entry, ["climate", "switch", "sensor"])
     
     return True
 
 async def async_unload_entry(hass, config_entry):
     """Unload a config entry."""
     await hass.config_entries.async_forward_entry_unload(config_entry, "climate")
+    await hass.config_entries.async_forward_entry_unload(config_entry, "switch")
+    await hass.config_entries.async_forward_entry_unload(config_entry, "sensor")
     
     # Close the aiohttp session
     api = hass.data[DOMAIN]["api"]

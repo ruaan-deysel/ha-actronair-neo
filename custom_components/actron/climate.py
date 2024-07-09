@@ -3,10 +3,8 @@
 import logging
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
-    HVAC_MODE_OFF,
-    HVAC_MODE_HEAT,
-    HVAC_MODE_COOL,
-    SUPPORT_TARGET_TEMPERATURE
+    HVACMode,
+    ClimateEntityFeature,
 )
 from homeassistant.const import TEMP_CELSIUS, ATTR_TEMPERATURE
 
@@ -29,7 +27,7 @@ class ActronNeoClimate(ClimateEntity):
         self._api = api
         self._zone_id = zone_id
         self._name = f"Actron Neo Zone {zone_name}"
-        self._attr_hvac_mode = HVAC_MODE_OFF
+        self._attr_hvac_mode = HVACMode.OFF
         self._attr_target_temperature = None
         self._attr_current_temperature = None
         self._zone_enabled = None
@@ -37,12 +35,12 @@ class ActronNeoClimate(ClimateEntity):
     @property
     def supported_features(self):
         """Return the list of supported features."""
-        return SUPPORT_TARGET_TEMPERATURE
+        return ClimateEntityFeature.TARGET_TEMPERATURE
 
     @property
     def hvac_modes(self):
         """Return the list of available HVAC modes."""
-        return [HVAC_MODE_OFF, HVAC_MODE_HEAT, HVAC_MODE_COOL]
+        return [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
 
     @property
     def temperature_unit(self):

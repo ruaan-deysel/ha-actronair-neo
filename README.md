@@ -19,16 +19,16 @@ This is a custom component for Home Assistant that integrates with the Actron Ai
     ```bash
     git clone https://github.com/domalab/ha-actronair-neo.git
     ```
-2. Move the `actron_neo` directory to the `custom_components` directory in your Home Assistant configuration:
+2. Move the `actron_air_neo` directory to the `custom_components` directory in your Home Assistant configuration:
     ```bash
-    mv actron_neo_home_assistant/custom_components/actron_neo custom_components/
+    mv actron_air_neo_home_assistant/custom_components/actron_air_neo custom_components/
     ```
 
 ## Configuration
 
 1. Navigate to Configuration > Integrations in Home Assistant.
-2. Click on "Add Integration" and search for "Actron Neo".
-3. Follow the prompts to enter your Actron Neo credentials and configure zones.
+2. Click on "Add Integration" and search for "Actron Air Neo".
+3. Follow the prompts to enter your Actron Neo credentials.
 
 ## Usage
 

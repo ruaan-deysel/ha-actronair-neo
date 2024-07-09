@@ -14,8 +14,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up Actron Neo climate entities from a config entry."""
     _LOGGER.info("Setting up Actron Neo climate platform")
 
-    api = hass.data["actron_neo"]["api"]
-    zones = hass.data["actron_neo"]["zones"]
+    api = hass.data["actron_air_neo"]["api"]
+    zones = hass.data["actron_air_neo"]["zones"]
     entities = [ActronNeoClimate(api, zone["id"], zone["name"]) for zone in zones]
     async_add_entities(entities)
 

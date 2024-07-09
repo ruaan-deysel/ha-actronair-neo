@@ -1,4 +1,4 @@
-"""Platform for Actron Air Neo climate integration."""
+"""Platform for Actron Neo climate integration."""
 
 import logging
 from homeassistant.components.climate import ClimateEntity
@@ -7,6 +7,7 @@ from homeassistant.components.climate.const import (
     ClimateEntityFeature,
 )
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -14,8 +15,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up Actron Neo climate entities from a config entry."""
     _LOGGER.info("Setting up Actron Neo climate platform")
 
-    api = hass.data["actron_air_neo"]["api"]
-    zones = hass.data["actron_air_neo"]["zones"]
+    api = hass.data[DOMAIN]["api"]
+    zones = hass.data[DOMAIN]["zones"]
     entities = [ActronNeoClimate(api, zone["id"], zone["name"]) for zone in zones]
     async_add_entities(entities, update_before_add=True)
 

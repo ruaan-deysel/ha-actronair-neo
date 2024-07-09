@@ -1,7 +1,8 @@
-"""Platform for Actron Air Neo switch integration."""
+"""Platform for Actron Neo switch integration."""
 
 import logging
 from homeassistant.components.switch import SwitchEntity
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -9,8 +10,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up Actron Neo switch entities from a config entry."""
     _LOGGER.info("Setting up Actron Neo switch platform")
 
-    api = hass.data["actron_air_neo"]["api"]
-    zones = hass.data["actron_air_neo"]["zones"]
+    api = hass.data[DOMAIN]["api"]
+    zones = hass.data[DOMAIN]["zones"]
     entities = [ActronNeoZoneSwitch(api, zone["id"], zone["name"]) for zone in zones]
     async_add_entities(entities, update_before_add=True)
 

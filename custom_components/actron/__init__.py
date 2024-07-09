@@ -1,4 +1,4 @@
-"""Actron Air Neo integration for Home Assistant."""
+"""Actron Neo integration for Home Assistant."""
 
 import logging
 from homeassistant.helpers.discovery import async_load_platform

@@ -1,0 +1,20 @@
+{
+    "title": "Actron Neo",
+    "step": {
+        "user": {
+            "title": "Configure Actron Neo",
+            "description": "Enter your Actron Neo credentials and zones.",
+            "data": {
+                "username": "Username",
+                "password": "Password",
+                "zones": "Zones (comma-separated)"
+            }
+        }
+    },
+    "error": {
+        "auth": "Invalid username or password"
+    },
+    "abort": {
+        "already_configured": "This device is already configured"
+    }
+}

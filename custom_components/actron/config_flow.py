@@ -71,7 +71,7 @@ class ActronNeoOptionsFlowHandler(config_entries.OptionsFlow):
 
         options = vol.Schema(
             {
-                vol.Optional("zones", default=self.config_entry.options.get("zones", "")): str,
+                vol.Optional("zones", default=self.config_entry.options.get("zones", [])): str,
             }
         )
         return self.async_show_form(step_id="init", data_schema=options)

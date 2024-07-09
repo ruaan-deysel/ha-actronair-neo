@@ -5,5 +5,7 @@
     "requirements": [],
     "dependencies": [],
     "codeowners": ["@domalab"],
+    "config_flow": true,
+    "iot_class": "cloud_polling",
     "version": "0.1.0"
   }

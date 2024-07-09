@@ -12,8 +12,8 @@ from homeassistant.const import TEMP_CELSIUS, ATTR_TEMPERATURE
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Set up the Actron Neo climate platform."""
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    """Set up Actron Neo climate entities from a config entry."""
     _LOGGER.info("Setting up Actron Neo climate platform")
 
     api = hass.data["actron_neo"]["api"]
@@ -59,28 +59,28 @@ class ActronNeoClimate(ClimateEntity):
         """Return the temperature we try to reach."""
         return self._target_temperature
 
-    def set_temperature(self, **kwargs):
+    async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
         if ATTR_TEMPERATURE in kwargs:
             self._target_temperature = kwargs[ATTR_TEMPERATURE]
-            self._api.set_temperature(self._zone_id, self._target_temperature)
+            await self._api.set_temperature(self._zone_id, self._target_temperature)
 
-    def set_hvac_mode(self, hvac_mode):
+    async def async_set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
         self._hvac_mode = hvac_mode
-        self._api.set_hvac_mode(self._zone_id, self._hvac_mode)
+        await self._api.set_hvac_mode(self._zone_id, self._hvac_mode)
 
     @property
     def is_on(self):
         """Return true if the zone is enabled."""
         return self._zone_enabled
 
-    def turn_on(self):
+    async def async_turn_on(self):
         """Turn the zone on."""
-        self._api.set_zone_state(self._zone_id, True)
+        await self._api.set_zone_state(self._zone_id, True)
         self._zone_enabled = True
 
-    def turn_off(self):
+    async def async_turn_off(self):
         """Turn the zone off."""
-        self._api.set_zone_state(self._zone_id, False)
+        await self._api.set_zone_state(self._zone_id, False)
         self._zone_enabled = False

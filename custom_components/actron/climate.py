@@ -1,4 +1,4 @@
-"""Platform for Actron Neo climate integration."""
+"""Platform for Actron Air Neo climate integration."""
 
 import logging
 from homeassistant.components.climate import ClimateEntity
@@ -6,7 +6,7 @@ from homeassistant.components.climate.const import (
     HVACMode,
     ClimateEntityFeature,
 )
-from homeassistant.const import TEMP_CELSIUS, ATTR_TEMPERATURE
+from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class ActronNeoClimate(ClimateEntity):
     @property
     def temperature_unit(self):
         """Return the unit of measurement."""
-        return TEMP_CELSIUS
+        return UnitOfTemperature.CELSIUS
 
     @property
     def current_temperature(self):

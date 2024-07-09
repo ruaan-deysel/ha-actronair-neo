@@ -81,6 +81,7 @@ class ActronNeoAPI:
             ) as response:
                 response.raise_for_status()
                 data = await response.json()
+                _LOGGER.debug(f"Received data from user-devices API: {data}")
                 devices = data.get("devices", [])
                 if devices:
                     device = devices[0]
@@ -92,6 +93,7 @@ class ActronNeoAPI:
         
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to retrieve serial number and zones: {error}")
+
     
     async def get_status(self):
         """Get current status of the HVAC system."""

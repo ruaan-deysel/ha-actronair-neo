@@ -1,19 +1,21 @@
 {
-    "title": "Actron Air Neo",
-    "step": {
+    "config": {
+      "step": {
         "user": {
-            "title": "Configure Actron Air Neo",
-            "description": "Enter your Actron Air Neo credentials.",
-            "data": {
-                "username": "Email Address",
-                "password": "Password"
-            }
+          "title": "Configure Actron Air Neo",
+          "description": "Enter your Actron Air Neo credentials.",
+          "data": {
+            "username": "Email Address",
+            "password": "Password"
+          }
         }
-    },
-    "error": {
+      },
+      "error": {
         "auth": "Invalid email address or password"
-    },
-    "abort": {
+      },
+      "abort": {
         "already_configured": "This device is already configured"
+      }
     }
-}
+  }
+  

@@ -114,9 +114,13 @@ class ActronClimate(ClimateEntity):
         self.async_write_ha_state()
 
     async def async_update(self):
-        status = await self._api.get_ac_status(self._unique_id)
-        self._state = status["isOn"]
-        self._current_temperature = status["currentTemperature"]
-        self._target_temperature = status["targetTemperature"]
-        self._fan_mode = status["fanMode"]
-        self._hvac_mode = HVAC_MODES[status["mode"]]
+        try:
+            status = await self._api.get_ac_status(self._unique_id)
+            _LOGGER.debug(f"AC status: {status}")
+            self._state = status["UserAirconSettings"]["isOn"]
+            self._current_temperature = status["IndoorTemperature"]
+            self._target_temperature = status["UserAirconSettings"]["TemperatureSetpoint_Cool_oC"]
+            self._fan_mode = status["UserAirconSettings"]["FanMode"]
+            self._hvac_mode = HVAC_MODES[status["UserAirconSettings"]["Mode"]]
+        except Exception as e:
+            _LOGGER.error(f"Error updating AC status: {e}")

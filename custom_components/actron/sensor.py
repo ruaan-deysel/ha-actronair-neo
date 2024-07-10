@@ -60,8 +60,12 @@ class ActronTemperatureSensor(SensorEntity):
         return SensorStateClass.MEASUREMENT
 
     async def async_update(self):
-        status = await self._api.get_ac_status(self._system["serial"])
-        self._state = status["currentTemperature"]
+        try:
+            status = await self._api.get_ac_status(self._system["serial"])
+            _LOGGER.debug(f"AC status: {status}")
+            self._state = status["IndoorTemperature"]
+        except Exception as e:
+            _LOGGER.error(f"Error updating temperature sensor: {e}")
 
 class ActronHumiditySensor(SensorEntity):
     def __init__(self, system, api):
@@ -97,5 +101,9 @@ class ActronHumiditySensor(SensorEntity):
         return SensorStateClass.MEASUREMENT
 
     async def async_update(self):
-        status = await self._api.get_ac_status(self._system["serial"])
-        self._state = status["currentHumidity"]
+        try:
+            status = await self._api.get_ac_status(self._system["serial"])
+            _LOGGER.debug(f"AC status: {status}")
+            self._state = status["IndoorHumidity"]
+        except Exception as e:
+            _LOGGER.error(f"Error updating humidity sensor: {e}")

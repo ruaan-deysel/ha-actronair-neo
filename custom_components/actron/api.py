@@ -25,7 +25,7 @@ class ActronApi:
             "username": self.username,
             "password": self.password,
             "client": "ios",
-            "deviceName": self.device_id,  # Use device_id as deviceName
+            "deviceName": self.device_id,
             "deviceUniqueIdentifier": self.device_id
         }
         async with aiohttp.ClientSession() as session:

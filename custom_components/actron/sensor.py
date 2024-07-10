@@ -63,6 +63,7 @@ class ActronTemperatureSensor(SensorEntity):
         try:
             status = await self._api.get_ac_status(self._system["serial"])
             _LOGGER.debug(f"AC status: {status}")
+            # Check if the required keys exist in the response
             system_status = status.get("SystemStatus_Local", {})
             sensor_inputs = system_status.get("SensorInputs", {})
             shtc1 = sensor_inputs.get("SHTC1", {})
@@ -72,6 +73,7 @@ class ActronTemperatureSensor(SensorEntity):
                 self._state = temperature
             else:
                 _LOGGER.error("Temperature data not available in the response.")
+                _LOGGER.debug(f"Full API response: {status}")
         except KeyError as e:
             _LOGGER.error(f"Key error in temperature sensor response: {e}")
         except Exception as e:
@@ -123,6 +125,7 @@ class ActronHumiditySensor(SensorEntity):
                 self._state = humidity
             else:
                 _LOGGER.error("Humidity data not available in the response.")
+                _LOGGER.debug(f"Full API response: {status}")
         except KeyError as e:
             _LOGGER.error(f"Key error in humidity sensor response: {e}")
         except Exception as e:
@@ -174,6 +177,7 @@ class ActronBatterySensor(SensorEntity):
                 self._state = battery_level
             else:
                 _LOGGER.error("Battery data not available in the response.")
+                _LOGGER.debug(f"Full API response: {status}")
         except KeyError as e:
             _LOGGER.error(f"Key error in battery sensor response: {e}")
         except Exception as e:

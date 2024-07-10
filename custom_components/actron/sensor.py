@@ -76,6 +76,7 @@ class ActronTemperatureSensor(SensorEntity):
                 _LOGGER.debug(f"Full API response: {status}")
         except KeyError as e:
             _LOGGER.error(f"Key error in temperature sensor response: {e}")
+            _LOGGER.debug(f"Full API response: {status}")
         except Exception as e:
             _LOGGER.error(f"Error updating temperature sensor: {e}")
 
@@ -128,6 +129,7 @@ class ActronHumiditySensor(SensorEntity):
                 _LOGGER.debug(f"Full API response: {status}")
         except KeyError as e:
             _LOGGER.error(f"Key error in humidity sensor response: {e}")
+            _LOGGER.debug(f"Full API response: {status}")
         except Exception as e:
             _LOGGER.error(f"Error updating humidity sensor: {e}")
 
@@ -180,5 +182,6 @@ class ActronBatterySensor(SensorEntity):
                 _LOGGER.debug(f"Full API response: {status}")
         except KeyError as e:
             _LOGGER.error(f"Key error in battery sensor response: {e}")
+            _LOGGER.debug(f"Full API response: {status}")
         except Exception as e:
             _LOGGER.error(f"Error updating battery sensor: {e}")

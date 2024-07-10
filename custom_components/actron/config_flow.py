@@ -35,8 +35,8 @@ class ActronNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         data_schema = vol.Schema(
             {
-                vol.Required("username"): str,
-                vol.Required("password"): str,
+                vol.Required("username", description={"en": "Email Address"}): str,
+                vol.Required("password", description={"en": "Password"}): str,
             }
         )
         return self.async_show_form(

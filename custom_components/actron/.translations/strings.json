@@ -11,7 +11,7 @@
         }
     },
     "error": {
-        "auth": "Invalid username or password"
+        "auth": "Invalid email address or password"
     },
     "abort": {
         "already_configured": "This device is already configured"

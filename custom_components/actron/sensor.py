@@ -13,7 +13,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         device_id=config_entry.data["device_id"]
     )
     await api.authenticate()
-    systems = await api.list_ac_systems()
+    systems = await api.get_ac_systems()
 
     entities = []
     for system in systems:
@@ -63,7 +63,6 @@ class ActronTemperatureSensor(SensorEntity):
         try:
             status = await self._api.get_ac_status(self._system["serial"])
             _LOGGER.debug(f"AC status: {status}")
-            # Check if the required keys exist in the response
             system_status = status.get("SystemStatus_Local", {})
             sensor_inputs = system_status.get("SensorInputs", {})
             shtc1 = sensor_inputs.get("SHTC1", {})

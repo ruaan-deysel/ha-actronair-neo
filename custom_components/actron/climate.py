@@ -29,6 +29,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     await api.authenticate()
     systems = await api.list_ac_systems()
     
+    _LOGGER.debug(f"AC systems: {systems}")
     entities = []
     for system in systems:
         entities.append(ActronClimate(system, api))
@@ -37,10 +38,11 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 class ActronClimate(ClimateEntity):
     def __init__(self, system, api):
+        _LOGGER.debug(f"Initializing ActronClimate with system: {system}")
         self._system = system
         self._api = api
-        self._name = system["name"]
-        self._unique_id = system["serial"]
+        self._name = system.get("name")
+        self._unique_id = system.get("serial")
         self._state = None
         self._target_temperature = None
         self._current_temperature = None

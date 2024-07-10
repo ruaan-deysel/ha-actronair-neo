@@ -1,7 +1,10 @@
 # File: custom_components/actron_air_neo/api.py
 import aiohttp
 import asyncio
+import logging
 from .const import API_URL
+
+_LOGGER = logging.getLogger(__name__)
 
 class ActronApi:
     def __init__(self, username, password, device_id):
@@ -30,6 +33,7 @@ class ActronApi:
             async with session.post(url, headers=headers, data=data) as response:
                 response.raise_for_status()
                 json_response = await response.json()
+                _LOGGER.debug(f"Pairing token response: {json_response}")
                 return json_response["pairingToken"]
 
     async def _request_bearer_token(self, pairing_token):
@@ -44,8 +48,11 @@ class ActronApi:
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, data=data) as response:
+                _LOGGER.debug(f"Bearer token request data: {data}")
+                _LOGGER.debug(f"Bearer token response status: {response.status}")
                 response.raise_for_status()
                 json_response = await response.json()
+                _LOGGER.debug(f"Bearer token response: {json_response}")
                 return json_response["access_token"]
 
     async def list_ac_systems(self):
@@ -56,7 +63,9 @@ class ActronApi:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 response.raise_for_status()
-                return await response.json()
+                systems = await response.json()
+                _LOGGER.debug(f"List AC systems response: {systems}")
+                return systems
 
     async def get_ac_status(self, serial):
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"

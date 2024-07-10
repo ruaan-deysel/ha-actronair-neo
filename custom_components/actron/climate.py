@@ -24,7 +24,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     api = ActronApi(
         username=config_entry.data["username"],
         password=config_entry.data["password"],
-        device_id=config_entry.data["device_id"]  # This is the serial number
+        device_id=config_entry.data["device_id"]
     )
     await api.authenticate()
     systems = await api.list_ac_systems()
@@ -118,9 +118,11 @@ class ActronClimate(ClimateEntity):
             status = await self._api.get_ac_status(self._unique_id)
             _LOGGER.debug(f"AC status: {status}")
             self._state = status["UserAirconSettings"]["isOn"]
-            self._current_temperature = status["IndoorTemperature"]
+            self._current_temperature = status["SystemStatus_Local"]["SensorInputs"]["SHTC1"]["Temperature_oC"]
             self._target_temperature = status["UserAirconSettings"]["TemperatureSetpoint_Cool_oC"]
             self._fan_mode = status["UserAirconSettings"]["FanMode"]
             self._hvac_mode = HVAC_MODES[status["UserAirconSettings"]["Mode"]]
+        except KeyError as e:
+            _LOGGER.error(f"Key error in AC status response: {e}")
         except Exception as e:
             _LOGGER.error(f"Error updating AC status: {e}")

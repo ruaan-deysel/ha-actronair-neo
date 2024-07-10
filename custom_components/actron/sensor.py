@@ -63,7 +63,9 @@ class ActronTemperatureSensor(SensorEntity):
         try:
             status = await self._api.get_ac_status(self._system["serial"])
             _LOGGER.debug(f"AC status: {status}")
-            self._state = status["IndoorTemperature"]
+            self._state = status["SystemStatus_Local"]["SensorInputs"]["SHTC1"]["Temperature_oC"]
+        except KeyError as e:
+            _LOGGER.error(f"Key error in temperature sensor response: {e}")
         except Exception as e:
             _LOGGER.error(f"Error updating temperature sensor: {e}")
 
@@ -104,6 +106,8 @@ class ActronHumiditySensor(SensorEntity):
         try:
             status = await self._api.get_ac_status(self._system["serial"])
             _LOGGER.debug(f"AC status: {status}")
-            self._state = status["IndoorHumidity"]
+            self._state = status["SystemStatus_Local"]["SensorInputs"]["SHTC1"]["RelativeHumidity_pc"]
+        except KeyError as e:
+            _LOGGER.error(f"Key error in humidity sensor response: {e}")
         except Exception as e:
             _LOGGER.error(f"Error updating humidity sensor: {e}")

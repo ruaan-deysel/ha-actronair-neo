@@ -1,6 +1,6 @@
 import logging
 from homeassistant.helpers.entity import Entity
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfTemperature, PERCENTAGE
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from .api import ActronApi
 
@@ -20,6 +20,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         if isinstance(system, dict) and "name" in system and "serial" in system:
             entities.append(ActronTemperatureSensor(system, api))
             entities.append(ActronHumiditySensor(system, api))
+            entities.append(ActronBatterySensor(system, api))
         else:
             _LOGGER.error(f"Unexpected system data structure: {system}")
 
@@ -62,7 +63,6 @@ class ActronTemperatureSensor(SensorEntity):
         try:
             status = await self._api.get_ac_status(self._system["serial"])
             _LOGGER.debug(f"AC status: {status}")
-            # Check if the required keys exist in the response
             system_status = status.get("SystemStatus_Local", {})
             sensor_inputs = system_status.get("SensorInputs", {})
             shtc1 = sensor_inputs.get("SHTC1", {})
@@ -100,7 +100,7 @@ class ActronHumiditySensor(SensorEntity):
 
     @property
     def unit_of_measurement(self):
-        return "%"
+        return PERCENTAGE
 
     @property
     def device_class(self):
@@ -114,8 +114,67 @@ class ActronHumiditySensor(SensorEntity):
         try:
             status = await self._api.get_ac_status(self._system["serial"])
             _LOGGER.debug(f"AC status: {status}")
-            self._state = status["SystemStatus_Local"]["SensorInputs"]["SHTC1"]["RelativeHumidity_pc"]
+            system_status = status.get("SystemStatus_Local", {})
+            sensor_inputs = system_status.get("SensorInputs", {})
+            shtc1 = sensor_inputs.get("SHTC1", {})
+            humidity = shtc1.get("RelativeHumidity_pc", None)
+            
+            if humidity is not None:
+                self._state = humidity
+            else:
+                _LOGGER.error("Humidity data not available in the response.")
         except KeyError as e:
             _LOGGER.error(f"Key error in humidity sensor response: {e}")
         except Exception as e:
             _LOGGER.error(f"Error updating humidity sensor: {e}")
+
+class ActronBatterySensor(SensorEntity):
+    def __init__(self, system, api):
+        _LOGGER.debug(f"Initializing ActronBatterySensor with system: {system}")
+        self._system = system
+        self._api = api
+        self._name = f"{system['name']} Battery"
+        self._unique_id = f"{system['serial']}_battery"
+        self._state = None
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def unique_id(self):
+        return self._unique_id
+
+    @property
+    def state(self):
+        return self._state
+
+    @property
+    def unit_of_measurement(self):
+        return PERCENTAGE
+
+    @property
+    def device_class(self):
+        return SensorDeviceClass.BATTERY
+
+    @property
+    def state_class(self):
+        return SensorStateClass.MEASUREMENT
+
+    async def async_update(self):
+        try:
+            status = await self._api.get_ac_status(self._system["serial"])
+            _LOGGER.debug(f"AC status: {status}")
+            system_status = status.get("SystemStatus_Local", {})
+            sensor_inputs = system_status.get("SensorInputs", {})
+            battery = sensor_inputs.get("Battery", {})
+            battery_level = battery.get("Level", None)
+            
+            if battery_level is not None:
+                self._state = battery_level
+            else:
+                _LOGGER.error("Battery data not available in the response.")
+        except KeyError as e:
+            _LOGGER.error(f"Key error in battery sensor response: {e}")
+        except Exception as e:
+            _LOGGER.error(f"Error updating battery sensor: {e}")

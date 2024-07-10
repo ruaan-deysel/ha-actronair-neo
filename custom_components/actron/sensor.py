@@ -1,4 +1,3 @@
-# File: custom_components/actron_air_neo/sensor.py
 import logging
 from homeassistant.helpers.entity import Entity
 from homeassistant.const import UnitOfTemperature
@@ -63,7 +62,16 @@ class ActronTemperatureSensor(SensorEntity):
         try:
             status = await self._api.get_ac_status(self._system["serial"])
             _LOGGER.debug(f"AC status: {status}")
-            self._state = status["SystemStatus_Local"]["SensorInputs"]["SHTC1"]["Temperature_oC"]
+            # Check if the required keys exist in the response
+            system_status = status.get("SystemStatus_Local", {})
+            sensor_inputs = system_status.get("SensorInputs", {})
+            shtc1 = sensor_inputs.get("SHTC1", {})
+            temperature = shtc1.get("Temperature_oC", None)
+            
+            if temperature is not None:
+                self._state = temperature
+            else:
+                _LOGGER.error("Temperature data not available in the response.")
         except KeyError as e:
             _LOGGER.error(f"Key error in temperature sensor response: {e}")
         except Exception as e:

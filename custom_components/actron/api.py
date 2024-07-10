@@ -68,10 +68,10 @@ class ActronApi:
 
                 # Extract relevant data
                 ac_systems = []
-                if '_embedded' in systems and 'acSystems' in systems['_embedded']:
-                    for system in systems['_embedded']['acSystems']:
+                if '_embedded' in systems and 'ac-system' in systems['_embedded']:
+                    for system in systems['_embedded']['ac-system']:
                         ac_systems.append({
-                            'name': system.get('name', 'Unknown'),
+                            'name': system.get('description', 'Unknown'),
                             'serial': system.get('serial', 'Unknown')
                         })
                 _LOGGER.debug(f"Extracted AC systems: {ac_systems}")

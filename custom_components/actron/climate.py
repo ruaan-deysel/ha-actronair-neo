@@ -68,14 +68,20 @@ class ActronNeoClimate(ClimateEntity):
         """Set new target temperature."""
         if ATTR_TEMPERATURE in kwargs:
             self._attr_target_temperature = kwargs[ATTR_TEMPERATURE]
-            await self._api.set_temperature(self._zone_id, self._attr_target_temperature)
-            self.async_write_ha_state()
+            try:
+                await self._api.set_temperature(self._zone_id, self._attr_target_temperature)
+                self.async_write_ha_state()
+            except Exception as e:
+                _LOGGER.error(f"Failed to set temperature for zone {self._zone_id}: {e}")
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
         self._attr_hvac_mode = hvac_mode
-        await self._api.set_hvac_mode(hvac_mode)
-        self.async_write_ha_state()
+        try:
+            await self._api.set_hvac_mode(hvac_mode)
+            self.async_write_ha_state()
+        except Exception as e:
+            _LOGGER.error(f"Failed to set HVAC mode for zone {self._zone_id}: {e}")
 
     @property
     def is_on(self):
@@ -84,23 +90,32 @@ class ActronNeoClimate(ClimateEntity):
 
     async def async_turn_on(self):
         """Turn the zone on."""
-        await self._api.set_zone_state(self._zone_id, True)
-        self._zone_enabled = True
-        self.async_write_ha_state()
+        try:
+            await self._api.set_zone_state(self._zone_id, True)
+            self._zone_enabled = True
+            self.async_write_ha_state()
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn on zone {self._zone_id}: {e}")
 
     async def async_turn_off(self):
         """Turn the zone off."""
-        await self._api.set_zone_state(self._zone_id, False)
-        self._zone_enabled = False
-        self.async_write_ha_state()
+        try:
+            await self._api.set_zone_state(self._zone_id, False)
+            self._zone_enabled = False
+            self.async_write_ha_state()
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn off zone {self._zone_id}: {e}")
 
     async def async_update(self):
         """Fetch new state data for the entity."""
-        status = await self._api.get_status()
-        if status:
-            for zone in status.get("zones", []):
-                if zone.get("zoneId") == self._zone_id:
-                    self._attr_current_temperature = zone.get("current_temperature")
-                    self._attr_target_temperature = zone.get("target_temperature")
-                    self._zone_enabled = zone.get("enabled")
-                    break
+        try:
+            status = await self._api.get_status()
+            if status:
+                for zone in status.get("zones", []):
+                    if zone.get("zoneId") == self._zone_id:
+                        self._attr_current_temperature = zone.get("current_temperature")
+                        self._attr_target_temperature = zone.get("target_temperature")
+                        self._zone_enabled = zone.get("enabled")
+                        break
+        except Exception as e:
+            _LOGGER.error(f"Failed to update zone {self._zone_id}: {e}")

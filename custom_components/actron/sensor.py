@@ -41,12 +41,15 @@ class ActronNeoZoneTemperatureSensor(Entity):
 
     async def async_update(self):
         """Fetch new state data for the entity."""
-        status = await self._api.get_status()
-        if status:
-            for zone in status.get("zones", []):
-                if zone.get("zoneId") == self._zone_id:
-                    self._state = zone.get("current_temperature")
-                    break
+        try:
+            status = await self._api.get_status()
+            if status:
+                for zone in status.get("zones", []):
+                    if zone.get("zoneId") == self._zone_id:
+                        self._state = zone.get("current_temperature")
+                        break
+        except Exception as e:
+            _LOGGER.error(f"Failed to update temperature sensor for zone {self._zone_id}: {e}")
 
 class ActronNeoZoneHumiditySensor(Entity):
     """Representation of an Actron Neo zone humidity sensor."""
@@ -70,12 +73,15 @@ class ActronNeoZoneHumiditySensor(Entity):
 
     async def async_update(self):
         """Fetch new state data for the entity."""
-        status = await self._api.get_status()
-        if status:
-            for zone in status.get("zones", []):
-                if zone.get("zoneId") == self._zone_id:
-                    self._state = zone.get("humidity")
-                    break
+        try:
+            status = await self._api.get_status()
+            if status:
+                for zone in status.get("zones", []):
+                    if zone.get("zoneId") == self._zone_id:
+                        self._state = zone.get("humidity")
+                        break
+        except Exception as e:
+            _LOGGER.error(f"Failed to update humidity sensor for zone {self._zone_id}: {e}")
 
 class ActronNeoZoneBatterySensor(Entity):
     """Representation of an Actron Neo zone battery sensor."""
@@ -99,9 +105,12 @@ class ActronNeoZoneBatterySensor(Entity):
 
     async def async_update(self):
         """Fetch new state data for the entity."""
-        status = await self._api.get_status()
-        if status:
-            for zone in status.get("zones", []):
-                if zone.get("zoneId") == self._zone_id:
-                    self._state = zone.get("battery_level")
-                    break
+        try:
+            status = await self._api.get_status()
+            if status:
+                for zone in status.get("zones", []):
+                    if zone.get("zoneId") == self._zone_id:
+                        self._state = zone.get("battery_level")
+                        break
+        except Exception as e:
+            _LOGGER.error(f"Failed to update battery sensor for zone {self._zone_id}: {e}")

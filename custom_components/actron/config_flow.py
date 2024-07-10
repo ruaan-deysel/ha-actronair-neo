@@ -30,6 +30,7 @@ class ActronNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 user_input["zones"] = zones
                 return self.async_create_entry(title=f"Actron Neo {serial_number}", data=user_input)
             except Exception as e:
+                _LOGGER.error(f"Authentication failed: {e}")
                 errors["base"] = "auth"
 
         data_schema = vol.Schema(

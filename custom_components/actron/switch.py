@@ -37,21 +37,30 @@ class ActronNeoZoneSwitch(SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn the switch on."""
-        await self._api.set_zone_state(self._zone_id, True)
-        self._is_on = True
-        self.async_write_ha_state()
+        try:
+            await self._api.set_zone_state(self._zone_id, True)
+            self._is_on = True
+            self.async_write_ha_state()
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn on switch for zone {self._zone_id}: {e}")
 
     async def async_turn_off(self, **kwargs):
         """Turn the switch off."""
-        await self._api.set_zone_state(self._zone_id, False)
-        self._is_on = False
-        self.async_write_ha_state()
+        try:
+            await self._api.set_zone_state(self._zone_id, False)
+            self._is_on = False
+            self.async_write_ha_state()
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn off switch for zone {self._zone_id}: {e}")
 
     async def async_update(self):
         """Fetch new state data for the entity."""
-        status = await self._api.get_status()
-        if status:
-            for zone in status.get("zones", []):
-                if zone.get("zoneId") == self._zone_id:
-                    self._is_on = zone.get("enabled")
-                    break
+        try:
+            status = await self._api.get_status()
+            if status:
+                for zone in status.get("zones", []):
+                    if zone.get("zoneId") == self._zone_id:
+                        self._is_on = zone.get("enabled")
+                        break
+        except Exception as e:
+            _LOGGER.error(f"Failed to update switch for zone {self._zone_id}: {e}")

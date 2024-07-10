@@ -1,7 +1,8 @@
-# File: custom_components/actron_ac/sensor.py
+# File: custom_components/actron_air_neo/sensor.py
 import logging
 from homeassistant.helpers.entity import Entity
-from homeassistant.const import TEMP_CELSIUS, HUMIDITY_PERCENTAGE
+from homeassistant.const import UnitOfTemperature
+from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from .api import ActronApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -10,11 +11,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     api = ActronApi(
         username=config_entry.data["username"],
         password=config_entry.data["password"],
-        device_name=config_entry.data["device_name"],
         device_id=config_entry.data["device_id"]
     )
-    api.authenticate()
-    systems = api.list_ac_systems()
+    await api.authenticate()
+    systems = await api.list_ac_systems()
 
     entities = []
     for system in systems:
@@ -23,7 +23,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     async_add_entities(entities, update_before_add=True)
 
-class ActronTemperatureSensor(Entity):
+class ActronTemperatureSensor(SensorEntity):
     def __init__(self, system, api):
         self._system = system
         self._api = api
@@ -45,13 +45,21 @@ class ActronTemperatureSensor(Entity):
 
     @property
     def unit_of_measurement(self):
-        return TEMP_CELSIUS
+        return UnitOfTemperature.CELSIUS
 
-    def update(self):
-        status = self._api.get_ac_status(self._system["serial"])
+    @property
+    def device_class(self):
+        return SensorDeviceClass.TEMPERATURE
+
+    @property
+    def state_class(self):
+        return SensorStateClass.MEASUREMENT
+
+    async def async_update(self):
+        status = await self._api.get_ac_status(self._system["serial"])
         self._state = status["currentTemperature"]
 
-class ActronHumiditySensor(Entity):
+class ActronHumiditySensor(SensorEntity):
     def __init__(self, system, api):
         self._system = system
         self._api = api
@@ -73,8 +81,16 @@ class ActronHumiditySensor(Entity):
 
     @property
     def unit_of_measurement(self):
-        return HUMIDITY_PERCENTAGE
+        return "%"
 
-    def update(self):
-        status = self._api.get_ac_status(self._system["serial"])
+    @property
+    def device_class(self):
+        return SensorDeviceClass.HUMIDITY
+
+    @property
+    def state_class(self):
+        return SensorStateClass.MEASUREMENT
+
+    async def async_update(self):
+        status = await self._api.get_ac_status(self._system["serial"])
         self._state = status["currentHumidity"]

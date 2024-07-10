@@ -1,34 +1,33 @@
-# File: custom_components/actron_ac/climate.py
+# File: custom_components/actron_air_neo/climate.py
 import logging
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
-    HVAC_MODE_OFF, HVAC_MODE_HEAT, HVAC_MODE_COOL, HVAC_MODE_AUTO, HVAC_MODE_FAN_ONLY,
-    SUPPORT_FAN_MODE, SUPPORT_TARGET_TEMPERATURE
+    HVACMode,
+    ClimateEntityFeature
 )
-from homeassistant.const import TEMP_CELSIUS, ATTR_TEMPERATURE
+from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
 from .api import ActronApi
 
 _LOGGER = logging.getLogger(__name__)
 
-SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE | SUPPORT_FAN_MODE
+SUPPORT_FLAGS = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE
 
 HVAC_MODES = {
-    "OFF": HVAC_MODE_OFF,
-    "HEAT": HVAC_MODE_HEAT,
-    "COOL": HVAC_MODE_COOL,
-    "AUTO": HVAC_MODE_AUTO,
-    "FAN": HVAC_MODE_FAN_ONLY
+    "OFF": HVACMode.OFF,
+    "HEAT": HVACMode.HEAT,
+    "COOL": HVACMode.COOL,
+    "AUTO": HVACMode.AUTO,
+    "FAN": HVACMode.FAN_ONLY
 }
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     api = ActronApi(
         username=config_entry.data["username"],
         password=config_entry.data["password"],
-        device_name=config_entry.data["device_name"],
-        device_id=config_entry.data["device_id"]
+        device_id=config_entry.data["device_id"]  # This is the serial number
     )
-    api.authenticate()
-    systems = api.list_ac_systems()
+    await api.authenticate()
+    systems = await api.list_ac_systems()
     
     entities = []
     for system in systems:
@@ -62,7 +61,7 @@ class ActronClimate(ClimateEntity):
 
     @property
     def temperature_unit(self):
-        return TEMP_CELSIUS
+        return UnitOfTemperature.CELSIUS
 
     @property
     def hvac_modes(self):
@@ -84,33 +83,33 @@ class ActronClimate(ClimateEntity):
     def fan_mode(self):
         return self._fan_mode
 
-    def set_temperature(self, **kwargs):
+    async def async_set_temperature(self, **kwargs):
         if ATTR_TEMPERATURE in kwargs:
             self._target_temperature = kwargs[ATTR_TEMPERATURE]
-            self._api.send_command(self._unique_id, {
+            await self._api.send_command(self._unique_id, {
                 "UserAirconSettings.TemperatureSetpoint_Cool_oC": self._target_temperature,
                 "type": "set-settings"
             })
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
-    def set_hvac_mode(self, hvac_mode):
-        if hvac_mode == HVAC_MODE_OFF:
+    async def async_set_hvac_mode(self, hvac_mode):
+        if hvac_mode == HVACMode.OFF:
             command = {"UserAirconSettings.isOn": False, "type": "set-settings"}
         else:
-            command = {"UserAirconSettings.isOn": True, "UserAirconSettings.Mode": HVAC_MODES[hvac_mode], "type": "set-settings"}
-        self._api.send_command(self._unique_id, command)
-        self.schedule_update_ha_state()
+            command = {"UserAirconSettings.isOn": True, "UserAirconSettings.Mode": hvac_mode, "type": "set-settings"}
+        await self._api.send_command(self._unique_id, command)
+        self.async_write_ha_state()
 
-    def set_fan_mode(self, fan_mode):
+    async def async_set_fan_mode(self, fan_mode):
         self._fan_mode = fan_mode
-        self._api.send_command(self._unique_id, {
+        await self._api.send_command(self._unique_id, {
             "UserAirconSettings.FanMode": fan_mode,
             "type": "set-settings"
         })
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
-    def update(self):
-        status = self._api.get_ac_status(self._unique_id)
+    async def async_update(self):
+        status = await self._api.get_ac_status(self._unique_id)
         self._state = status["isOn"]
         self._current_temperature = status["currentTemperature"]
         self._target_temperature = status["targetTemperature"]

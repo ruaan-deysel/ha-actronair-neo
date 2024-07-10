@@ -1,10 +1,10 @@
-# File: custom_components/actron_ac/config_flow.py
+# File: custom_components/actron_air_neo/config_flow.py
 import logging
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from .api import ActronApi
-from .const import DOMAIN
+from .const import DOMAIN, API_URL
 
 _LOGGER = logging.getLogger(__name__)
 

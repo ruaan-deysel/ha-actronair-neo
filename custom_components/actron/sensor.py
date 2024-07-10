@@ -1,116 +1,80 @@
-"""Platform for Actron Neo sensor integration."""
-
+# File: custom_components/actron_ac/sensor.py
 import logging
 from homeassistant.helpers.entity import Entity
-from .const import DOMAIN
+from homeassistant.const import TEMP_CELSIUS, HUMIDITY_PERCENTAGE
+from .api import ActronApi
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up Actron Neo sensor entities from a config entry."""
-    _LOGGER.info("Setting up Actron Neo sensor platform")
+    api = ActronApi(
+        username=config_entry.data["username"],
+        password=config_entry.data["password"],
+        device_name=config_entry.data["device_name"],
+        device_id=config_entry.data["device_id"]
+    )
+    api.authenticate()
+    systems = api.list_ac_systems()
 
-    api = hass.data[DOMAIN]["api"]
-    zones = hass.data[DOMAIN]["zones"]
     entities = []
-    for zone in zones:
-        entities.append(ActronNeoZoneTemperatureSensor(api, zone["id"], zone["name"]))
-        entities.append(ActronNeoZoneHumiditySensor(api, zone["id"], zone["name"]))
-        entities.append(ActronNeoZoneBatterySensor(api, zone["id"], zone["name"]))
+    for system in systems:
+        entities.append(ActronTemperatureSensor(system, api))
+        entities.append(ActronHumiditySensor(system, api))
+
     async_add_entities(entities, update_before_add=True)
 
-class ActronNeoZoneTemperatureSensor(Entity):
-    """Representation of an Actron Neo zone temperature sensor."""
-
-    def __init__(self, api, zone_id, zone_name):
-        """Initialize the temperature sensor entity."""
+class ActronTemperatureSensor(Entity):
+    def __init__(self, system, api):
+        self._system = system
         self._api = api
-        self._zone_id = zone_id
-        self._name = f"Actron Neo Zone {zone_name} Temperature"
+        self._name = f"{system['name']} Temperature"
+        self._unique_id = f"{system['serial']}_temperature"
         self._state = None
 
     @property
     def name(self):
-        """Return the name of the sensor entity."""
         return self._name
 
     @property
+    def unique_id(self):
+        return self._unique_id
+
+    @property
     def state(self):
-        """Return the state of the sensor."""
         return self._state
 
-    async def async_update(self):
-        """Fetch new state data for the entity."""
-        try:
-            status = await self._api.get_status()
-            if status:
-                for zone in status.get("zones", []):
-                    if zone.get("zoneId") == self._zone_id:
-                        self._state = zone.get("current_temperature")
-                        break
-        except Exception as e:
-            _LOGGER.error(f"Failed to update temperature sensor for zone {self._zone_id}: {e}")
+    @property
+    def unit_of_measurement(self):
+        return TEMP_CELSIUS
 
-class ActronNeoZoneHumiditySensor(Entity):
-    """Representation of an Actron Neo zone humidity sensor."""
+    def update(self):
+        status = self._api.get_ac_status(self._system["serial"])
+        self._state = status["currentTemperature"]
 
-    def __init__(self, api, zone_id, zone_name):
-        """Initialize the humidity sensor entity."""
+class ActronHumiditySensor(Entity):
+    def __init__(self, system, api):
+        self._system = system
         self._api = api
-        self._zone_id = zone_id
-        self._name = f"Actron Neo Zone {zone_name} Humidity"
+        self._name = f"{system['name']} Humidity"
+        self._unique_id = f"{system['serial']}_humidity"
         self._state = None
 
     @property
     def name(self):
-        """Return the name of the sensor entity."""
         return self._name
 
     @property
-    def state(self):
-        """Return the state of the sensor."""
-        return self._state
-
-    async def async_update(self):
-        """Fetch new state data for the entity."""
-        try:
-            status = await self._api.get_status()
-            if status:
-                for zone in status.get("zones", []):
-                    if zone.get("zoneId") == self._zone_id:
-                        self._state = zone.get("humidity")
-                        break
-        except Exception as e:
-            _LOGGER.error(f"Failed to update humidity sensor for zone {self._zone_id}: {e}")
-
-class ActronNeoZoneBatterySensor(Entity):
-    """Representation of an Actron Neo zone battery sensor."""
-
-    def __init__(self, api, zone_id, zone_name):
-        """Initialize the battery sensor entity."""
-        self._api = api
-        self._zone_id = zone_id
-        self._name = f"Actron Neo Zone {zone_name} Battery"
-        self._state = None
-
-    @property
-    def name(self):
-        """Return the name of the sensor entity."""
-        return self._name
+    def unique_id(self):
+        return self._unique_id
 
     @property
     def state(self):
-        """Return the state of the sensor."""
         return self._state
 
-    async def async_update(self):
-        """Fetch new state data for the entity."""
-        try:
-            status = await self._api.get_status()
-            if status:
-                for zone in status.get("zones", []):
-                    if zone.get("zoneId") == self._zone_id:
-                        self._state = zone.get("battery_level")
-                        break
-        except Exception as e:
-            _LOGGER.error(f"Failed to update battery sensor for zone {self._zone_id}: {e}")
+    @property
+    def unit_of_measurement(self):
+        return HUMIDITY_PERCENTAGE
+
+    def update(self):
+        status = self._api.get_ac_status(self._system["serial"])
+        self._state = status["currentHumidity"]

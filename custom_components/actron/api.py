@@ -1,164 +1,74 @@
-import aiohttp
-import asyncio
-import logging
+import requests
+from .const import API_URL
 
-_LOGGER = logging.getLogger(__name__)
-BASE_URL = "https://nimbus.actronair.com.au"
+class ActronApi:
+    def __init__(self, username, password, device_name, device_id):
+        self.username = username
+        self.password = password
+        self.device_name = device_name
+        self.device_id = device_id
+        self.bearer_token = None
 
-class ActronNeoAPI:
-    def __init__(self, username, password):
-        self._username = username
-        self._password = password
-        self._token = None
-        self._session = aiohttp.ClientSession()
-        self._serial_number = None
-        self._zones = []
-        asyncio.create_task(self.login())
+    def authenticate(self):
+        # Step 1: Request pairing token
+        pairing_token = self._request_pairing_token()
+        # Step 2: Request bearer token
+        self.bearer_token = self._request_bearer_token(pairing_token)
 
-    async def login(self):
-        try:
-            # Step 1: Request pairing token
-            async with self._session.post(
-                f"{BASE_URL}/api/v0/client/user-devices",
-                data={
-                    "username": self._username,
-                    "password": self._password,
-                    "client": "ios",
-                    "deviceName": "homeassistant",
-                    "deviceUniqueIdentifier": "homeassistant-unique-id"
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
-            ) as response:
-                response.raise_for_status()
-                data = await response.json()
-                pairing_token = data.get("pairingToken")
+    def _request_pairing_token(self):
+        url = f"{API_URL}/api/v0/client/user-devices"
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {
+            "username": self.username,
+            "password": self.password,
+            "client": "ios",
+            "deviceName": self.device_name,
+            "deviceUniqueIdentifier": self.device_id
+        }
+        response = requests.post(url, headers=headers, data=data)
+        response.raise_for_status()
+        return response.json()["pairingToken"]
 
-            # Step 2: Request bearer token
-            async with self._session.post(
-                f"{BASE_URL}/api/v0/oauth/token",
-                data={
-                    "grant_type": "refresh_token",
-                    "refresh_token": pairing_token,
-                    "client_id": "app"
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
-            ) as response:
-                response.raise_for_status()
-                data = await response.json()
-                self._token = data.get("access_token")
-                _LOGGER.info("Successfully logged into Actron Neo system")
+    def _request_bearer_token(self, pairing_token):
+        url = f"{API_URL}/api/v0/oauth/token"
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": pairing_token,
+            "client_id": "app"
+        }
+        response = requests.post(url, headers=headers, data=data)
+        response.raise_for_status()
+        return response.json()["access_token"]
 
-            # Step 3: Retrieve serial number and zones
-            await self._retrieve_serial_number_and_zones()
+    def list_ac_systems(self):
+        url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
+        headers = {
+            "Authorization": f"Bearer {self.bearer_token}"
+        }
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
 
-        except aiohttp.ClientError as error:
-            _LOGGER.error(f"Failed to login to Actron Neo system: {error}")
+    def get_ac_status(self, serial):
+        url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
+        headers = {
+            "Authorization": f"Bearer {self.bearer_token}"
+        }
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
 
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error during login: {e}")
-
-    async def _get_headers(self):
-        return {
-            "Authorization": f"Bearer {self._token}",
+    def send_command(self, serial, command):
+        url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
+        headers = {
+            "Authorization": f"Bearer {self.bearer_token}",
             "Content-Type": "application/json"
         }
-
-    async def _retrieve_serial_number_and_zones(self):
-        """Retrieve the serial number and zones for the Actron Neo system."""
-        try:
-            async with self._session.get(
-                f"{BASE_URL}/api/v0/client/ac-systems",
-                headers=await self._get_headers()
-            ) as response:
-                response.raise_for_status()
-                data = await response.json()
-                _LOGGER.debug(f"Response from /api/v0/client/ac-systems: {data}")
-
-                # Adjust the parsing logic based on the actual response structure
-                if 'items' in data:
-                    self._serial_number = data['items'][0]['serial']
-                    self._zones = [
-                        {'id': zone['zoneNumber'], 'name': zone['name']}
-                        for zone in data['items'][0]['zones']
-                    ]
-                    _LOGGER.info(f"Retrieved serial number: {self._serial_number}")
-                    _LOGGER.info(f"Retrieved zones: {self._zones}")
-                else:
-                    _LOGGER.error("Unexpected response structure")
-                    _LOGGER.debug(f"Full response: {data}")
-
-        except aiohttp.ClientError as error:
-            _LOGGER.error(f"Failed to retrieve serial number and zones: {error}")
-
-        except Exception as e:
-            _LOGGER.error(f"Unexpected error retrieving serial number and zones: {e}")
-
-        finally:
-            await self._session.close()
-
-    async def get_status(self):
-        try:
-            async with self._session.get(
-                f"{BASE_URL}/api/v0/client/ac-systems/status/latest?serial={self._serial_number}",
-                headers=await self._get_headers()
-            ) as response:
-                response.raise_for_status()
-                data = await response.json()
-                return data
-        except aiohttp.ClientError as error:
-            _LOGGER.error(f"Failed to get system status: {error}")
-
-    async def set_temperature(self, zone_id, temperature):
-        try:
-            async with self._session.post(
-                f"{BASE_URL}/api/v0/client/ac-systems/cmds/send?serial={self._serial_number}",
-                json={
-                    "command": {
-                        f"UserAirconSettings.TemperatureSetpoint_Cool_oC": temperature,
-                        "type": "set-settings"
-                    }
-                },
-                headers=await self._get_headers()
-            ) as response:
-                response.raise_for_status()
-                _LOGGER.info(f"Set temperature to {temperature} for zone {zone_id}")
-        except aiohttp.ClientError as error:
-            _LOGGER.error(f"Failed to set temperature for zone {zone_id}: {error}")
-
-    async def set_hvac_mode(self, mode):
-        try:
-            async with self._session.post(
-                f"{BASE_URL}/api/v0/client/ac-systems/cmds/send?serial={self._serial_number}",
-                json={
-                    "command": {
-                        "UserAirconSettings.isOn": True,
-                        "UserAirconSettings.Mode": mode,
-                        "type": "set-settings"
-                    }
-                },
-                headers=await self._get_headers()
-            ) as response:
-                response.raise_for_status()
-                _LOGGER.info(f"Set HVAC mode to {mode}")
-        except aiohttp.ClientError as error:
-            _LOGGER.error(f"Failed to set HVAC mode: {error}")
-
-    async def set_zone_state(self, zone_id, state):
-        try:
-            async with self._session.post(
-                f"{BASE_URL}/api/v0/client/ac-systems/cmds/send?serial={self._serial_number}",
-                json={
-                    "command": {
-                        f"UserAirconSettings.EnabledZones[{zone_id}]": state,
-                        "type": "set-settings"
-                    }
-                },
-                headers=await self._get_headers()
-            ) as response:
-                response.raise_for_status()
-                _LOGGER.info(f"Set state to {state} for zone {zone_id}")
-        except aiohttp.ClientError as error:
-            _LOGGER.error(f"Failed to set state for zone {zone_id}: {error}")
-
-    async def close_session(self):
-        await self._session.close()
+        response = requests.post(url, headers=headers, json={"command": command})
+        response.raise_for_status()
+        return response.json()

@@ -13,7 +13,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         device_id=config_entry.data["device_id"]
     )
     await api.authenticate()
-    systems = await api.get_ac_systems()
+    systems = await api.list_ac_systems()
 
     entities = []
     for system in systems:

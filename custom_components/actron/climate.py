@@ -7,7 +7,7 @@ from homeassistant.components.climate.const import (
     ATTR_HVAC_MODE,
     ATTR_FAN_MODE,
 )
-from homeassistant.const import TEMP_CELSIUS, ATTR_TEMPERATURE
+from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
 from .api import ActronApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         device_id=config_entry.data["device_id"]
     )
     await api.authenticate()
-    systems = await api.get_ac_systems()
+    systems = await api.list_ac_systems()
 
     entities = []
     for system in systems:
@@ -39,7 +39,7 @@ class ActronClimate(ClimateEntity):
         self._unique_id = system['serial']
         self._attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT]
         self._attr_fan_modes = ["AUTO", "LOW", "MEDIUM", "HIGH"]
-        self._attr_temperature_unit = TEMP_CELSIUS
+        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE
         self._target_temperature = None
 
@@ -71,7 +71,6 @@ class ActronClimate(ClimateEntity):
         try:
             status = await self._api.get_ac_status(self._unique_id)
             _LOGGER.debug(f"AC status: {status}")
-            # Check if the required keys exist in the response
             if "UserAirconSettings" in status:
                 user_settings = status["UserAirconSettings"]
                 self._target_temperature = user_settings.get("TemperatureSetpoint_Cool_oC", None)

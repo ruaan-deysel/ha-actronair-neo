@@ -4,7 +4,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from .api import ActronApi
-from .const import DOMAIN, API_URL
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,11 +27,10 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 api = ActronApi(
                     username=user_input["username"],
                     password=user_input["password"],
-                    device_name=user_input["device_name"],
                     device_id=user_input["device_id"]  # This is the serial number
                 )
-                api.authenticate()
-                return self.async_create_entry(title=user_input["device_name"], data=user_input)
+                await api.authenticate()
+                return self.async_create_entry(title=user_input["device_id"], data=user_input)
             except Exception as e:
                 _LOGGER.error(f"Error authenticating with Actron API: {e}")
                 errors["base"] = "cannot_connect"
@@ -46,7 +45,6 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return vol.Schema({
             vol.Required("username"): str,
             vol.Required("password"): str,
-            vol.Required("device_name"): str,
             vol.Required("device_id"): str,  # This is the serial number
         })
 

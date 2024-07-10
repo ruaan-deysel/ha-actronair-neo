@@ -1,14 +1,13 @@
 {
-  "title": "Actron Air Neo",
+  "title": "Actron AC",
   "config": {
     "step": {
       "user": {
-        "title": "Configure Actron Air Neo",
-        "description": "Please enter your Actron Air Neo account details.",
+        "title": "Configure Actron AC",
+        "description": "Please enter your Actron AC account details.",
         "data": {
           "username": "Username",
           "password": "Password",
-          "device_name": "Device Name",
           "device_id": "Device Serial Number"
         }
       }

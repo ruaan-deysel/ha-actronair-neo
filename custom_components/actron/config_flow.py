@@ -61,18 +61,18 @@ class ActronNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class ActronNeoOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow for Actron Neo integration."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self, config_entry):
         """Initialize options flow."""
         self.config_entry = config_entry
 
-    async def async_step_init(self, user_input: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def async_step_init(self, user_input=None):
         """Manage the options for the custom component."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
         options = vol.Schema(
             {
-                vol.Optional("zones", default=self.config_entry.options.get("zones", [])): str,
+                # Include any options you want to manage here
             }
         )
         return self.async_show_form(step_id="init", data_schema=options)

@@ -18,18 +18,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up Actron Neo from a config entry."""
     _LOGGER.info("Setting up Actron Neo entry")
-    
+
     try:
         api = ActronNeoAPI(
             username=config_entry.data["username"],
             password=config_entry.data["password"]
         )
-        
-        zones = config_entry.data.get("zones", [])
+
+        await api.login()
         
         hass.data[DOMAIN][config_entry.entry_id] = {
             "api": api,
-            "zones": [{"id": zone["id"], "name": zone["name"]} for zone in zones]
+            "zones": api._zones
         }
         
         # Forward entry setup to the desired platforms
@@ -39,7 +39,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     except Exception as e:
         _LOGGER.error(f"Error setting up Actron Neo entry: {e}")
         return False
-    
+
     return True
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:

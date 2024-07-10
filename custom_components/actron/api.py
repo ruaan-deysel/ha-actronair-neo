@@ -14,7 +14,7 @@ class ActronNeoAPI:
         self._serial_number = None
         self._zones = []
         asyncio.create_task(self.login())
-    
+
     async def login(self):
         try:
             # Step 1: Request pairing token
@@ -32,7 +32,7 @@ class ActronNeoAPI:
                 response.raise_for_status()
                 data = await response.json()
                 pairing_token = data.get("pairingToken")
-            
+
             # Step 2: Request bearer token
             async with self._session.post(
                 f"{BASE_URL}/api/v0/oauth/token",
@@ -47,12 +47,15 @@ class ActronNeoAPI:
                 data = await response.json()
                 self._token = data.get("access_token")
                 _LOGGER.info("Successfully logged into Actron Neo system")
-            
+
             # Step 3: Retrieve serial number and zones
             await self._retrieve_serial_number_and_zones()
-        
+
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to login to Actron Neo system: {error}")
+
+        except Exception as e:
+            _LOGGER.error(f"Unexpected error during login: {e}")
 
     async def _get_headers(self):
         return {
@@ -70,7 +73,7 @@ class ActronNeoAPI:
                 response.raise_for_status()
                 data = await response.json()
                 _LOGGER.debug(f"Response from /api/v0/client/ac-systems: {data}")
-                
+
                 # Adjust the parsing logic based on the actual response structure
                 if 'items' in data:
                     self._serial_number = data['items'][0]['serial']
@@ -83,8 +86,13 @@ class ActronNeoAPI:
                 else:
                     _LOGGER.error("Unexpected response structure")
                     _LOGGER.debug(f"Full response: {data}")
+
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to retrieve serial number and zones: {error}")
+
+        except Exception as e:
+            _LOGGER.error(f"Unexpected error retrieving serial number and zones: {e}")
+
         finally:
             await self._session.close()
 

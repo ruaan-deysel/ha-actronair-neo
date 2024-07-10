@@ -1,4 +1,4 @@
-# Work In Progress - Actron Air Neo Home Assistant Integration
+# Work In Progress - Work In Progress - Actron Air Neo Home Assistant Integration
 
 This is a custom component for Home Assistant that integrates with the Actron Air Neo HVAC system.
 

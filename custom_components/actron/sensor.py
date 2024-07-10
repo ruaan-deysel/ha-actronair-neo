@@ -18,13 +18,17 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     entities = []
     for system in systems:
-        entities.append(ActronTemperatureSensor(system, api))
-        entities.append(ActronHumiditySensor(system, api))
+        if isinstance(system, dict) and "name" in system and "serial" in system:
+            entities.append(ActronTemperatureSensor(system, api))
+            entities.append(ActronHumiditySensor(system, api))
+        else:
+            _LOGGER.error(f"Unexpected system data structure: {system}")
 
     async_add_entities(entities, update_before_add=True)
 
 class ActronTemperatureSensor(SensorEntity):
     def __init__(self, system, api):
+        _LOGGER.debug(f"Initializing ActronTemperatureSensor with system: {system}")
         self._system = system
         self._api = api
         self._name = f"{system['name']} Temperature"
@@ -61,6 +65,7 @@ class ActronTemperatureSensor(SensorEntity):
 
 class ActronHumiditySensor(SensorEntity):
     def __init__(self, system, api):
+        _LOGGER.debug(f"Initializing ActronHumiditySensor with system: {system}")
         self._system = system
         self._api = api
         self._name = f"{system['name']} Humidity"

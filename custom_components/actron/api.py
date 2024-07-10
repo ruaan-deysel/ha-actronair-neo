@@ -1,6 +1,5 @@
 # File: custom_components/actron_air_neo/api.py
 import aiohttp
-import asyncio
 import logging
 from .const import API_URL
 
@@ -50,6 +49,7 @@ class ActronApi:
             async with session.post(url, headers=headers, data=data) as response:
                 _LOGGER.debug(f"Bearer token request data: {data}")
                 _LOGGER.debug(f"Bearer token response status: {response.status}")
+                _LOGGER.debug(f"Bearer token response text: {await response.text()}")
                 response.raise_for_status()
                 json_response = await response.json()
                 _LOGGER.debug(f"Bearer token response: {json_response}")

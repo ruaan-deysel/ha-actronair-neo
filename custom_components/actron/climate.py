@@ -32,7 +32,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     _LOGGER.debug(f"AC systems: {systems}")
     entities = []
     for system in systems:
-        entities.append(ActronClimate(system, api))
+        if isinstance(system, dict) and "name" in system and "serial" in system:
+            entities.append(ActronClimate(system, api))
+        else:
+            _LOGGER.error(f"Unexpected system data structure: {system}")
     
     async_add_entities(entities, update_before_add=True)
 

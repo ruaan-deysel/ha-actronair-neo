@@ -85,6 +85,8 @@ class ActronNeoAPI:
                     _LOGGER.debug(f"Full response: {data}")
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to retrieve serial number and zones: {error}")
+        finally:
+            await self._session.close()
 
     async def get_status(self):
         try:

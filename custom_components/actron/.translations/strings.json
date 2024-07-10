@@ -3,11 +3,10 @@
     "step": {
         "user": {
             "title": "Configure Actron Air Neo",
-            "description": "Enter your Actron Air Neo credentials and zones.",
+            "description": "Enter your Actron Air Neo credentials.",
             "data": {
-                "username": "Username",
-                "password": "Password",
-                "zones": "Zones (comma-separated)"
+                "username": "Email Address",
+                "password": "Password"
             }
         }
     },

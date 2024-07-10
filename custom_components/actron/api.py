@@ -69,13 +69,20 @@ class ActronNeoAPI:
             ) as response:
                 response.raise_for_status()
                 data = await response.json()
-                self._serial_number = data['items'][0]['serial']
-                self._zones = [
-                    {'id': zone['zoneNumber'], 'name': zone['name']}
-                    for zone in data['items'][0]['zones']
-                ]
-                _LOGGER.info(f"Retrieved serial number: {self._serial_number}")
-                _LOGGER.info(f"Retrieved zones: {self._zones}")
+                _LOGGER.debug(f"Response from /api/v0/client/ac-systems: {data}")
+                
+                # Adjust the parsing logic based on the actual response structure
+                if 'items' in data:
+                    self._serial_number = data['items'][0]['serial']
+                    self._zones = [
+                        {'id': zone['zoneNumber'], 'name': zone['name']}
+                        for zone in data['items'][0]['zones']
+                    ]
+                    _LOGGER.info(f"Retrieved serial number: {self._serial_number}")
+                    _LOGGER.info(f"Retrieved zones: {self._zones}")
+                else:
+                    _LOGGER.error("Unexpected response structure")
+                    _LOGGER.debug(f"Full response: {data}")
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to retrieve serial number and zones: {error}")
 

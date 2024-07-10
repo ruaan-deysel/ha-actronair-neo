@@ -53,26 +53,44 @@ class ActronNeoAPI:
         
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to login to Actron Neo system: {error}")
-    
+
     async def _get_headers(self):
         return {
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json"
         }
-    
+
+    async def _retrieve_serial_number_and_zones(self):
+        """Retrieve the serial number and zones for the Actron Neo system."""
+        try:
+            async with self._session.get(
+                f"{BASE_URL}/api/v0/client/ac-systems",
+                headers=await self._get_headers()
+            ) as response:
+                response.raise_for_status()
+                data = await response.json()
+                self._serial_number = data['items'][0]['serial']
+                self._zones = [
+                    {'id': zone['zoneNumber'], 'name': zone['name']}
+                    for zone in data['items'][0]['zones']
+                ]
+                _LOGGER.info(f"Retrieved serial number: {self._serial_number}")
+                _LOGGER.info(f"Retrieved zones: {self._zones}")
+        except aiohttp.ClientError as error:
+            _LOGGER.error(f"Failed to retrieve serial number and zones: {error}")
+
     async def get_status(self):
         try:
             async with self._session.get(
-                f"{BASE_URL}/api/v0/client/ac-systems?serial={self._serial_number}",
+                f"{BASE_URL}/api/v0/client/ac-systems/status/latest?serial={self._serial_number}",
                 headers=await self._get_headers()
             ) as response:
                 response.raise_for_status()
                 data = await response.json()
                 return data
-        
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to get system status: {error}")
-    
+
     async def set_temperature(self, zone_id, temperature):
         try:
             async with self._session.post(
@@ -87,10 +105,9 @@ class ActronNeoAPI:
             ) as response:
                 response.raise_for_status()
                 _LOGGER.info(f"Set temperature to {temperature} for zone {zone_id}")
-        
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to set temperature for zone {zone_id}: {error}")
-    
+
     async def set_hvac_mode(self, mode):
         try:
             async with self._session.post(
@@ -106,7 +123,6 @@ class ActronNeoAPI:
             ) as response:
                 response.raise_for_status()
                 _LOGGER.info(f"Set HVAC mode to {mode}")
-        
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to set HVAC mode: {error}")
 
@@ -124,7 +140,6 @@ class ActronNeoAPI:
             ) as response:
                 response.raise_for_status()
                 _LOGGER.info(f"Set state to {state} for zone {zone_id}")
-        
         except aiohttp.ClientError as error:
             _LOGGER.error(f"Failed to set state for zone {zone_id}: {error}")
 

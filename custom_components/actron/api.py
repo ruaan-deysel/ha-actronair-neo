@@ -65,7 +65,17 @@ class ActronApi:
                 response.raise_for_status()
                 systems = await response.json()
                 _LOGGER.debug(f"List AC systems response: {systems}")
-                return systems
+
+                # Extract relevant data
+                ac_systems = []
+                if '_embedded' in systems and 'acSystems' in systems['_embedded']:
+                    for system in systems['_embedded']['acSystems']:
+                        ac_systems.append({
+                            'name': system.get('name', 'Unknown'),
+                            'serial': system.get('serial', 'Unknown')
+                        })
+                _LOGGER.debug(f"Extracted AC systems: {ac_systems}")
+                return ac_systems
 
     async def get_ac_status(self, serial):
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"

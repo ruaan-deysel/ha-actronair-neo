@@ -1,31 +1,29 @@
 {
-  "title": "Actron Air Neo",
   "config": {
     "step": {
       "user": {
-        "title": "Configure Actron Air Neo",
-        "description": "Please enter your Actron Air Neo account details.",
+        "title": "Set up Actron Air Neo",
+        "description": "Enter your Actron Air Neo account details",
         "data": {
           "username": "Username",
           "password": "Password",
-          "device_id": "Device Serial Number"
+          "device_name": "Device Name",
+          "device_unique_id": "Device Unique Identifier"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect. Please check your internet connection and credentials.",
-      "invalid_auth": "Invalid authentication. Please check your username and password.",
-      "unknown": "An unexpected error occurred. Please try again later."
+      "invalid_auth": "Invalid authentication",
+      "unknown": "Unexpected error occurred"
     },
     "abort": {
-      "already_configured": "This Actron Air Neo account is already configured."
+      "already_configured": "Device is already configured"
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Actron Air Neo Options",
-        "description": "Adjust settings for your Actron Air Neo integration.",
         "data": {
           "update_interval": "Update Interval (seconds)"
         }

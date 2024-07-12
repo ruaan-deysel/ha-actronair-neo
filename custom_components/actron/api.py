@@ -16,8 +16,12 @@ class ActronApi:
         if self.session is None:
             self.session = aiohttp.ClientSession()
 
-        pairing_token = await self._request_pairing_token()
-        self.bearer_token = await self._request_bearer_token(pairing_token)
+        try:
+            pairing_token = await self._request_pairing_token()
+            self.bearer_token = await self._request_bearer_token(pairing_token)
+        except Exception as e:
+            await self.close()
+            raise e
 
     async def _request_pairing_token(self) -> str:
         url = f"{API_URL}/api/v0/client/user-devices"
@@ -66,6 +70,8 @@ class ActronApi:
         return devices
 
     async def _authenticated_get(self, url: str) -> Dict[str, Any]:
+        if not self.bearer_token:
+            raise AuthenticationError("Not authenticated")
         headers = {"Authorization": f"Bearer {self.bearer_token}"}
         async with self.session.get(url, headers=headers) as response:
             if response.status != 200:

@@ -1,15 +1,14 @@
 import aiohttp
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 from .const import API_URL
 
 _LOGGER = logging.getLogger(__name__)
 
 class ActronApi:
-    def __init__(self, username: str, password: str, device_id: str):
+    def __init__(self, username: str, password: str):
         self.username = username
         self.password = password
-        self.device_id = device_id
         self.bearer_token = None
         self.session = None
 
@@ -27,8 +26,8 @@ class ActronApi:
             "username": self.username,
             "password": self.password,
             "client": "ios",
-            "deviceName": f"HomeAssistant_{self.device_id}",
-            "deviceUniqueIdentifier": self.device_id
+            "deviceName": "HomeAssistant",
+            "deviceUniqueIdentifier": "HomeAssistant"
         }
         async with self.session.post(url, headers=headers, data=data) as response:
             if response.status != 200:
@@ -38,7 +37,46 @@ class ActronApi:
             _LOGGER.debug(f"Pairing token response: {json_response}")
             return json_response["pairingToken"]
 
-    # ... (rest of the methods remain the same)
+    async def _request_bearer_token(self, pairing_token: str) -> str:
+        url = f"{API_URL}/api/v0/oauth/token"
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": pairing_token,
+            "client_id": "app"
+        }
+        async with self.session.post(url, headers=headers, data=data) as response:
+            if response.status != 200:
+                text = await response.text()
+                raise AuthenticationError(f"Failed to get bearer token: {response.status}, {text}")
+            json_response = await response.json()
+            _LOGGER.debug(f"Bearer token response: {json_response}")
+            return json_response["access_token"]
+
+    async def get_devices(self) -> List[Dict[str, Any]]:
+        url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
+        systems = await self._authenticated_get(url)
+        devices = []
+        if '_embedded' in systems and 'ac-system' in systems['_embedded']:
+            for system in systems['_embedded']['ac-system']:
+                devices.append({
+                    'name': system.get('description', 'Unknown'),
+                    'serial': system.get('serial', 'Unknown')
+                })
+        return devices
+
+    async def _authenticated_get(self, url: str) -> Dict[str, Any]:
+        headers = {"Authorization": f"Bearer {self.bearer_token}"}
+        async with self.session.get(url, headers=headers) as response:
+            if response.status != 200:
+                text = await response.text()
+                raise ApiError(f"API request failed: {response.status}, {text}")
+            return await response.json()
+
+    async def close(self):
+        if self.session:
+            await self.session.close()
+            self.session = None
 
 class AuthenticationError(Exception):
     """Raised when authentication fails."""

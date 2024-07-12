@@ -1,12 +1,13 @@
 from homeassistant.const import (
     UnitOfTemperature,
     PERCENTAGE,
+    Platform
 )
 
 DOMAIN = "actron_air_neo"
 API_URL = "https://nimbus.actronair.com.au"
 
-PLATFORMS = ["climate", "sensor"]
+PLATFORMS = [Platform.CLIMATE, Platform.SENSOR]
 
 DEFAULT_UPDATE_INTERVAL = 60
 

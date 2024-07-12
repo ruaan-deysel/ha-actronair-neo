@@ -33,7 +33,8 @@ class ActronApi:
         }
         async with self.session.post(url, headers=headers, data=data) as response:
             if response.status != 200:
-                raise AuthenticationError(f"Failed to get pairing token: {response.status}")
+                text = await response.text()
+                raise AuthenticationError(f"Failed to get pairing token: {response.status}, {text}")
             json_response = await response.json()
             _LOGGER.debug(f"Pairing token response: {json_response}")
             return json_response["pairingToken"]
@@ -48,7 +49,8 @@ class ActronApi:
         }
         async with self.session.post(url, headers=headers, data=data) as response:
             if response.status != 200:
-                raise AuthenticationError(f"Failed to get bearer token: {response.status}")
+                text = await response.text()
+                raise AuthenticationError(f"Failed to get bearer token: {response.status}, {text}")
             json_response = await response.json()
             _LOGGER.debug(f"Bearer token response: {json_response}")
             return json_response["access_token"]
@@ -74,14 +76,16 @@ class ActronApi:
         data = {"command": command}
         async with self.session.post(url, headers=headers, json=data) as response:
             if response.status != 200:
-                raise ApiError(f"Failed to send command: {response.status}")
+                text = await response.text()
+                raise ApiError(f"Failed to send command: {response.status}, {text}")
             return await response.json()
 
     async def _authenticated_get(self, url: str) -> Dict[str, Any]:
         headers = {"Authorization": f"Bearer {self.bearer_token}"}
         async with self.session.get(url, headers=headers) as response:
             if response.status != 200:
-                raise ApiError(f"API request failed: {response.status}")
+                text = await response.text()
+                raise ApiError(f"API request failed: {response.status}, {text}")
             return await response.json()
 
     async def close(self):

@@ -1,4 +1,3 @@
-import asyncio
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.const import CONF_USERNAME, CONF_PASSWORD, CONF_DEVICE_ID
@@ -24,7 +23,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
 
         update_interval = entry.options.get("update_interval", DEFAULT_UPDATE_INTERVAL)
-        coordinator = await async_setup_coordinator(hass, api, entry.data[CONF_DEVICE_ID], update_interval)
+        coordinator = await async_setup_coordinator(
+            hass,
+            api,
+            entry.data[CONF_DEVICE_ID],
+            update_interval
+        )
 
         hass.data[DOMAIN][entry.entry_id] = coordinator
 

@@ -12,7 +12,7 @@ from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
 _LOGGER = logging.getLogger(__name__)
 
 class ActronDataCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass: HomeAssistant, api: ActronApi, update_interval: int):
+    def __init__(self, hass: HomeAssistant, api: ActronApi, device_id: str, update_interval: int):
         super().__init__(
             hass,
             _LOGGER,
@@ -20,28 +20,17 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=update_interval),
         )
         self.api = api
-        self.systems: Dict[str, Dict[str, Any]] = {}
+        self.device_id = device_id
 
     async def _async_update_data(self) -> Dict[str, Any]:
         try:
             if not self.api.bearer_token:
                 await self.api.authenticate()
 
-            systems = await self.api.list_ac_systems()
-            data = {}
+            status = await self.api.get_ac_status(self.device_id)
+            events = await self.api.get_ac_events(self.device_id)
 
-            for system in systems.get('_embedded', {}).get('ac-system', []):
-                serial = system.get('serial')
-                if not serial:
-                    continue
-
-                status = await self.api.get_ac_status(serial)
-                events = await self.api.get_ac_events(serial)
-
-                system_data = self._parse_system_data(system, status, events)
-                data[serial] = system_data
-
-            return data
+            return self._parse_system_data(status, events)
 
         except AuthenticationError as auth_err:
             _LOGGER.error("Authentication error: %s", auth_err)
@@ -53,13 +42,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Unexpected error: %s", err)
             raise UpdateFailed("Unexpected error occurred") from err
 
-    def _parse_system_data(self, system: Dict[str, Any], status: Dict[str, Any], events: Dict[str, Any]) -> Dict[str, Any]:
+    def _parse_system_data(self, status: Dict[str, Any], events: Dict[str, Any]) -> Dict[str, Any]:
         user_settings = status.get('UserAirconSettings', {})
         system_status = status.get('SystemStatus_Local', {})
         
         parsed_data = {
-            'name': system.get('description', 'Unknown'),
-            'serial': system.get('serial', 'Unknown'),
             'isOn': user_settings.get('isOn', False),
             'mode': user_settings.get('Mode', 'OFF'),
             'fanMode': user_settings.get('FanMode', 'AUTO'),
@@ -101,7 +88,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         return zones
 
-async def async_setup_coordinator(hass: HomeAssistant, api: ActronApi, update_interval: int) -> ActronDataCoordinator:
-    coordinator = ActronDataCoordinator(hass, api, update_interval)
+async def async_setup_coordinator(hass: HomeAssistant, api: ActronApi, device_id: str, update_interval: int) -> ActronDataCoordinator:
+    coordinator = ActronDataCoordinator(hass, api, device_id, update_interval)
     await coordinator.async_config_entry_first_refresh()
     return coordinator

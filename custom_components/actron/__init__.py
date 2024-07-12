@@ -20,7 +20,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         api = ActronApi(
             username=entry.data[CONF_USERNAME],
             password=entry.data[CONF_PASSWORD],
-            device_id=entry.data["device_id"]
+            device_name=entry.data["device_name"],
+            device_unique_id=entry.data["device_unique_id"]
         )
 
         update_interval = entry.options.get("update_interval", DEFAULT_UPDATE_INTERVAL)
@@ -28,7 +29,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
         hass.data[DOMAIN][entry.entry_id] = coordinator
 
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        for platform in PLATFORMS:
+            hass.async_create_task(
+                hass.config_entries.async_forward_entry_setup(entry, platform)
+            )
         
         entry.async_on_unload(entry.add_update_listener(update_listener))
         return True
@@ -38,7 +42,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = all(
+        await asyncio.gather(
+            *[
+                hass.config_entries.async_forward_entry_unload(entry, platform)
+                for platform in PLATFORMS
+            ]
+        )
+    )
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.api.close()

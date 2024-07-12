@@ -3,7 +3,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
-from .api import ActronApi
+from .api import ActronApi, AuthenticationError
 from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,22 +19,26 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 api = ActronApi(
                     username=user_input[CONF_USERNAME],
                     password=user_input[CONF_PASSWORD],
-                    device_id=user_input["device_id"]
+                    device_name=user_input["device_name"],
+                    device_unique_id=user_input["device_unique_id"]
                 )
                 await api.authenticate()
                 await self.async_set_unique_id(user_input[CONF_USERNAME])
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=user_input["device_id"], data=user_input)
+                return self.async_create_entry(title=user_input["device_name"], data=user_input)
+            except AuthenticationError:
+                errors["base"] = "invalid_auth"
             except Exception as e:
-                _LOGGER.error("Error authenticating with Actron API: %s", e)
-                errors["base"] = "cannot_connect"
+                _LOGGER.error("Unexpected error: %s", e)
+                errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
                 vol.Required(CONF_USERNAME): str,
                 vol.Required(CONF_PASSWORD): str,
-                vol.Required("device_id"): str,
+                vol.Required("device_name"): str,
+                vol.Required("device_unique_id"): str,
             }),
             errors=errors,
         )

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
@@ -17,6 +17,7 @@ from .const import (
     API_KEY_TEMP_SETPOINT_COOL, API_KEY_TEMP_SETPOINT_HEAT,
     CMD_SET_SETTINGS
 )
+from .coordinator import ActronDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,11 +32,11 @@ HVAC_MODES = {
 FAN_MODES = [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
     async_add_entities([ActronClimate(coordinator)], True)
 
 class ActronClimate(CoordinatorEntity, ClimateEntity):
-    def __init__(self, coordinator):
+    def __init__(self, coordinator: ActronDataCoordinator):
         super().__init__(coordinator)
         self._attr_name = "Actron Air Neo"
         self._attr_unique_id = f"{DOMAIN}_climate"

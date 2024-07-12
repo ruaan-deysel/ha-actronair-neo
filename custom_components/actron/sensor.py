@@ -21,6 +21,7 @@ from .const import (
     ATTR_OUTDOOR_TEMPERATURE,
     ATTR_FILTER_LIFE,
 )
+from .coordinator import ActronDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
     entities = [
         ActronTemperatureSensor(coordinator, "indoor"),
         ActronTemperatureSensor(coordinator, "outdoor"),
@@ -40,7 +41,7 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 class ActronSensorBase(CoordinatorEntity, SensorEntity):
-    def __init__(self, coordinator, name: str, device_class: str, state_class: str, unit: str):
+    def __init__(self, coordinator: ActronDataCoordinator, name: str, device_class: str, state_class: str, unit: str):
         super().__init__(coordinator)
         self._attr_name = f"Actron Air Neo {name}"
         self._attr_unique_id = f"{DOMAIN}_{name.lower().replace(' ', '_')}"
@@ -58,7 +59,7 @@ class ActronSensorBase(CoordinatorEntity, SensorEntity):
         }
 
 class ActronTemperatureSensor(ActronSensorBase):
-    def __init__(self, coordinator, sensor_type: str):
+    def __init__(self, coordinator: ActronDataCoordinator, sensor_type: str):
         super().__init__(
             coordinator,
             f"{sensor_type.capitalize()} Temperature",
@@ -74,7 +75,7 @@ class ActronTemperatureSensor(ActronSensorBase):
         return self.coordinator.data.get(attr)
 
 class ActronHumiditySensor(ActronSensorBase):
-    def __init__(self, coordinator):
+    def __init__(self, coordinator: ActronDataCoordinator):
         super().__init__(
             coordinator,
             "Humidity",
@@ -88,7 +89,7 @@ class ActronHumiditySensor(ActronSensorBase):
         return self.coordinator.data.get("indoor_humidity")
 
 class ActronBatterySensor(ActronSensorBase):
-    def __init__(self, coordinator):
+    def __init__(self, coordinator: ActronDataCoordinator):
         super().__init__(
             coordinator,
             "Battery",

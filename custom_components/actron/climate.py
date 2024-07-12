@@ -31,18 +31,14 @@ HVAC_MODES = {
 FAN_MODES = [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]
-    entities = []
-    for system in coordinator.data:
-        entities.append(ActronClimate(system, coordinator))
-    async_add_entities(entities, True)
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    async_add_entities([ActronClimate(coordinator)], True)
 
 class ActronClimate(CoordinatorEntity, ClimateEntity):
-    def __init__(self, system: Dict[str, Any], coordinator):
+    def __init__(self, coordinator):
         super().__init__(coordinator)
-        self._system = system
-        self._attr_name = system['name']
-        self._attr_unique_id = f"{DOMAIN}_{system['serial']}"
+        self._attr_name = "Actron Air Neo"
+        self._attr_unique_id = f"{DOMAIN}_climate"
         self._attr_hvac_modes = list(HVAC_MODES.values())
         self._attr_fan_modes = FAN_MODES
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
@@ -54,44 +50,44 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> Optional[float]:
-        return self.coordinator.data[self._system['serial']].get(ATTR_INDOOR_TEMPERATURE)
+        return self.coordinator.data.get(ATTR_INDOOR_TEMPERATURE)
 
     @property
     def target_temperature(self) -> Optional[float]:
         if self.hvac_mode == HVACMode.COOL:
-            return self.coordinator.data[self._system['serial']].get(API_KEY_TEMP_SETPOINT_COOL)
+            return self.coordinator.data.get(API_KEY_TEMP_SETPOINT_COOL)
         elif self.hvac_mode == HVACMode.HEAT:
-            return self.coordinator.data[self._system['serial']].get(API_KEY_TEMP_SETPOINT_HEAT)
+            return self.coordinator.data.get(API_KEY_TEMP_SETPOINT_HEAT)
         return None
 
     @property
     def target_temperature_high(self) -> Optional[float]:
         if self.hvac_mode == HVACMode.AUTO:
-            return self.coordinator.data[self._system['serial']].get(API_KEY_TEMP_SETPOINT_COOL)
+            return self.coordinator.data.get(API_KEY_TEMP_SETPOINT_COOL)
         return None
 
     @property
     def target_temperature_low(self) -> Optional[float]:
         if self.hvac_mode == HVACMode.AUTO:
-            return self.coordinator.data[self._system['serial']].get(API_KEY_TEMP_SETPOINT_HEAT)
+            return self.coordinator.data.get(API_KEY_TEMP_SETPOINT_HEAT)
         return None
 
     @property
     def hvac_mode(self) -> HVACMode:
-        is_on = self.coordinator.data[self._system['serial']].get(API_KEY_IS_ON, False)
+        is_on = self.coordinator.data.get(API_KEY_IS_ON, False)
         if not is_on:
             return HVACMode.OFF
-        mode = self.coordinator.data[self._system['serial']].get(API_KEY_MODE)
+        mode = self.coordinator.data.get(API_KEY_MODE)
         return HVAC_MODES.get(mode, HVACMode.OFF)
 
     @property
     def fan_mode(self) -> Optional[str]:
-        return self.coordinator.data[self._system['serial']].get(API_KEY_FAN_MODE)
+        return self.coordinator.data.get(API_KEY_FAN_MODE)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         return {
-            ATTR_OUTDOOR_TEMPERATURE: self.coordinator.data[self._system['serial']].get(ATTR_OUTDOOR_TEMPERATURE)
+            ATTR_OUTDOOR_TEMPERATURE: self.coordinator.data.get(ATTR_OUTDOOR_TEMPERATURE)
         }
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -120,5 +116,5 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
     async def _send_command(self, command: Dict[str, Any]) -> None:
         full_command = {f"{API_KEY_USER_AIRCON_SETTINGS}.{key}": value for key, value in command.items()}
         full_command["type"] = CMD_SET_SETTINGS
-        await self.coordinator.api.send_command(self._system['serial'], full_command)
+        await self.coordinator.api.send_command(self.coordinator.device_id, full_command)
         await self.coordinator.async_request_refresh()

@@ -30,7 +30,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             status = await self.api.get_ac_status(self.device_id)
             events = await self.api.get_ac_events(self.device_id)
 
-            return self._parse_system_data(status, events)
+            return self._parse_data(status, events)
 
         except AuthenticationError as auth_err:
             _LOGGER.error("Authentication error: %s", auth_err)
@@ -42,29 +42,30 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Unexpected error: %s", err)
             raise UpdateFailed("Unexpected error occurred") from err
 
-    def _parse_system_data(self, status: Dict[str, Any], events: Dict[str, Any]) -> Dict[str, Any]:
-        user_settings = status.get('UserAirconSettings', {})
-        system_status = status.get('SystemStatus_Local', {})
-        
-        parsed_data = {
-            'isOn': user_settings.get('isOn', False),
-            'mode': user_settings.get('Mode', 'OFF'),
-            'fanMode': user_settings.get('FanMode', 'AUTO'),
-            'TemperatureSetpoint_Cool_oC': user_settings.get('TemperatureSetpoint_Cool_oC'),
-            'TemperatureSetpoint_Heat_oC': user_settings.get('TemperatureSetpoint_Heat_oC'),
-        }
+    def _parse_data(self, status: Dict[str, Any], events: Dict[str, Any]) -> Dict[str, Any]:
+        parsed_data = {}
+        if 'UserAirconSettings' in status:
+            user_settings = status['UserAirconSettings']
+            parsed_data.update({
+                'isOn': user_settings.get('isOn', False),
+                'mode': user_settings.get('Mode', 'OFF'),
+                'fanMode': user_settings.get('FanMode', 'AUTO'),
+                'temperatureSetpointCool': user_settings.get('TemperatureSetpoint_Cool_oC'),
+                'temperatureSetpointHeat': user_settings.get('TemperatureSetpoint_Heat_oC'),
+            })
 
-        if 'SensorInputs' in system_status:
-            sensor_inputs = system_status['SensorInputs']
-            if 'SHTC1' in sensor_inputs:
-                shtc1 = sensor_inputs['SHTC1']
-                parsed_data['indoor_temperature'] = shtc1.get('Temperature_oC')
-                parsed_data['indoor_humidity'] = shtc1.get('RelativeHumidity_pc')
-            if 'Battery' in sensor_inputs:
-                parsed_data['battery_level'] = sensor_inputs['Battery'].get('Level')
-        
-        if 'Outdoor' in system_status:
-            parsed_data['outdoor_temperature'] = system_status['Outdoor'].get('Temperature_oC')
+        if 'SystemStatus_Local' in status:
+            system_status = status['SystemStatus_Local']
+            if 'SensorInputs' in system_status:
+                sensor_inputs = system_status['SensorInputs']
+                if 'SHTC1' in sensor_inputs:
+                    shtc1 = sensor_inputs['SHTC1']
+                    parsed_data['indoor_temperature'] = shtc1.get('Temperature_oC')
+                    parsed_data['indoor_humidity'] = shtc1.get('RelativeHumidity_pc')
+                if 'Battery' in sensor_inputs:
+                    parsed_data['battery_level'] = sensor_inputs['Battery'].get('Level')
+            if 'Outdoor' in system_status:
+                parsed_data['outdoor_temperature'] = system_status['Outdoor'].get('Temperature_oC')
 
         parsed_data['zones'] = self._parse_zone_data(status)
         parsed_data['events'] = events.get('events', [])
@@ -87,8 +88,3 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             }
 
         return zones
-
-async def async_setup_coordinator(hass: HomeAssistant, api: ActronApi, device_id: str, update_interval: int) -> ActronDataCoordinator:
-    coordinator = ActronDataCoordinator(hass, api, device_id, update_interval)
-    await coordinator.async_config_entry_first_refresh()
-    return coordinator

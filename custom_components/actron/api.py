@@ -69,6 +69,27 @@ class ActronApi:
                 })
         return devices
 
+    async def get_ac_status(self, serial: str) -> Dict[str, Any]:
+        url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
+        return await self._authenticated_get(url)
+
+    async def get_ac_events(self, serial: str) -> Dict[str, Any]:
+        url = f"{API_URL}/api/v0/client/ac-systems/events/latest?serial={serial}"
+        return await self._authenticated_get(url)
+
+    async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
+        url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
+        headers = {
+            "Authorization": f"Bearer {self.bearer_token}",
+            "Content-Type": "application/json"
+        }
+        data = {"command": command}
+        async with self.session.post(url, headers=headers, json=data) as response:
+            if response.status != 200:
+                text = await response.text()
+                raise ApiError(f"Failed to send command: {response.status}, {text}")
+            return await response.json()
+
     async def _authenticated_get(self, url: str) -> Dict[str, Any]:
         if not self.bearer_token:
             raise AuthenticationError("Not authenticated")

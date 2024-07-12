@@ -4,90 +4,77 @@ from homeassistant.components.climate.const import (
     ClimateEntityFeature,
     HVACMode,
     HVACAction,
-    ATTR_HVAC_MODE,
-    ATTR_FAN_MODE,
 )
-from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
-from .api import ActronApi
+from homeassistant.const import (
+    ATTR_TEMPERATURE,
+    UnitOfTemperature,
+)
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from .const import DOMAIN, ATTR_INDOOR_TEMPERATURE, ATTR_OUTDOOR_TEMPERATURE
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    api = ActronApi(
-        username=config_entry.data["username"],
-        password=config_entry.data["password"],
-        device_id=config_entry.data["device_id"]
-    )
-    await api.authenticate()
-    systems = await api.list_ac_systems()
-
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
     entities = []
-    for system in systems:
-        if isinstance(system, dict) and "name" in system and "serial" in system:
-            entities.append(ActronClimate(system, api))
-        else:
-            _LOGGER.error(f"Unexpected system data structure: {system}")
+    for system in coordinator.data:
+        entities.append(ActronClimate(system, coordinator))
+    async_add_entities(entities, True)
 
-    async_add_entities(entities, update_before_add=True)
-
-class ActronClimate(ClimateEntity):
-    def __init__(self, system, api):
-        _LOGGER.debug(f"Initializing ActronClimate with system: {system}")
+class ActronClimate(CoordinatorEntity, ClimateEntity):
+    def __init__(self, system, coordinator):
+        super().__init__(coordinator)
         self._system = system
-        self._api = api
-        self._name = system['name']
-        self._unique_id = system['serial']
-        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT]
+        self._attr_name = system['name']
+        self._attr_unique_id = f"{DOMAIN}_{system['serial']}"
+        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.AUTO]
         self._attr_fan_modes = ["AUTO", "LOW", "MEDIUM", "HIGH"]
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-        self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE
-        self._target_temperature = None
+        self._attr_supported_features = (
+            ClimateEntityFeature.TARGET_TEMPERATURE |
+            ClimateEntityFeature.FAN_MODE
+        )
 
     @property
-    def name(self):
-        return self._name
+    def current_temperature(self):
+        return self.coordinator.data[self._system['serial']].get(ATTR_INDOOR_TEMPERATURE)
 
     @property
-    def unique_id(self):
-        return self._unique_id
+    def target_temperature(self):
+        return self.coordinator.data[self._system['serial']].get('TemperatureSetpoint_Cool_oC')
 
     @property
     def hvac_mode(self):
-        return self._attr_hvac_modes
+        if self.coordinator.data[self._system['serial']].get('isOn'):
+            return HVACMode.COOL  # Assuming cool mode, adjust as needed
+        return HVACMode.OFF
 
     @property
     def fan_mode(self):
-        return self._attr_fan_modes
+        return self.coordinator.data[self._system['serial']].get('fanMode', 'AUTO')
 
     @property
-    def temperature_unit(self):
-        return self._attr_temperature_unit
-
-    @property
-    def supported_features(self):
-        return self._attr_supported_features
-
-    async def async_update(self):
-        try:
-            status = await self._api.get_ac_status(self._unique_id)
-            _LOGGER.debug(f"AC status: {status}")
-            if "UserAirconSettings" in status:
-                user_settings = status["UserAirconSettings"]
-                self._target_temperature = user_settings.get("TemperatureSetpoint_Cool_oC", None)
-            else:
-                _LOGGER.error("UserAirconSettings not available in the response.")
-                _LOGGER.debug(f"Full API response: {status}")
-        except KeyError as e:
-            _LOGGER.error(f"Key error in AC status response: {e}")
-            _LOGGER.debug(f"Full API response: {status}")
-        except Exception as e:
-            _LOGGER.error(f"Error updating AC status: {e}")
+    def extra_state_attributes(self):
+        return {
+            ATTR_OUTDOOR_TEMPERATURE: self.coordinator.data[self._system['serial']].get(ATTR_OUTDOOR_TEMPERATURE)
+        }
 
     async def async_set_temperature(self, **kwargs):
         if ATTR_TEMPERATURE in kwargs:
-            self._target_temperature = kwargs[ATTR_TEMPERATURE]
-            await self._api.send_command(self._unique_id, {
-                "UserAirconSettings.TemperatureSetpoint_Cool_oC": self._target_temperature,
+            await self.coordinator.api.send_command(self._system['serial'], {
+                "UserAirconSettings.TemperatureSetpoint_Cool_oC": kwargs[ATTR_TEMPERATURE],
                 "type": "set-settings"
             })
-        self.async_write_ha_state()
+            await self.coordinator.async_request_refresh()
+
+    async def async_set_hvac_mode(self, hvac_mode):
+        if hvac_mode == HVACMode.OFF:
+            command = {"isOn": False}
+        else:
+            command = {"isOn": True, "mode": hvac_mode.upper()}
+        await self.coordinator.api.send_command(self._system['serial'], command)
+        await self.coordinator.async_request_refresh()
+
+    async def async_set_fan_mode(self, fan_mode):
+        await self.coordinator.api.send_command(self._system['serial'], {"fanMode": fan_mode})
+        await self.coordinator.async_request_refresh()

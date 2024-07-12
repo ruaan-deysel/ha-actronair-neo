@@ -1,10 +1,10 @@
 {
-  "title": "Actron AC",
+  "title": "Actron Air Neo",
   "config": {
     "step": {
       "user": {
-        "title": "Configure Actron AC",
-        "description": "Please enter your Actron AC account details.",
+        "title": "Configure Actron Air Neo",
+        "description": "Please enter your Actron Air Neo account details.",
         "data": {
           "username": "Username",
           "password": "Password",
@@ -13,17 +13,19 @@
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect to the Actron API. Please check your credentials."
+      "cannot_connect": "Failed to connect. Please check your internet connection and credentials.",
+      "invalid_auth": "Invalid authentication. Please check your username and password.",
+      "unknown": "An unexpected error occurred. Please try again later."
     },
     "abort": {
-      "already_configured": "This account is already configured."
+      "already_configured": "This Actron Air Neo account is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Adjust your options",
-        "description": "Set the update interval for the Actron AC integration.",
+        "title": "Actron Air Neo Options",
+        "description": "Adjust settings for your Actron Air Neo integration.",
         "data": {
           "update_interval": "Update Interval (seconds)"
         }

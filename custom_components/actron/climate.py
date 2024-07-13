@@ -17,7 +17,6 @@ from .const import (
     API_KEY_TEMP_SETPOINT_COOL, API_KEY_TEMP_SETPOINT_HEAT,
     CMD_SET_SETTINGS
 )
-from .coordinator import ActronDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +35,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     async_add_entities([ActronClimate(coordinator)], True)
 
 class ActronClimate(CoordinatorEntity, ClimateEntity):
-    def __init__(self, coordinator: ActronDataCoordinator):
+    def __init__(self, coordinator):
         super().__init__(coordinator)
         self._attr_name = "Actron Air Neo"
         self._attr_unique_id = f"{DOMAIN}_climate"
@@ -46,7 +45,9 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         self._attr_supported_features = (
             ClimateEntityFeature.TARGET_TEMPERATURE |
             ClimateEntityFeature.FAN_MODE |
-            ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+            ClimateEntityFeature.TARGET_TEMPERATURE_RANGE |
+            ClimateEntityFeature.TURN_ON |
+            ClimateEntityFeature.TURN_OFF
         )
 
     @property
@@ -56,34 +57,34 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
     @property
     def target_temperature(self) -> Optional[float]:
         if self.hvac_mode == HVACMode.COOL:
-            return self.coordinator.data.get(API_KEY_TEMP_SETPOINT_COOL)
+            return self.coordinator.data.get('temperatureSetpointCool')
         elif self.hvac_mode == HVACMode.HEAT:
-            return self.coordinator.data.get(API_KEY_TEMP_SETPOINT_HEAT)
+            return self.coordinator.data.get('temperatureSetpointHeat')
         return None
 
     @property
     def target_temperature_high(self) -> Optional[float]:
         if self.hvac_mode == HVACMode.AUTO:
-            return self.coordinator.data.get(API_KEY_TEMP_SETPOINT_COOL)
+            return self.coordinator.data.get('temperatureSetpointCool')
         return None
 
     @property
     def target_temperature_low(self) -> Optional[float]:
         if self.hvac_mode == HVACMode.AUTO:
-            return self.coordinator.data.get(API_KEY_TEMP_SETPOINT_HEAT)
+            return self.coordinator.data.get('temperatureSetpointHeat')
         return None
 
     @property
     def hvac_mode(self) -> HVACMode:
-        is_on = self.coordinator.data.get(API_KEY_IS_ON, False)
+        is_on = self.coordinator.data.get('isOn', False)
         if not is_on:
             return HVACMode.OFF
-        mode = self.coordinator.data.get(API_KEY_MODE)
+        mode = self.coordinator.data.get('mode')
         return HVAC_MODES.get(mode, HVACMode.OFF)
 
     @property
     def fan_mode(self) -> Optional[str]:
-        return self.coordinator.data.get(API_KEY_FAN_MODE)
+        return self.coordinator.data.get('fanMode')
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -113,6 +114,12 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         await self._send_command({API_KEY_FAN_MODE: fan_mode})
+
+    async def async_turn_on(self) -> None:
+        await self._send_command({API_KEY_IS_ON: True})
+
+    async def async_turn_off(self) -> None:
+        await self._send_command({API_KEY_IS_ON: False})
 
     async def _send_command(self, command: Dict[str, Any]) -> None:
         full_command = {f"{API_KEY_USER_AIRCON_SETTINGS}.{key}": value for key, value in command.items()}

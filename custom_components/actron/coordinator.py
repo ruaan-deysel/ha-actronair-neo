@@ -30,6 +30,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             status = await self.api.get_ac_status(self.device_id)
             events = await self.api.get_ac_events(self.device_id)
 
+            _LOGGER.debug(f"Raw status data: {status}")
+            _LOGGER.debug(f"Raw events data: {events}")
+
             return self._parse_data(status, events)
 
         except AuthenticationError as auth_err:
@@ -70,6 +73,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         parsed_data['zones'] = self._parse_zone_data(status)
         parsed_data['events'] = events.get('events', [])
 
+        _LOGGER.debug(f"Parsed data: {parsed_data}")
         return parsed_data
 
     def _parse_zone_data(self, status: Dict[str, Any]) -> Dict[str, Any]:

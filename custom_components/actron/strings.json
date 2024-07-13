@@ -20,10 +20,11 @@
     "error": {
       "invalid_auth": "Invalid authentication",
       "no_devices": "No devices found on your account",
+      "cannot_connect": "Failed to connect to the Actron API",
       "unknown": "Unexpected error occurred"
     },
     "abort": {
-      "already_configured": "Device is already configured"
+      "already_configured": "This Actron Air Neo device is already configured"
     }
   },
   "options": {
@@ -32,6 +33,20 @@
         "title": "Actron Air Neo Options",
         "data": {
           "update_interval": "Update Interval (seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "climate": {
+      "actron_air_neo": {
+        "state_attributes": {
+          "fan_mode": {
+            "auto": "Auto",
+            "low": "Low",
+            "medium": "Medium",
+            "high": "High"
+          }
         }
       }
     }

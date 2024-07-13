@@ -28,12 +28,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 await self.api.authenticate()
 
             status = await self.api.get_ac_status(self.device_id)
-            events = await self.api.get_ac_events(self.device_id)
-
-            _LOGGER.debug(f"Raw status data: {status}")
-            _LOGGER.debug(f"Raw events data: {events}")
-
-            return self._parse_data(status, events)
+            return self._parse_data(status)
 
         except AuthenticationError as auth_err:
             _LOGGER.error("Authentication error: %s", auth_err)
@@ -45,50 +40,40 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Unexpected error: %s", err)
             raise UpdateFailed("Unexpected error occurred") from err
 
-    def _parse_data(self, status: Dict[str, Any], events: Dict[str, Any]) -> Dict[str, Any]:
+    def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         parsed_data = {}
-        if 'UserAirconSettings' in status:
-            user_settings = status['UserAirconSettings']
-            parsed_data.update({
-                'isOn': user_settings.get('isOn', False),
-                'mode': user_settings.get('Mode', 'OFF'),
-                'fanMode': user_settings.get('FanMode', 'AUTO'),
-                'temperatureSetpointCool': user_settings.get('TemperatureSetpoint_Cool_oC'),
-                'temperatureSetpointHeat': user_settings.get('TemperatureSetpoint_Heat_oC'),
-            })
+        system_data = data.get("<22H09780>", {})
+        
+        user_settings = system_data.get("UserAirconSettings", {})
+        live_aircon = system_data.get("LiveAircon", {})
+        master_info = system_data.get("MasterInfo", {})
 
-        if 'SystemStatus_Local' in status:
-            system_status = status['SystemStatus_Local']
-            if 'SensorInputs' in system_status:
-                sensor_inputs = system_status['SensorInputs']
-                if 'SHTC1' in sensor_inputs:
-                    shtc1 = sensor_inputs['SHTC1']
-                    parsed_data['indoor_temperature'] = shtc1.get('Temperature_oC')
-                    parsed_data['indoor_humidity'] = shtc1.get('RelativeHumidity_pc')
-                if 'Battery' in sensor_inputs:
-                    parsed_data['battery_level'] = sensor_inputs['Battery'].get('Level')
-            if 'Outdoor' in system_status:
-                parsed_data['outdoor_temperature'] = system_status['Outdoor'].get('Temperature_oC')
+        parsed_data["main"] = {
+            "is_on": user_settings.get("isOn", False),
+            "mode": user_settings.get("Mode", "OFF"),
+            "fan_mode": user_settings.get("FanMode", "AUTO"),
+            "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
+            "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
+            "indoor_temp": master_info.get("LiveTemp_oC"),
+            "indoor_humidity": master_info.get("LiveHumidity_pc"),
+            "outdoor_temp": live_aircon.get("OutdoorUnit", {}).get("AmbTemp"),
+            "away_mode": user_settings.get("AwayMode", False),
+        }
 
-        parsed_data['zones'] = self._parse_zone_data(status)
-        parsed_data['events'] = events.get('events', [])
-
-        _LOGGER.debug(f"Parsed data: {parsed_data}")
-        return parsed_data
-
-    def _parse_zone_data(self, status: Dict[str, Any]) -> Dict[str, Any]:
-        zones = {}
-        user_settings = status.get('UserAirconSettings', {})
-        remote_zone_info = status.get('RemoteZoneInfo', {})
-
-        for i, enabled in enumerate(user_settings.get('EnabledZones', [])):
-            zone_data = remote_zone_info.get(str(i), {})
-            zones[str(i)] = {
-                'enabled': enabled,
-                'name': zone_data.get('Name', f'Zone {i}'),
-                'temperature': zone_data.get('Temperature_oC'),
-                'target_temperature_cool': zone_data.get('TemperatureSetpoint_Cool_oC'),
-                'target_temperature_heat': zone_data.get('TemperatureSetpoint_Heat_oC'),
+        parsed_data["zones"] = {}
+        for zone in system_data.get("RemoteZoneInfo", []):
+            zone_id = zone.get("NV_Title", "Unknown")
+            parsed_data["zones"][zone_id] = {
+                "temp": zone.get("LiveTemp_oC"),
+                "humidity": zone.get("LiveHumidity_pc"),
+                "setpoint_cool": zone.get("TemperatureSetpoint_Cool_oC"),
+                "setpoint_heat": zone.get("TemperatureSetpoint_Heat_oC"),
+                "is_enabled": zone.get("CanOperate", False),
             }
 
-        return zones
+        return parsed_data
+
+async def async_setup_coordinator(hass: HomeAssistant, api: ActronApi, device_id: str, update_interval: int) -> ActronDataCoordinator:
+    coordinator = ActronDataCoordinator(hass, api, device_id, update_interval)
+    await coordinator.async_config_entry_first_refresh()
+    return coordinator

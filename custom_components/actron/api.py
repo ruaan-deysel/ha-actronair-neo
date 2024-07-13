@@ -1,7 +1,7 @@
 import aiohttp
 import logging
 from typing import Dict, Any, List
-from .const import API_URL
+from .const import API_URL, CMD_SET_SETTINGS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,15 +59,7 @@ class ActronApi:
 
     async def get_devices(self) -> List[Dict[str, Any]]:
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
-        systems = await self._authenticated_get(url)
-        devices = []
-        if '_embedded' in systems and 'ac-system' in systems['_embedded']:
-            for system in systems['_embedded']['ac-system']:
-                devices.append({
-                    'name': system.get('description', 'Unknown'),
-                    'serial': system.get('serial', 'Unknown')
-                })
-        return devices
+        return await self._authenticated_get(url)
 
     async def get_ac_status(self, serial: str) -> Dict[str, Any]:
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
@@ -83,7 +75,7 @@ class ActronApi:
             "Authorization": f"Bearer {self.bearer_token}",
             "Content-Type": "application/json"
         }
-        data = {"command": command}
+        data = {"command": {**command, "type": CMD_SET_SETTINGS}}
         async with self.session.post(url, headers=headers, json=data) as response:
             if response.status != 200:
                 text = await response.text()

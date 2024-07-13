@@ -5,6 +5,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from .const import DOMAIN, PLATFORMS, DEFAULT_UPDATE_INTERVAL
 from .api import ActronApi
 from .coordinator import ActronDataCoordinator
+from .services import async_setup_services, async_unload_services
 import logging
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         
+        await async_setup_services(hass)
+        
         entry.async_on_unload(entry.add_update_listener(update_listener))
         return True
     except Exception as exc:
@@ -48,6 +51,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.api.close()
+        await async_unload_services(hass)
     return unload_ok
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry):

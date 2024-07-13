@@ -1,11 +1,12 @@
 {
   "domain": "actron_air_neo",
   "name": "Actron Air Neo",
-  "version": "0.1.2",
-  "documentation": "https://github.com/domalab/ha-actronair-neo/wiki",
-  "issue_tracker": "https://github.com/domalab/ha-actronair-neo/issues",
+  "version": "0.2.0",
+  "documentation": "https://github.com/your_username/ha-actronair-neo/wiki",
+  "issue_tracker": "https://github.com/your_username/ha-actronair-neo/issues",
   "dependencies": [],
-  "codeowners": ["@domalab"],
-  "config_flow": true,
-  "iot_class": "cloud_polling"
+  "codeowners": ["@your_github_username"],
+  "requirements": ["aiohttp==3.8.1"],
+  "iot_class": "cloud_polling",
+  "config_flow": true
 }

@@ -1,6 +1,7 @@
 from homeassistant.const import (
     UnitOfTemperature,
     PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     Platform
 )
 
@@ -31,12 +32,19 @@ FAN_HIGH_CONT = "HIGH-CONT"
 # Attributes
 ATTR_INDOOR_TEMPERATURE = "indoor_temperature"
 ATTR_OUTDOOR_TEMPERATURE = "outdoor_temperature"
-ATTR_FILTER_LIFE = "filter_life"
-ATTR_ZONE_TEMP = "zone_temperature"
+ATTR_INDOOR_HUMIDITY = "indoor_humidity"
+ATTR_ZONE_TEMPERATURE = "zone_temperature"
+ATTR_ZONE_HUMIDITY = "zone_humidity"
+ATTR_BATTERY_LEVEL = "battery_level"
+ATTR_SIGNAL_STRENGTH = "signal_strength"
+ATTR_IS_ENABLED = "is_enabled"
+ATTR_SETPOINT_COOL = "setpoint_cool"
+ATTR_SETPOINT_HEAT = "setpoint_heat"
 
 # Units
 TEMP_UNIT = UnitOfTemperature.CELSIUS
 PERCENTAGE_UNIT = PERCENTAGE
+SIGNAL_STRENGTH_UNIT = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
 
 # Command types
 CMD_SET_SETTINGS = "set-settings"
@@ -50,3 +58,15 @@ API_KEY_FAN_MODE = "FanMode"
 API_KEY_TEMP_SETPOINT_COOL = "TemperatureSetpoint_Cool_oC"
 API_KEY_TEMP_SETPOINT_HEAT = "TemperatureSetpoint_Heat_oC"
 API_KEY_ENABLED_ZONES = "EnabledZones"
+
+# Device types
+DEVICE_TYPE_ZONE_SENSOR = "Zone Sensor"
+
+# Event types
+EVENT_TYPE_AC_ON_OFF = "AC On/Off"
+EVENT_TYPE_REG_WRITE = "IDU->WC Reg Write"
+
+# Error messages
+ERROR_AUTHENTICATION = "Authentication failed"
+ERROR_API_REQUEST = "Failed to fetch data from Actron API"
+ERROR_UNEXPECTED = "Unexpected error occurred"

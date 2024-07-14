@@ -35,9 +35,6 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except Exception as e:
                 _LOGGER.error("Unexpected error: %s", e)
                 errors["base"] = "unknown"
-            finally:
-                if self.api:
-                    await self.api.close()
 
         return self.async_show_form(
             step_id="user",

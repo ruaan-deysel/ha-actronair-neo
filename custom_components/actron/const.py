@@ -4,6 +4,7 @@ from homeassistant.const import (
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     Platform
 )
+from homeassistant.components.climate.const import HVACMode
 
 DOMAIN = "actron_air_neo"
 API_URL = "https://nimbus.actronair.com.au"
@@ -13,21 +14,19 @@ PLATFORMS = [Platform.CLIMATE, Platform.SENSOR]
 DEFAULT_UPDATE_INTERVAL = 60
 
 # HVAC modes
-HVAC_MODE_OFF = "OFF"
-HVAC_MODE_AUTO = "AUTO"
-HVAC_MODE_COOL = "COOL"
-HVAC_MODE_HEAT = "HEAT"
-HVAC_MODE_FAN_ONLY = "FAN"
+HVAC_MODES = {
+    "OFF": HVACMode.OFF,
+    "AUTO": HVACMode.AUTO,
+    "COOL": HVACMode.COOL,
+    "HEAT": HVACMode.HEAT,
+    "FAN": HVACMode.FAN_ONLY,
+}
 
 # Fan modes
 FAN_AUTO = "AUTO"
 FAN_LOW = "LOW"
 FAN_MEDIUM = "MED"
 FAN_HIGH = "HIGH"
-FAN_AUTO_CONT = "AUTO-CONT"
-FAN_LOW_CONT = "LOW-CONT"
-FAN_MEDIUM_CONT = "MED-CONT"
-FAN_HIGH_CONT = "HIGH-CONT"
 
 # Attributes
 ATTR_INDOOR_TEMPERATURE = "indoor_temperature"
@@ -58,15 +57,3 @@ API_KEY_FAN_MODE = "FanMode"
 API_KEY_TEMP_SETPOINT_COOL = "TemperatureSetpoint_Cool_oC"
 API_KEY_TEMP_SETPOINT_HEAT = "TemperatureSetpoint_Heat_oC"
 API_KEY_ENABLED_ZONES = "EnabledZones"
-
-# Device types
-DEVICE_TYPE_ZONE_SENSOR = "Zone Sensor"
-
-# Event types
-EVENT_TYPE_AC_ON_OFF = "AC On/Off"
-EVENT_TYPE_REG_WRITE = "IDU->WC Reg Write"
-
-# Error messages
-ERROR_AUTHENTICATION = "Authentication failed"
-ERROR_API_REQUEST = "Failed to fetch data from Actron API"
-ERROR_UNEXPECTED = "Unexpected error occurred"

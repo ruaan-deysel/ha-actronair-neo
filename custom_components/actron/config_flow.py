@@ -54,8 +54,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_select_device(self, devices, user_input=None):
         """Handle the device selection step."""
         if user_input is not None:
+            selected_device = next(device["name"] for device in devices if device["serial"] == user_input["device_id"])
             return self.async_create_entry(
-                title=next(device["name"] for device in devices if device["serial"] == user_input["device_id"]),
+                title=selected_device,
                 data={
                     "username": user_input["username"],
                     "password": user_input["password"],

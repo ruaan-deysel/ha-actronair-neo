@@ -2,13 +2,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.const import CONF_USERNAME, CONF_PASSWORD, CONF_DEVICE_ID
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import aiohttp_client, device_registry as dr
+from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_import_module
 from .const import DOMAIN, PLATFORMS, DEFAULT_UPDATE_INTERVAL
-from .api import ActronApi
-from .coordinator import ActronDataCoordinator
-from .services import async_setup_services, async_unload_services
 import logging
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,13 +18,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Actron Air Neo from a config entry."""
     try:
-        api = ActronApi(
+        api_module = await async_import_module(hass, f"{DOMAIN}.api")
+        coordinator_module = await async_import_module(hass, f"{DOMAIN}.coordinator")
+        services_module = await async_import_module(hass, f"{DOMAIN}.services")
+
+        api = api_module.ActronApi(
             username=entry.data[CONF_USERNAME],
             password=entry.data[CONF_PASSWORD]
         )
 
         update_interval = entry.options.get("update_interval", DEFAULT_UPDATE_INTERVAL)
-        coordinator = ActronDataCoordinator(
+        coordinator = coordinator_module.ActronDataCoordinator(
             hass,
             api,
             entry.data[CONF_DEVICE_ID],
@@ -39,10 +40,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN][entry.entry_id] = coordinator
 
         for platform in PLATFORMS:
-            platform_module = await async_import_module(hass, f"custom_components.{DOMAIN}.{platform}")
-            await platform_module.async_setup_entry(hass, entry)
+            hass.async_create_task(
+                hass.config_entries.async_forward_entry_setup(entry, platform)
+            )
 
-        await async_setup_services(hass)
+        await services_module.async_setup_services(hass)
         
         entry.async_on_unload(entry.add_update_listener(update_listener))
         return True
@@ -52,16 +54,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    unload_ok = all(
-        await asyncio.gather(
-            *[hass.config_entries.async_forward_entry_unload(entry, platform)
-              for platform in PLATFORMS]
-        )
-    )
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.api.close()
-        await async_unload_services(hass)
+        services_module = await async_import_module(hass, f"{DOMAIN}.services")
+        await services_module.async_unload_services(hass)
     return unload_ok
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

@@ -1,91 +1,67 @@
-import logging
-import voluptuous as vol
-from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.const import CONF_USERNAME, CONF_PASSWORD, CONF_DEVICE_ID
-from .api import ActronApi, AuthenticationError
-from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import aiohttp_client
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.loader import async_import_module
+from .const import DOMAIN, PLATFORMS, DEFAULT_UPDATE_INTERVAL
+import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up the Actron Air Neo component."""
+    hass.data.setdefault(DOMAIN, {})
+    return True
 
-    def __init__(self):
-        self.api = None
-        self.devices = []
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Actron Air Neo from a config entry."""
+    try:
+        api_module = await async_import_module(hass, f"{DOMAIN}.api")
+        coordinator_module = await async_import_module(hass, f"{DOMAIN}.coordinator")
+        services_module = await async_import_module(hass, f"{DOMAIN}.services")
 
-    async def async_step_user(self, user_input=None):
-        errors = {}
-        if user_input is not None:
-            try:
-                self.api = ActronApi(
-                    username=user_input[CONF_USERNAME],
-                    password=user_input[CONF_PASSWORD]
-                )
-                await self.api.authenticate()
-                self.devices = await self.api.get_devices()
-                if not self.devices:
-                    errors["base"] = "no_devices"
-                else:
-                    return await self.async_step_select_device()
-            except AuthenticationError:
-                errors["base"] = "invalid_auth"
-            except Exception as e:
-                _LOGGER.error("Unexpected error: %s", e)
-                errors["base"] = "unknown"
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema({
-                vol.Required(CONF_USERNAME): str,
-                vol.Required(CONF_PASSWORD): str,
-            }),
-            errors=errors,
+        api = api_module.ActronApi(
+            username=entry.data[CONF_USERNAME],
+            password=entry.data[CONF_PASSWORD]
         )
 
-    async def async_step_select_device(self, user_input=None):
-        if user_input is not None:
-            device_id = user_input[CONF_DEVICE_ID]
-            await self.async_set_unique_id(device_id)
-            self._abort_if_unique_id_configured()
-            return self.async_create_entry(
-                title=f"Actron Air Neo {device_id}",
-                data={
-                    CONF_USERNAME: self.api.username,
-                    CONF_PASSWORD: self.api.password,
-                    CONF_DEVICE_ID: device_id
-                }
+        update_interval = entry.options.get("update_interval", DEFAULT_UPDATE_INTERVAL)
+        coordinator = coordinator_module.ActronDataCoordinator(
+            hass,
+            api,
+            entry.data[CONF_DEVICE_ID],
+            update_interval
+        )
+
+        await coordinator.async_config_entry_first_refresh()
+
+        hass.data[DOMAIN][entry.entry_id] = coordinator
+
+        for platform in PLATFORMS:
+            hass.async_create_task(
+                hass.config_entries.async_forward_entry_setup(entry, platform)
             )
 
-        device_dict = {device['serial']: device['name'] for device in self.devices}
-        return self.async_show_form(
-            step_id="select_device",
-            data_schema=vol.Schema({
-                vol.Required(CONF_DEVICE_ID): vol.In(device_dict)
-            })
-        )
+        await services_module.async_setup_services(hass)
+        
+        entry.async_on_unload(entry.add_update_listener(update_listener))
+        return True
+    except Exception as exc:
+        _LOGGER.error("Error setting up Actron Air Neo integration: %s", exc)
+        raise ConfigEntryNotReady from exc
 
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry):
-        return ActronOptionsFlowHandler(config_entry)
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        coordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        await coordinator.api.close()
+        services_module = await async_import_module(hass, f"{DOMAIN}.services")
+        await services_module.async_unload_services(hass)
+    return unload_ok
 
-class ActronOptionsFlowHandler(config_entries.OptionsFlow):
-    def __init__(self, config_entry):
-        self.config_entry = config_entry
-
-    async def async_step_init(self, user_input=None):
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema({
-                vol.Optional(
-                    "update_interval",
-                    default=self.config_entry.options.get("update_interval", DEFAULT_UPDATE_INTERVAL)
-                ): int,
-            })
-        )
+async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update."""
+    await hass.config_entries.async_reload(entry.entry_id)

@@ -49,12 +49,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         
         _LOGGER.debug("Received data: %s", data)
         
-        system_data_key = next((key for key in data.keys() if key.startswith("<") and key.endswith(">")), None)
+        last_known_state = data.get('lastKnownState', {})
+        system_data_key = next((key for key in last_known_state.keys() if key.startswith("<") and key.endswith(">")), None)
         if not system_data_key:
             _LOGGER.error("No valid system data key found in the data")
             return parsed_data
 
-        system_data = data.get(system_data_key, {})
+        system_data = last_known_state[system_data_key]
         
         user_settings = system_data.get("UserAirconSettings", {})
         live_aircon = system_data.get("LiveAircon", {})
@@ -76,8 +77,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         }
 
         parsed_data["zones"] = {}
-        for idx, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
-            zone_id = zone.get("NV_Title", f"Zone {idx + 1}")
+        for zone in system_data.get("RemoteZoneInfo", []):
+            zone_id = zone.get("NV_Title", "Unknown Zone")
             parsed_data["zones"][zone_id] = {
                 "temp": zone.get("LiveTemp_oC"),
                 "humidity": zone.get("LiveHumidity_pc"),

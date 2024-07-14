@@ -27,11 +27,11 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Actron Air Neo sensors."""
-    coordinator: ActronDataCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = []
 
     # Main system sensors

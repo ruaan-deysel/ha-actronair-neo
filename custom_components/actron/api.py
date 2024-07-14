@@ -86,7 +86,9 @@ class ActronApi:
     async def get_ac_status(self, serial: str) -> Dict[str, Any]:
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
         try:
-            return await self._authenticated_get(url)
+            data = await self._authenticated_get(url)
+            _LOGGER.debug("AC status response: %s", data)
+            return data
         except ApiError as err:
             _LOGGER.error("Failed to get AC status: %s", err)
             raise

@@ -28,6 +28,8 @@ FAN_LOW = "LOW"
 FAN_MEDIUM = "MED"
 FAN_HIGH = "HIGH"
 
+FAN_MODES = [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
+
 # Attributes
 ATTR_INDOOR_TEMPERATURE = "indoor_temperature"
 ATTR_OUTDOOR_TEMPERATURE = "outdoor_temperature"

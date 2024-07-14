@@ -47,7 +47,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         parsed_data = {}
         
-        # Find the correct system data key dynamically
+        _LOGGER.debug("Received data: %s", data)
+        
         system_data_key = next((key for key in data.keys() if key.startswith("<") and key.endswith(">")), None)
         if not system_data_key:
             _LOGGER.error("No valid system data key found in the data")

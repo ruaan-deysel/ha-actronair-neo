@@ -1,26 +1,13 @@
-import logging
-from typing import Any, Dict, List, Optional
-
-from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import (
-    ClimateEntityFeature,
-    HVACMode,
-)
+from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature
+from homeassistant.components.climate.const import HVACMode
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
-
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .const import (
-    DOMAIN,
-    HVAC_MODES,
-    FAN_MODES,
-)
+
+from .const import DOMAIN, HVAC_MODES, FAN_MODES
+
+import logging
 
 _LOGGER = logging.getLogger(__name__)
-
-async def async_setup_entry(hass, config_entry, async_add_entities):
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]
-    entities = [ActronClimate(coordinator, zone_id) for zone_id in coordinator.data['zones']]
-    async_add_entities(entities, True)
 
 class ActronClimate(CoordinatorEntity, ClimateEntity):
     def __init__(self, coordinator, zone_id):
@@ -34,15 +21,17 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         self._attr_supported_features = (
             ClimateEntityFeature.TARGET_TEMPERATURE |
             ClimateEntityFeature.FAN_MODE |
-            ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+            ClimateEntityFeature.TARGET_TEMPERATURE_RANGE |
+            ClimateEntityFeature.PRESET_MODE
         )
+        self._attr_preset_modes = ["Normal", "Away", "Quiet"]
 
     @property
-    def current_temperature(self) -> Optional[float]:
-        return self.coordinator.data['zones'][self._zone_id]['temperature']
+    def current_temperature(self) -> float | None:
+        return self.coordinator.data['zones'][self._zone_id]['temp']
 
     @property
-    def target_temperature(self) -> Optional[float]:
+    def target_temperature(self) -> float | None:
         if self.hvac_mode == HVACMode.COOL:
             return self.coordinator.data['zones'][self._zone_id]['setpoint_cool']
         elif self.hvac_mode == HVACMode.HEAT:
@@ -51,38 +40,70 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode:
-        system_status = self.coordinator.data['system_status']
-        if not system_status['is_on']:
+        if not self.coordinator.data['main']['is_on']:
             return HVACMode.OFF
-        return HVAC_MODES.get(system_status['mode'], HVACMode.OFF)
+        return HVAC_MODES.get(self.coordinator.data['main']['mode'], HVACMode.OFF)
 
     @property
-    def fan_mode(self) -> Optional[str]:
-        return self.coordinator.data['system_status']['fan_mode']
+    def fan_mode(self) -> str | None:
+        return self.coordinator.data['main']['fan_mode']
 
-    async def async_set_temperature(self, **kwargs: Any) -> None:
-        if ATTR_TEMPERATURE in kwargs:
-            temp = kwargs[ATTR_TEMPERATURE]
-            if self.hvac_mode == HVACMode.COOL:
+    @property
+    def preset_mode(self) -> str | None:
+        if self.coordinator.data['main']['away_mode']:
+            return "Away"
+        elif self.coordinator.data['main']['quiet_mode_active']:
+            return "Quiet"
+        return "Normal"
+
+    async def async_set_temperature(self, **kwargs):
+        try:
+            if ATTR_TEMPERATURE in kwargs:
+                temp = kwargs[ATTR_TEMPERATURE]
+                if self.hvac_mode == HVACMode.COOL:
+                    await self.coordinator.api.send_command(self.coordinator.device_id, {
+                        f"RemoteZoneInfo[{self._zone_id}].TemperatureSetpoint_Cool_oC": temp
+                    })
+                elif self.hvac_mode == HVACMode.HEAT:
+                    await self.coordinator.api.send_command(self.coordinator.device_id, {
+                        f"RemoteZoneInfo[{self._zone_id}].TemperatureSetpoint_Heat_oC": temp
+                    })
+            await self.coordinator.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to set temperature: %s", err)
+            raise
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode):
+        try:
+            if hvac_mode == HVACMode.OFF:
+                await self.coordinator.api.send_command(self.coordinator.device_id, {"UserAirconSettings.isOn": False})
+            else:
                 await self.coordinator.api.send_command(self.coordinator.device_id, {
-                    f"RemoteZoneInfo[{self._zone_id}].TemperatureSetpoint_Cool_oC": temp
+                    "UserAirconSettings.isOn": True,
+                    "UserAirconSettings.Mode": hvac_mode.upper()
                 })
-            elif self.hvac_mode == HVACMode.HEAT:
-                await self.coordinator.api.send_command(self.coordinator.device_id, {
-                    f"RemoteZoneInfo[{self._zone_id}].TemperatureSetpoint_Heat_oC": temp
-                })
-        await self.coordinator.async_request_refresh()
+            await self.coordinator.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to set HVAC mode: %s", err)
+            raise
 
-    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        if hvac_mode == HVACMode.OFF:
-            await self.coordinator.api.send_command(self.coordinator.device_id, {"UserAirconSettings.isOn": False})
-        else:
-            await self.coordinator.api.send_command(self.coordinator.device_id, {
-                "UserAirconSettings.isOn": True,
-                "UserAirconSettings.Mode": hvac_mode.upper()
-            })
-        await self.coordinator.async_request_refresh()
+    async def async_set_fan_mode(self, fan_mode: str):
+        try:
+            await self.coordinator.api.send_command(self.coordinator.device_id, {"UserAirconSettings.FanMode": fan_mode})
+            await self.coordinator.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to set fan mode: %s", err)
+            raise
 
-    async def async_set_fan_mode(self, fan_mode: str) -> None:
-        await self.coordinator.api.send_command(self.coordinator.device_id, {"UserAirconSettings.FanMode": fan_mode})
-        await self.coordinator.async_request_refresh()
+    async def async_set_preset_mode(self, preset_mode: str):
+        try:
+            if preset_mode == "Away":
+                await self.coordinator.set_away_mode(True)
+            elif preset_mode == "Quiet":
+                await self.coordinator.set_quiet_mode(True)
+            else:  # Normal
+                await self.coordinator.set_away_mode(False)
+                await self.coordinator.set_quiet_mode(False)
+        except Exception as err:
+            _LOGGER.error("Failed to set preset mode: %s", err)
+            raise

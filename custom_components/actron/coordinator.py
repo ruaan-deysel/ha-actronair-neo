@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from .api import ActronApi, AuthenticationError, ApiError
 from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
@@ -32,17 +33,27 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         except AuthenticationError as auth_err:
             _LOGGER.error("Authentication error: %s", auth_err)
-            raise UpdateFailed("Authentication failed") from auth_err
+            raise ConfigEntryAuthFailed("Authentication failed") from auth_err
         except ApiError as api_err:
             _LOGGER.error("API error: %s", api_err)
             raise UpdateFailed("Failed to fetch data from Actron API") from api_err
+        except asyncio.TimeoutError as timeout_err:
+            _LOGGER.error("Timeout error: %s", timeout_err)
+            raise UpdateFailed("Timeout while fetching data from Actron API") from timeout_err
         except Exception as err:
-            _LOGGER.error("Unexpected error: %s", err)
+            _LOGGER.exception("Unexpected error occurred: %s", err)
             raise UpdateFailed("Unexpected error occurred") from err
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         parsed_data = {}
-        system_data = data.get("<22H09780>", {})
+        
+        # Find the correct system data key dynamically
+        system_data_key = next((key for key in data.keys() if key.startswith("<") and key.endswith(">")), None)
+        if not system_data_key:
+            _LOGGER.error("No valid system data key found in the data")
+            return parsed_data
+
+        system_data = data.get(system_data_key, {})
         
         user_settings = system_data.get("UserAirconSettings", {})
         live_aircon = system_data.get("LiveAircon", {})
@@ -58,11 +69,14 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "indoor_humidity": master_info.get("LiveHumidity_pc"),
             "outdoor_temp": live_aircon.get("OutdoorUnit", {}).get("AmbTemp"),
             "away_mode": user_settings.get("AwayMode", False),
+            "quiet_mode": user_settings.get("QuietMode", False),
+            "quiet_mode_enabled": user_settings.get("QuietModeEnabled", False),
+            "quiet_mode_active": user_settings.get("QuietModeActive", False),
         }
 
         parsed_data["zones"] = {}
-        for zone in system_data.get("RemoteZoneInfo", []):
-            zone_id = zone.get("NV_Title", "Unknown")
+        for idx, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
+            zone_id = zone.get("NV_Title", f"Zone {idx + 1}")
             parsed_data["zones"][zone_id] = {
                 "temp": zone.get("LiveTemp_oC"),
                 "humidity": zone.get("LiveHumidity_pc"),
@@ -71,9 +85,34 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 "is_enabled": zone.get("CanOperate", False),
             }
 
+        parsed_data["peripherals"] = {}
+        for peripheral in system_data.get("AirconSystem", {}).get("Peripherals", []):
+            peripheral_id = peripheral.get("SerialNumber", "Unknown")
+            parsed_data["peripherals"][peripheral_id] = {
+                "type": peripheral.get("DeviceType"),
+                "zone_assignment": peripheral.get("ZoneAssignment"),
+                "battery_level": peripheral.get("RemainingBatteryCapacity_pc"),
+                "signal_strength": peripheral.get("RSSI", {}).get("Local"),
+                "temp": peripheral.get("SensorInputs", {}).get("SHTC1", {}).get("Temperature_oC"),
+                "humidity": peripheral.get("SensorInputs", {}).get("SHTC1", {}).get("RelativeHumidity_pc"),
+            }
+
         return parsed_data
 
-async def async_setup_coordinator(hass: HomeAssistant, api: ActronApi, device_id: str, update_interval: int) -> ActronDataCoordinator:
-    coordinator = ActronDataCoordinator(hass, api, device_id, update_interval)
-    await coordinator.async_config_entry_first_refresh()
-    return coordinator
+    async def set_away_mode(self, away_mode: bool) -> None:
+        """Set the away mode."""
+        try:
+            await self.api.send_command(self.device_id, {"UserAirconSettings.AwayMode": away_mode})
+            await self.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to set away mode: %s", err)
+            raise
+
+    async def set_quiet_mode(self, quiet_mode: bool) -> None:
+        """Set the quiet mode."""
+        try:
+            await self.api.send_command(self.device_id, {"UserAirconSettings.QuietMode": quiet_mode})
+            await self.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to set quiet mode: %s", err)
+            raise

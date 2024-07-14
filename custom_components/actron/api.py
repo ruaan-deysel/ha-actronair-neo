@@ -57,9 +57,17 @@ class ActronApi:
             _LOGGER.debug(f"Bearer token response: {json_response}")
             return json_response["access_token"]
 
-    async def get_devices(self) -> List[Dict[str, Any]]:
+    async def get_devices(self) -> List[Dict[str, str]]:
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
-        return await self._authenticated_get(url)
+        systems = await self._authenticated_get(url)
+        devices = []
+        if '_embedded' in systems and 'ac-system' in systems['_embedded']:
+            for system in systems['_embedded']['ac-system']:
+                devices.append({
+                    'serial': system.get('serial', 'Unknown'),
+                    'name': system.get('description', 'Unknown Device')
+                })
+        return devices
 
     async def get_ac_status(self, serial: str) -> Dict[str, Any]:
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"

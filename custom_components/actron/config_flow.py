@@ -47,21 +47,23 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_select_device(self, user_input=None):
         if user_input is not None:
-            await self.async_set_unique_id(user_input[CONF_DEVICE_ID])
+            device_id = user_input[CONF_DEVICE_ID]
+            await self.async_set_unique_id(device_id)
             self._abort_if_unique_id_configured()
             return self.async_create_entry(
-                title=f"Actron Air Neo {user_input[CONF_DEVICE_ID]}",
+                title=f"Actron Air Neo {device_id}",
                 data={
                     CONF_USERNAME: self.api.username,
                     CONF_PASSWORD: self.api.password,
-                    CONF_DEVICE_ID: user_input[CONF_DEVICE_ID]
+                    CONF_DEVICE_ID: device_id
                 }
             )
 
+        device_dict = {device['serial']: device['name'] for device in self.devices}
         return self.async_show_form(
             step_id="select_device",
             data_schema=vol.Schema({
-                vol.Required(CONF_DEVICE_ID): vol.In({device['serial']: device['name'] for device in self.devices})
+                vol.Required(CONF_DEVICE_ID): vol.In(device_dict)
             })
         )
 

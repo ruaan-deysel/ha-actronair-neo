@@ -2,12 +2,25 @@ from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature
 from homeassistant.components.climate.const import HVACMode
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, HVAC_MODES, FAN_MODES
 
 import logging
 
 _LOGGER = logging.getLogger(__name__)
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
+    """Set up the Actron Air Neo climate devices."""
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    entities = []
+
+    for zone_id in coordinator.data["zones"]:
+        entities.append(ActronClimate(coordinator, zone_id))
+
+    async_add_entities(entities)
 
 class ActronClimate(CoordinatorEntity, ClimateEntity):
     def __init__(self, coordinator, zone_id):

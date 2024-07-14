@@ -225,7 +225,7 @@ class ActronModeSensor(ActronSensorBase):
             "main",
             "Mode",
             None,
-            SensorStateClass.MEASUREMENT,
+            None,  # Remove state class
             None,
         )
 
@@ -248,7 +248,7 @@ class ActronFanModeSensor(ActronSensorBase):
             "main",
             "Fan Mode",
             None,
-            SensorStateClass.MEASUREMENT,
+            None,  # Remove state class
             None,
         )
 
@@ -271,7 +271,7 @@ class ActronAwayModeSensor(ActronSensorBase):
             "main",
             "Away Mode",
             SensorDeviceClass.ENUM,
-            SensorStateClass.MEASUREMENT,
+            None,  # Remove state class
             None,
         )
 
@@ -299,7 +299,7 @@ class ActronQuietModeSensor(ActronSensorBase):
             "main",
             "Quiet Mode",
             SensorDeviceClass.ENUM,
-            SensorStateClass.MEASUREMENT,
+            None,  # Remove state class
             None,
         )
 

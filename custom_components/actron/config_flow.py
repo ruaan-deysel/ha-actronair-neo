@@ -26,12 +26,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return self.async_abort(reason="no_devices")
                 
                 if len(devices) == 1:
+                    device = devices[0]
                     return self.async_create_entry(
-                        title=devices[0]["name"],
+                        title=device["name"],
                         data={
                             "username": user_input["username"],
                             "password": user_input["password"],
-                            "device_id": devices[0]["serial"]
+                            "device_id": device["serial"],
+                            "device_type": device["type"]
                         }
                     )
                 
@@ -44,7 +46,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except ApiError as api_err:
                 _LOGGER.error(f"API error: {api_err}")
                 errors["base"] = "cannot_connect"
-            except Exception as err:  # pylint: disable=broad-except
+            except Exception as err:
                 _LOGGER.exception(f"Unexpected error: {err}")
                 errors["base"] = f"unknown: {str(err)}"
 
@@ -60,19 +62,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_select_device(self, devices, user_input=None):
         """Handle the device selection step."""
         if user_input is not None:
-            selected_device = next(device["name"] for device in devices if device["serial"] == user_input["device_id"])
+            selected_device = next(device for device in devices if device["serial"] == user_input["device_id"])
             return self.async_create_entry(
-                title=selected_device,
+                title=selected_device["name"],
                 data={
                     "username": user_input["username"],
                     "password": user_input["password"],
-                    "device_id": user_input["device_id"]
+                    "device_id": user_input["device_id"],
+                    "device_type": selected_device["type"]
                 }
             )
 
         return self.async_show_form(
             step_id="select_device",
             data_schema=vol.Schema({
-                vol.Required("device_id"): vol.In({device["serial"]: device["name"] for device in devices}),
+                vol.Required("device_id"): vol.In({device["serial"]: f"{device['name']} ({device['type']})" for device in devices}),
             })
         )

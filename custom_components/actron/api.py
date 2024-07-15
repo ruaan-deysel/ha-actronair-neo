@@ -1,5 +1,4 @@
 import aiohttp
-import asyncio
 import logging
 from typing import Dict, Any, List
 from .const import API_URL, CMD_SET_SETTINGS
@@ -35,7 +34,6 @@ class ActronApi:
             "deviceUniqueIdentifier": "HomeAssistant"
         }
         response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
-        _LOGGER.debug(f"Pairing token response: {response}")
         return response["pairingToken"]
 
     async def _request_bearer_token(self, pairing_token: str) -> str:
@@ -47,10 +45,31 @@ class ActronApi:
             "client_id": "app"
         }
         response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
-        _LOGGER.debug(f"Bearer token response: {response}")
         return response["access_token"]
 
-    async def _make_request(self, url: str, method: str, headers: Dict[str, str] = None, data: Dict[str, Any] = None, json: Dict[str, Any] = None, auth_required: bool = True, retries: int = 3) -> Dict[str, Any]:
+    async def get_devices(self) -> List[Dict[str, str]]:
+        url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
+        response = await self._make_request(url, "GET")
+        devices = []
+        if '_embedded' in response and 'ac-system' in response['_embedded']:
+            for system in response['_embedded']['ac-system']:
+                devices.append({
+                    'serial': system.get('serial', 'Unknown'),
+                    'name': system.get('description', 'Unknown Device'),
+                    'type': system.get('type', 'Unknown')  # Add type to differentiate between Que and Neo
+                })
+        return devices
+
+    async def get_ac_status(self, serial: str) -> Dict[str, Any]:
+        url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
+        return await self._make_request(url, "GET")
+
+    async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
+        url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
+        data = {"command": {**command, "type": CMD_SET_SETTINGS}}
+        return await self._make_request(url, "POST", json=data)
+
+    async def _make_request(self, url: str, method: str, headers: Dict[str, str] = None, data: Dict[str, Any] = None, json: Dict[str, Any] = None, auth_required: bool = True) -> Dict[str, Any]:
         if auth_required and not self.bearer_token:
             raise AuthenticationError("Not authenticated")
 
@@ -59,28 +78,22 @@ class ActronApi:
         if auth_required:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
 
-        for attempt in range(retries):
-            try:
-                async with self.session.request(method, url, headers=headers, data=data, json=json) as response:
-                    response_text = await response.text()
-                    _LOGGER.debug(f"API response: {response.status}, {response_text}")
-                    if response.status == 200:
-                        return await response.json()
-                    elif response.status == 401 and auth_required:
-                        _LOGGER.warning("Authentication failed. Attempting to re-authenticate.")
-                        await self.authenticate()
-                        continue
-                    else:
-                        raise ApiError(f"API request failed: {response.status}, {response_text}")
-            except aiohttp.ClientError as err:
-                if attempt == retries - 1:
-                    raise ApiError(f"Network error during API request: {err}")
-                _LOGGER.warning(f"API request failed, retrying... (Attempt {attempt + 1}/{retries})")
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+        try:
+            async with self.session.request(method, url, headers=headers, data=data, json=json) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    text = await response.text()
+                    _LOGGER.error(f"API request failed: {response.status}, {text}")
+                    raise ApiError(f"API request failed: {response.status}, {text}")
+        except aiohttp.ClientError as err:
+            _LOGGER.error(f"Network error during API request: {err}")
+            raise ApiError(f"Network error during API request: {err}")
 
-        raise ApiError("Max retries reached")
-
-    # ... (rest of the class methods)
+    async def close(self):
+        if self.session:
+            await self.session.close()
+            self.session = None
 
 class AuthenticationError(Exception):
     """Raised when authentication fails."""

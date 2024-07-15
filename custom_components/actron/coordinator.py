@@ -73,6 +73,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "quiet_mode": user_settings.get("QuietMode", False),
             "quiet_mode_enabled": user_settings.get("QuietModeEnabled", False),
             "quiet_mode_active": user_settings.get("QuietModeActive", False),
+            "compressor_state": live_aircon.get("CompressorMode"),
+            "fan_running": live_aircon.get("AmRunningFan", False),
         }
 
         parsed_data["zones"] = {}

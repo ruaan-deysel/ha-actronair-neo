@@ -1,4 +1,5 @@
 import aiohttp
+import asyncio
 import logging
 from typing import Dict, Any, List
 from .const import API_URL, CMD_SET_SETTINGS
@@ -33,18 +34,7 @@ class ActronApi:
             "deviceName": "HomeAssistant",
             "deviceUniqueIdentifier": "HomeAssistant"
         }
-        try:
-            async with self.session.post(url, headers=headers, data=data) as response:
-                if response.status != 200:
-                    text = await response.text()
-                    _LOGGER.error("Failed to get pairing token: %s, %s", response.status, text)
-                    raise AuthenticationError(f"Failed to get pairing token: {response.status}, {text}")
-                json_response = await response.json()
-                _LOGGER.debug("Pairing token response: %s", json_response)
-                return json_response["pairingToken"]
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Network error while requesting pairing token: %s", err)
-            raise AuthenticationError(f"Network error while requesting pairing token: {err}")
+        return await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
 
     async def _request_bearer_token(self, pairing_token: str) -> str:
         url = f"{API_URL}/api/v0/oauth/token"
@@ -54,78 +44,60 @@ class ActronApi:
             "refresh_token": pairing_token,
             "client_id": "app"
         }
-        try:
-            async with self.session.post(url, headers=headers, data=data) as response:
-                if response.status != 200:
-                    text = await response.text()
-                    _LOGGER.error("Failed to get bearer token: %s, %s", response.status, text)
-                    raise AuthenticationError(f"Failed to get bearer token: {response.status}, {text}")
-                json_response = await response.json()
-                _LOGGER.debug("Bearer token response: %s", json_response)
-                return json_response["access_token"]
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Network error while requesting bearer token: %s", err)
-            raise AuthenticationError(f"Network error while requesting bearer token: {err}")
+        response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+        return response["access_token"]
 
     async def get_devices(self) -> List[Dict[str, str]]:
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
-        try:
-            systems = await self._authenticated_get(url)
-            devices = []
-            if '_embedded' in systems and 'ac-system' in systems['_embedded']:
-                for system in systems['_embedded']['ac-system']:
-                    devices.append({
-                        'serial': system.get('serial', 'Unknown'),
-                        'name': system.get('description', 'Unknown Device')
-                    })
-            return devices
-        except ApiError as err:
-            _LOGGER.error("Failed to get devices: %s", err)
-            raise
+        systems = await self._make_request(url, "GET")
+        devices = []
+        if '_embedded' in systems and 'ac-system' in systems['_embedded']:
+            for system in systems['_embedded']['ac-system']:
+                devices.append({
+                    'serial': system.get('serial', 'Unknown'),
+                    'name': system.get('description', 'Unknown Device')
+                })
+        return devices
 
     async def get_ac_status(self, serial: str) -> Dict[str, Any]:
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
-        try:
-            data = await self._authenticated_get(url)
-            _LOGGER.debug("AC status response: %s", data)
-            return data
-        except ApiError as err:
-            _LOGGER.error("Failed to get AC status: %s", err)
-            raise
+        return await self._make_request(url, "GET")
 
     async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
-        headers = {
-            "Authorization": f"Bearer {self.bearer_token}",
-            "Content-Type": "application/json"
-        }
         data = {"command": {**command, "type": CMD_SET_SETTINGS}}
-        try:
-            async with self.session.post(url, headers=headers, json=data) as response:
-                if response.status != 200:
-                    text = await response.text()
-                    _LOGGER.error("Failed to send command: %s, %s", response.status, text)
-                    raise ApiError(f"Failed to send command: {response.status}, {text}")
-                return await response.json()
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Network error while sending command: %s", err)
-            raise ApiError(f"Network error while sending command: {err}")
+        return await self._make_request(url, "POST", json=data)
 
-    async def _authenticated_get(self, url: str) -> Dict[str, Any]:
-        if not self.bearer_token:
-            _LOGGER.error("Not authenticated")
+    async def _make_request(self, url: str, method: str, headers: Dict[str, str] = None, data: Dict[str, Any] = None, json: Dict[str, Any] = None, auth_required: bool = True, retries: int = 3) -> Dict[str, Any]:
+        if auth_required and not self.bearer_token:
             raise AuthenticationError("Not authenticated")
-        headers = {"Authorization": f"Bearer {self.bearer_token}"}
-        try:
-            async with self.session.get(url, headers=headers) as response:
-                if response.status != 200:
-                    text = await response.text()
-                    _LOGGER.error("API request failed: %s, %s", response.status, text)
-                    raise ApiError(f"API request failed: {response.status}, {text}")
-                return await response.json()
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Network error during API request: %s", err)
-            raise ApiError(f"Network error during API request: {err}")
+
+        if headers is None:
+            headers = {}
+        if auth_required:
+            headers["Authorization"] = f"Bearer {self.bearer_token}"
+
+        for attempt in range(retries):
+            try:
+                async with self.session.request(method, url, headers=headers, data=data, json=json) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    elif response.status == 401 and auth_required:
+                        _LOGGER.warning("Authentication failed. Attempting to re-authenticate.")
+                        await self.authenticate()
+                        continue
+                    else:
+                        text = await response.text()
+                        _LOGGER.error(f"API request failed: {response.status}, {text}")
+                        raise ApiError(f"API request failed: {response.status}, {text}")
+            except aiohttp.ClientError as err:
+                if attempt == retries - 1:
+                    _LOGGER.error(f"Network error during API request: {err}")
+                    raise ApiError(f"Network error during API request: {err}")
+                _LOGGER.warning(f"API request failed, retrying... (Attempt {attempt + 1}/{retries})")
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+
+        raise ApiError("Max retries reached")
 
     async def close(self):
         if self.session:

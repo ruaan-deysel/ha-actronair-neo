@@ -120,11 +120,12 @@ class ActronTemperatureSensor(ActronSensorBase):
         """Return the state of the sensor."""
         try:
             if self._sensor_type == "main":
-                return self.coordinator.data["main"]["indoor_temp" if self._sensor_id == "main" else "outdoor_temp"]
+                value = self.coordinator.data["main"]["indoor_temp" if self._sensor_id == "main" else "outdoor_temp"]
             elif self._sensor_type == "zone":
-                return self.coordinator.data["zones"][self._sensor_id]["temp"]
+                value = self.coordinator.data["zones"][self._sensor_id]["temp"]
             elif self._sensor_type == "peripheral":
-                return self.coordinator.data["peripherals"][self._sensor_id]["temp"]
+                value = self.coordinator.data["peripherals"][self._sensor_id]["temp"]
+            return value if value is not None and value != 3000.0 else None
         except KeyError:
             _LOGGER.error("Failed to get temperature for %s", self._sensor_id)
         return None

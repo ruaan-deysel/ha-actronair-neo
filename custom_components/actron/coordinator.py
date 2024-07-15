@@ -36,11 +36,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise ConfigEntryAuthFailed("Authentication failed") from auth_err
         except ApiError as api_err:
             _LOGGER.error("API error: %s", api_err)
-            if "invalid_grant" in str(api_err):
-                _LOGGER.info("Attempting to re-authenticate due to invalid grant error")
-                await self.api.authenticate()
-                # Retry the update after re-authentication
-                return await self._async_update_data()
             raise UpdateFailed("Failed to fetch data from Actron API") from api_err
         except asyncio.TimeoutError as timeout_err:
             _LOGGER.error("Timeout error: %s", timeout_err)
@@ -73,7 +68,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
             "indoor_temp": master_info.get("LiveTemp_oC"),
             "indoor_humidity": master_info.get("LiveHumidity_pc"),
-            "outdoor_temp": master_info.get("LiveOutdoorTemp_oC"),
+            "outdoor_temp": master_info.get("LiveOutdoorTemp_oC", 3000.0),
             "away_mode": user_settings.get("AwayMode", False),
             "quiet_mode": user_settings.get("QuietMode", False),
             "quiet_mode_enabled": user_settings.get("QuietModeEnabled", False),
@@ -81,6 +76,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "compressor_state": live_aircon.get("CompressorMode"),
             "fan_running": live_aircon.get("AmRunningFan", False),
         }
+
+        # Handle potential invalid outdoor temperature
+        if parsed_data["main"]["outdoor_temp"] == 3000.0:
+            parsed_data["main"]["outdoor_temp"] = None
 
         parsed_data["zones"] = {}
         for zone in system_data.get("RemoteZoneInfo", []):

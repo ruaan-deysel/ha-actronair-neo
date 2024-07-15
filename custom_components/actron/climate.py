@@ -6,13 +6,22 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, HVAC_MODES, FAN_MODES
+from .const import DOMAIN
 from .coordinator import ActronDataCoordinator
-from .zone import ActronZone
 
 import logging
 
 _LOGGER = logging.getLogger(__name__)
+
+HVAC_MODES = {
+    "OFF": HVACMode.OFF,
+    "AUTO": HVACMode.AUTO,
+    "COOL": HVACMode.COOL,
+    "HEAT": HVACMode.HEAT,
+    "FAN": HVACMode.FAN_ONLY,
+}
+
+FAN_MODES = ["AUTO", "LOW", "MEDIUM", "HIGH"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up the Actron Air Neo climate devices."""
@@ -20,16 +29,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities = []
 
     for zone_id in coordinator.data["zones"]:
-        entities.append(ActronClimate(coordinator, ActronZone(coordinator, zone_id)))
+        entities.append(ActronClimate(coordinator, zone_id))
 
     async_add_entities(entities)
 
 class ActronClimate(CoordinatorEntity, ClimateEntity):
-    def __init__(self, coordinator: ActronDataCoordinator, zone: ActronZone):
+    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str):
         super().__init__(coordinator)
-        self._zone = zone
-        self._attr_name = f"Actron Air Neo {zone.zone_id}"
-        self._attr_unique_id = f"{DOMAIN}_{coordinator.device_id}_{zone.zone_id}"
+        self._zone_id = zone_id
+        self._attr_name = f"Actron Air Neo {zone_id}"
+        self._attr_unique_id = f"{DOMAIN}_{coordinator.device_id}_{zone_id}"
         self._attr_hvac_modes = list(HVAC_MODES.values())
         self._attr_fan_modes = FAN_MODES
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
@@ -42,14 +51,14 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        return self._zone.temperature
+        return self.coordinator.data['zones'][self._zone_id]['temp']
 
     @property
     def target_temperature(self) -> float | None:
         if self.hvac_mode == HVACMode.COOL:
-            return self._zone.target_temperature_cool
+            return self.coordinator.data['zones'][self._zone_id]['setpoint_cool']
         elif self.hvac_mode == HVACMode.HEAT:
-            return self._zone.target_temperature_heat
+            return self.coordinator.data['zones'][self._zone_id]['setpoint_heat']
         return None
 
     @property
@@ -67,9 +76,21 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         return PRESET_AWAY if self.coordinator.data['main']['away_mode'] else PRESET_NONE
 
     async def async_set_temperature(self, **kwargs):
-        if ATTR_TEMPERATURE in kwargs:
-            temp = kwargs[ATTR_TEMPERATURE]
-            await self._zone.set_temperature(temp, self.coordinator.data['main']['mode'])
+        try:
+            if ATTR_TEMPERATURE in kwargs:
+                temp = kwargs[ATTR_TEMPERATURE]
+                if self.hvac_mode == HVACMode.COOL:
+                    await self.coordinator.api.send_command(self.coordinator.device_id, {
+                        f"RemoteZoneInfo[{self._zone_id}].TemperatureSetpoint_Cool_oC": temp
+                    })
+                elif self.hvac_mode == HVACMode.HEAT:
+                    await self.coordinator.api.send_command(self.coordinator.device_id, {
+                        f"RemoteZoneInfo[{self._zone_id}].TemperatureSetpoint_Heat_oC": temp
+                    })
+            await self.coordinator.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to set temperature: %s", err)
+            raise
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode):
         try:
@@ -78,7 +99,7 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
             else:
                 await self.coordinator.api.send_command(self.coordinator.device_id, {
                     "UserAirconSettings.isOn": True,
-                    "UserAirconSettings.Mode": hvac_mode.upper()
+                    "UserAirconSettings.Mode": next(k for k, v in HVAC_MODES.items() if v == hvac_mode)
                 })
             await self.coordinator.async_request_refresh()
         except Exception as err:
@@ -107,7 +128,7 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, self.coordinator.device_id)},
-            "name": f"Actron Air Neo {self._zone.zone_id}",
+            "name": f"Actron Air Neo {self._zone_id}",
             "manufacturer": "Actron Air",
             "model": "Neo",
         }

@@ -9,7 +9,7 @@ from homeassistant.components.climate.const import HVACMode
 DOMAIN = "actron_air_neo"
 API_URL = "https://nimbus.actronair.com.au"
 
-PLATFORMS = [Platform.CLIMATE, Platform.SENSOR]
+PLATFORMS = [Platform.CLIMATE, Platform.SENSOR, Platform.SWITCH]
 
 DEFAULT_UPDATE_INTERVAL = 60
 
@@ -23,12 +23,11 @@ HVAC_MODES = {
 }
 
 # Fan modes
-FAN_AUTO = "AUTO"
 FAN_LOW = "LOW"
-FAN_MEDIUM = "MED"
+FAN_MEDIUM = "MEDIUM"
 FAN_HIGH = "HIGH"
 
-FAN_MODES = [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
+FAN_MODES = [FAN_LOW, FAN_MEDIUM, FAN_HIGH]
 
 # Attributes
 ATTR_INDOOR_TEMPERATURE = "indoor_temperature"

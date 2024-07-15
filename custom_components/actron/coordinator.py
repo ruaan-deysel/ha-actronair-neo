@@ -6,9 +6,10 @@ from typing import Any, Dict
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.components.climate.const import HVACMode
 
 from .api import ActronApi, AuthenticationError, ApiError
-from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
+from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL, HVAC_MODES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -92,10 +93,17 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         return parsed_data
 
-    async def set_hvac_mode(self, hvac_mode: str) -> None:
+    async def set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
         try:
-            await self.api.send_command(self.device_id, {"UserAirconSettings.Mode": hvac_mode})
+            mode = next(k for k, v in HVAC_MODES.items() if v == hvac_mode)
+            if mode == "OFF":
+                await self.api.send_command(self.device_id, {"UserAirconSettings.isOn": False})
+            else:
+                await self.api.send_command(self.device_id, {
+                    "UserAirconSettings.isOn": True,
+                    "UserAirconSettings.Mode": mode
+                })
             await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error("Failed to set HVAC mode: %s", err)
@@ -105,7 +113,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Set temperature."""
         try:
             setting = "Cool" if is_cooling else "Heat"
-            await self.api.send_command(self.device_id, {f"UserAirconSettings.TemperatureSetpoint_{setting}_oC": temperature})
+            await self.api.send_command(self.device_id, {
+                f"UserAirconSettings.TemperatureSetpoint_{setting}_oC": temperature
+            })
             await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error("Failed to set temperature: %s", err)
@@ -120,6 +130,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Failed to set fan mode: %s", err)
             raise
 
+    async def set_preset_mode(self, away_mode: bool) -> None:
+        """Set preset mode (away mode)."""
+        try:
+            await self.api.send_command(self.device_id, {"UserAirconSettings.AwayMode": away_mode})
+            await self.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to set preset mode: %s", err)
+            raise
+
     async def set_zone_state(self, zone_index: int, is_on: bool) -> None:
         """Set zone state."""
         try:
@@ -127,4 +146,17 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error("Failed to set zone state: %s", err)
+            raise
+
+    async def set_zone_temperature(self, zone_id: str, temperature: float, is_cooling: bool) -> None:
+        """Set zone temperature."""
+        try:
+            zone_index = int(zone_id.split('_')[1]) - 1
+            setting = "Cool" if is_cooling else "Heat"
+            await self.api.send_command(self.device_id, {
+                f"RemoteZoneInfo[{zone_index}].TemperatureSetpoint_{setting}_oC": temperature
+            })
+            await self.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to set zone temperature: %s", err)
             raise

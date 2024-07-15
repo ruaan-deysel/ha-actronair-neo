@@ -36,6 +36,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise ConfigEntryAuthFailed("Authentication failed") from auth_err
         except ApiError as api_err:
             _LOGGER.error("API error: %s", api_err)
+            if "invalid_grant" in str(api_err):
+                _LOGGER.info("Attempting to re-authenticate due to invalid grant error")
+                await self.api.authenticate()
+                # Retry the update after re-authentication
+                return await self._async_update_data()
             raise UpdateFailed("Failed to fetch data from Actron API") from api_err
         except asyncio.TimeoutError as timeout_err:
             _LOGGER.error("Timeout error: %s", timeout_err)

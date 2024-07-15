@@ -26,11 +26,8 @@ FAN_MODES = ["AUTO", "LOW", "MEDIUM", "HIGH"]
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up the Actron Air Neo climate devices."""
     coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = []
-
-    for zone_id in coordinator.data["zones"]:
-        entities.append(ActronClimate(coordinator, zone_id))
-
+    entities = [ActronClimate(coordinator, "main")]
+    entities.extend([ActronZoneClimate(coordinator, zone_id) for zone_id in coordinator.data["zones"]])
     async_add_entities(entities)
 
 class ActronClimate(CoordinatorEntity, ClimateEntity):
@@ -51,14 +48,14 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        return self.coordinator.data['zones'][self._zone_id]['temp']
+        return self.coordinator.data['main']['indoor_temp']
 
     @property
     def target_temperature(self) -> float | None:
         if self.hvac_mode == HVACMode.COOL:
-            return self.coordinator.data['zones'][self._zone_id]['setpoint_cool']
+            return self.coordinator.data['main']['temp_setpoint_cool']
         elif self.hvac_mode == HVACMode.HEAT:
-            return self.coordinator.data['zones'][self._zone_id]['setpoint_heat']
+            return self.coordinator.data['main']['temp_setpoint_heat']
         return None
 
     @property
@@ -76,59 +73,38 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         return PRESET_AWAY if self.coordinator.data['main']['away_mode'] else PRESET_NONE
 
     async def async_set_temperature(self, **kwargs):
-        try:
-            if ATTR_TEMPERATURE in kwargs:
-                temp = kwargs[ATTR_TEMPERATURE]
-                if self.hvac_mode == HVACMode.COOL:
-                    await self.coordinator.api.send_command(self.coordinator.device_id, {
-                        f"RemoteZoneInfo[{self._zone_id}].TemperatureSetpoint_Cool_oC": temp
-                    })
-                elif self.hvac_mode == HVACMode.HEAT:
-                    await self.coordinator.api.send_command(self.coordinator.device_id, {
-                        f"RemoteZoneInfo[{self._zone_id}].TemperatureSetpoint_Heat_oC": temp
-                    })
-            await self.coordinator.async_request_refresh()
-        except Exception as err:
-            _LOGGER.error("Failed to set temperature: %s", err)
-            raise
+        if ATTR_TEMPERATURE in kwargs:
+            temp = kwargs[ATTR_TEMPERATURE]
+            is_cooling = self.hvac_mode == HVACMode.COOL
+            await self.coordinator.set_temperature(temp, is_cooling)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode):
-        try:
-            if hvac_mode == HVACMode.OFF:
-                await self.coordinator.api.send_command(self.coordinator.device_id, {"UserAirconSettings.isOn": False})
-            else:
-                await self.coordinator.api.send_command(self.coordinator.device_id, {
-                    "UserAirconSettings.isOn": True,
-                    "UserAirconSettings.Mode": next(k for k, v in HVAC_MODES.items() if v == hvac_mode)
-                })
-            await self.coordinator.async_request_refresh()
-        except Exception as err:
-            _LOGGER.error("Failed to set HVAC mode: %s", err)
-            raise
+        mode = next(k for k, v in HVAC_MODES.items() if v == hvac_mode)
+        await self.coordinator.set_hvac_mode(mode)
 
     async def async_set_fan_mode(self, fan_mode: str):
-        try:
-            await self.coordinator.api.send_command(self.coordinator.device_id, {"UserAirconSettings.FanMode": fan_mode})
-            await self.coordinator.async_request_refresh()
-        except Exception as err:
-            _LOGGER.error("Failed to set fan mode: %s", err)
-            raise
+        await self.coordinator.set_fan_mode(fan_mode)
 
     async def async_set_preset_mode(self, preset_mode: str):
-        try:
-            if preset_mode == PRESET_AWAY:
-                await self.coordinator.set_away_mode(True)
-            else:  # PRESET_NONE
-                await self.coordinator.set_away_mode(False)
-        except Exception as err:
-            _LOGGER.error("Failed to set preset mode: %s", err)
-            raise
+        # Implement away mode setting logic here
+        pass
+
+class ActronZoneClimate(ActronClimate):
+    @property
+    def current_temperature(self) -> float | None:
+        return self.coordinator.data['zones'][self._zone_id]['temp']
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.device_id)},
-            "name": f"Actron Air Neo {self._zone_id}",
-            "manufacturer": "Actron Air",
-            "model": "Neo",
-        }
+    def target_temperature(self) -> float | None:
+        if self.hvac_mode == HVACMode.COOL:
+            return self.coordinator.data['zones'][self._zone_id]['setpoint_cool']
+        elif self.hvac_mode == HVACMode.HEAT:
+            return self.coordinator.data['zones'][self._zone_id]['setpoint_heat']
+        return None
+
+    async def async_set_temperature(self, **kwargs):
+        if ATTR_TEMPERATURE in kwargs:
+            temp = kwargs[ATTR_TEMPERATURE]
+            is_cooling = self.hvac_mode == HVACMode.COOL
+            # Implement zone-specific temperature setting logic here
+            pass

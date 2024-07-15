@@ -14,18 +14,14 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up the Actron Air Neo zone switches."""
     coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = []
-
-    for zone_id in coordinator.data["zones"]:
-        entities.append(ActronZoneSwitch(coordinator, zone_id))
-
+    entities = [ActronZoneSwitch(coordinator, zone_id) for zone_id in coordinator.data["zones"]]
     async_add_entities(entities)
 
 class ActronZoneSwitch(CoordinatorEntity, SwitchEntity):
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str):
         super().__init__(coordinator)
         self._zone_id = zone_id
-        self._attr_name = f"Actron Air Neo Zone {zone_id}"
+        self._attr_name = f"Actron Air Neo {coordinator.data['zones'][zone_id]['name']} Zone"
         self._attr_unique_id = f"{DOMAIN}_{coordinator.device_id}_zone_{zone_id}"
 
     @property
@@ -33,22 +29,9 @@ class ActronZoneSwitch(CoordinatorEntity, SwitchEntity):
         return self.coordinator.data['zones'][self._zone_id]['is_enabled']
 
     async def async_turn_on(self, **kwargs):
-        await self.coordinator.api.send_command(self.coordinator.device_id, {
-            f"UserAirconSettings.EnabledZones[{self._zone_id}]": True
-        })
-        await self.coordinator.async_request_refresh()
+        zone_index = int(self._zone_id.split('_')[1]) - 1
+        await self.coordinator.set_zone_state(zone_index, True)
 
     async def async_turn_off(self, **kwargs):
-        await self.coordinator.api.send_command(self.coordinator.device_id, {
-            f"UserAirconSettings.EnabledZones[{self._zone_id}]": False
-        })
-        await self.coordinator.async_request_refresh()
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.device_id)},
-            "name": f"Actron Air Neo",
-            "manufacturer": "Actron Air",
-            "model": "Neo",
-        }
+        zone_index = int(self._zone_id.split('_')[1]) - 1
+        await self.coordinator.set_zone_state(zone_index, False)

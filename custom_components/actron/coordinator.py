@@ -47,8 +47,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         parsed_data = {}
         
-        _LOGGER.debug("Received data: %s", data)
-        
         system_data_key = next((key for key in data.get("lastKnownState", {}).keys() if key.startswith("<") and key.endswith(">")), None)
         if not system_data_key:
             _LOGGER.error("No valid system data key found in the data")
@@ -71,55 +69,62 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "outdoor_temp": master_info.get("LiveOutdoorTemp_oC"),
             "away_mode": user_settings.get("AwayMode", False),
             "quiet_mode": user_settings.get("QuietMode", False),
-            "quiet_mode_enabled": user_settings.get("QuietModeEnabled", False),
-            "quiet_mode_active": user_settings.get("QuietModeActive", False),
+            "control_all_zones": master_info.get("ControlAllZones", False),
             "compressor_state": live_aircon.get("CompressorMode"),
             "fan_running": live_aircon.get("AmRunningFan", False),
         }
 
-        # Handle potential invalid outdoor temperature
         if parsed_data["main"]["outdoor_temp"] == 3000.0:
             parsed_data["main"]["outdoor_temp"] = None
 
         parsed_data["zones"] = {}
-        for zone in system_data.get("RemoteZoneInfo", []):
-            zone_id = zone.get("NV_Title", "Unknown Zone")
-            parsed_data["zones"][zone_id] = {
-                "temp": zone.get("LiveTemp_oC"),
-                "humidity": zone.get("LiveHumidity_pc"),
-                "setpoint_cool": zone.get("TemperatureSetpoint_Cool_oC"),
-                "setpoint_heat": zone.get("TemperatureSetpoint_Heat_oC"),
-                "is_enabled": zone.get("CanOperate", False),
-            }
-
-        parsed_data["peripherals"] = {}
-        for peripheral in system_data.get("AirconSystem", {}).get("Peripherals", []):
-            peripheral_id = peripheral.get("SerialNumber", "Unknown")
-            parsed_data["peripherals"][peripheral_id] = {
-                "type": peripheral.get("DeviceType"),
-                "zone_assignment": peripheral.get("ZoneAssignment"),
-                "battery_level": peripheral.get("RemainingBatteryCapacity_pc"),
-                "signal_strength": peripheral.get("RSSI", {}).get("Local"),
-                "temp": peripheral.get("SensorInputs", {}).get("SHTC1", {}).get("Temperature_oC"),
-                "humidity": peripheral.get("SensorInputs", {}).get("SHTC1", {}).get("RelativeHumidity_pc"),
-            }
+        for i, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
+            if zone.get("NV_Exists", False):
+                zone_id = f"zone_{i+1}"
+                parsed_data["zones"][zone_id] = {
+                    "name": zone.get("NV_Title", f"Zone {i+1}"),
+                    "temp": zone.get("LiveTemp_oC"),
+                    "humidity": zone.get("LiveHumidity_pc"),
+                    "setpoint_cool": zone.get("TemperatureSetpoint_Cool_oC"),
+                    "setpoint_heat": zone.get("TemperatureSetpoint_Heat_oC"),
+                    "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
+                }
 
         return parsed_data
 
-    async def set_away_mode(self, away_mode: bool) -> None:
-        """Set the away mode."""
+    async def set_hvac_mode(self, hvac_mode: str) -> None:
+        """Set HVAC mode."""
         try:
-            await self.api.send_command(self.device_id, {"UserAirconSettings.AwayMode": away_mode})
+            await self.api.send_command(self.device_id, {"UserAirconSettings.Mode": hvac_mode})
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set away mode: %s", err)
+            _LOGGER.error("Failed to set HVAC mode: %s", err)
             raise
 
-    async def set_quiet_mode(self, quiet_mode: bool) -> None:
-        """Set the quiet mode."""
+    async def set_temperature(self, temperature: float, is_cooling: bool) -> None:
+        """Set temperature."""
         try:
-            await self.api.send_command(self.device_id, {"UserAirconSettings.QuietMode": quiet_mode})
+            setting = "Cool" if is_cooling else "Heat"
+            await self.api.send_command(self.device_id, {f"UserAirconSettings.TemperatureSetpoint_{setting}_oC": temperature})
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set quiet mode: %s", err)
+            _LOGGER.error("Failed to set temperature: %s", err)
+            raise
+
+    async def set_fan_mode(self, fan_mode: str) -> None:
+        """Set fan mode."""
+        try:
+            await self.api.send_command(self.device_id, {"UserAirconSettings.FanMode": fan_mode})
+            await self.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to set fan mode: %s", err)
+            raise
+
+    async def set_zone_state(self, zone_index: int, is_on: bool) -> None:
+        """Set zone state."""
+        try:
+            await self.api.send_command(self.device_id, {f"UserAirconSettings.EnabledZones[{zone_index}]": is_on})
+            await self.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to set zone state: %s", err)
             raise

@@ -49,13 +49,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         
         _LOGGER.debug("Received data: %s", data)
         
-        last_known_state = data.get('lastKnownState', {})
-        system_data_key = next((key for key in last_known_state.keys() if key.startswith("<") and key.endswith(">")), None)
+        system_data_key = next((key for key in data.get("lastKnownState", {}).keys() if key.startswith("<") and key.endswith(">")), None)
         if not system_data_key:
             _LOGGER.error("No valid system data key found in the data")
             return parsed_data
 
-        system_data = last_known_state[system_data_key]
+        system_data = data.get("lastKnownState", {}).get(system_data_key, {})
         
         user_settings = system_data.get("UserAirconSettings", {})
         live_aircon = system_data.get("LiveAircon", {})
@@ -69,7 +68,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
             "indoor_temp": master_info.get("LiveTemp_oC"),
             "indoor_humidity": master_info.get("LiveHumidity_pc"),
-            "outdoor_temp": live_aircon.get("OutdoorUnit", {}).get("AmbTemp"),
+            "outdoor_temp": master_info.get("LiveOutdoorTemp_oC"),
             "away_mode": user_settings.get("AwayMode", False),
             "quiet_mode": user_settings.get("QuietMode", False),
             "quiet_mode_enabled": user_settings.get("QuietModeEnabled", False),

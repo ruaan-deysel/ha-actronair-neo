@@ -3,9 +3,12 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
+import logging
 
 from .const import DOMAIN
 from .api import ActronApi, AuthenticationError, ApiError
+
+_LOGGER = logging.getLogger(__name__)
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -35,12 +38,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # If there are multiple devices, move to the device selection step
                 return await self.async_step_select_device(devices=devices, user_input=user_input)
 
-            except AuthenticationError:
+            except AuthenticationError as auth_err:
+                _LOGGER.error(f"Authentication error: {auth_err}")
                 errors["base"] = "invalid_auth"
-            except ApiError:
+            except ApiError as api_err:
+                _LOGGER.error(f"API error: {api_err}")
                 errors["base"] = "cannot_connect"
-            except Exception:  # pylint: disable=broad-except
-                errors["base"] = "unknown"
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.exception(f"Unexpected error: {err}")
+                errors["base"] = f"unknown: {str(err)}"
 
         return self.async_show_form(
             step_id="user",

@@ -161,6 +161,141 @@ class ActronHumiditySensor(ActronSensorBase):
             _LOGGER.error("Failed to get humidity for %s", self._sensor_id)
         return None
 
+class ActronModeSensor(ActronSensorBase):
+    """Representation of an Actron Air Neo mode sensor."""
+
+    def __init__(self, coordinator: ActronDataCoordinator) -> None:
+        """Initialize the mode sensor."""
+        super().__init__(
+            coordinator,
+            "main",
+            "Mode",
+            None,
+            None,
+            None,
+        )
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        try:
+            return self.coordinator.data["main"]["mode"]
+        except KeyError:
+            _LOGGER.error("Failed to get mode")
+        return None
+
+class ActronFanModeSensor(ActronSensorBase):
+    """Representation of an Actron Air Neo fan mode sensor."""
+
+    def __init__(self, coordinator: ActronDataCoordinator) -> None:
+        """Initialize the fan mode sensor."""
+        super().__init__(
+            coordinator,
+            "main",
+            "Fan Mode",
+            None,
+            None,
+            None,
+        )
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        try:
+            return self.coordinator.data["main"]["fan_mode"]
+        except KeyError:
+            _LOGGER.error("Failed to get fan mode")
+        return None
+
+class ActronAwayModeSensor(ActronSensorBase):
+    """Representation of an Actron Air Neo away mode sensor."""
+
+    def __init__(self, coordinator: ActronDataCoordinator) -> None:
+        """Initialize the away mode sensor."""
+        super().__init__(
+            coordinator,
+            "main",
+            "Away Mode",
+            SensorDeviceClass.ENUM,
+            None,
+            None,
+        )
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        try:
+            return "On" if self.coordinator.data["main"]["away_mode"] else "Off"
+        except KeyError:
+            _LOGGER.error("Failed to get away mode status")
+        return None
+
+    @property
+    def options(self) -> list[str]:
+        """Return the list of available options."""
+        return ["On", "Off"]
+
+class ActronQuietModeSensor(ActronSensorBase):
+    """Representation of an Actron Air Neo quiet mode sensor."""
+
+    def __init__(self, coordinator: ActronDataCoordinator) -> None:
+        """Initialize the quiet mode sensor."""
+        super().__init__(
+            coordinator,
+            "main",
+            "Quiet Mode",
+            SensorDeviceClass.ENUM,
+            None,
+            None,
+        )
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        try:
+            return "On" if self.coordinator.data["main"]["quiet_mode_active"] else "Off"
+        except KeyError:
+            _LOGGER.error("Failed to get quiet mode status")
+        return None
+
+    @property
+    def options(self) -> list[str]:
+        """Return the list of available options."""
+        return ["On", "Off"]
+
+class ActronZoneEnabledSensor(ActronSensorBase):
+    """Representation of an Actron Air Neo zone enabled sensor."""
+
+    def __init__(
+        self,
+        coordinator: ActronDataCoordinator,
+        zone_id: str,
+    ) -> None:
+        """Initialize the zone enabled sensor."""
+        super().__init__(
+            coordinator,
+            zone_id,
+            "Zone Enabled",
+            SensorDeviceClass.ENUM,
+            None,
+            None,
+        )
+        self._zone_id = zone_id
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        try:
+            return "Enabled" if self.coordinator.data["zones"][self._zone_id]["is_enabled"] else "Disabled"
+        except KeyError:
+            _LOGGER.error("Failed to get zone enabled status for %s", self._zone_id)
+        return None
+
+    @property
+    def options(self) -> list[str]:
+        """Return the list of available options."""
+        return ["Enabled", "Disabled"]
+
 class ActronBatterySensor(ActronSensorBase):
     """Representation of an Actron Air Neo battery sensor."""
 
@@ -214,138 +349,3 @@ class ActronSignalStrengthSensor(ActronSensorBase):
         except KeyError:
             _LOGGER.error("Failed to get signal strength for %s", self._sensor_id)
         return None
-
-class ActronModeSensor(ActronSensorBase):
-    """Representation of an Actron Air Neo mode sensor."""
-
-    def __init__(self, coordinator: ActronDataCoordinator) -> None:
-        """Initialize the mode sensor."""
-        super().__init__(
-            coordinator,
-            "main",
-            "Mode",
-            None,
-            None,  # Remove state class
-            None,
-        )
-
-    @property
-    def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        try:
-            return self.coordinator.data["main"]["mode"]
-        except KeyError:
-            _LOGGER.error("Failed to get mode")
-        return None
-
-class ActronFanModeSensor(ActronSensorBase):
-    """Representation of an Actron Air Neo fan mode sensor."""
-
-    def __init__(self, coordinator: ActronDataCoordinator) -> None:
-        """Initialize the fan mode sensor."""
-        super().__init__(
-            coordinator,
-            "main",
-            "Fan Mode",
-            None,
-            None,  # Remove state class
-            None,
-        )
-
-    @property
-    def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        try:
-            return self.coordinator.data["main"]["fan_mode"]
-        except KeyError:
-            _LOGGER.error("Failed to get fan mode")
-        return None
-
-class ActronAwayModeSensor(ActronSensorBase):
-    """Representation of an Actron Air Neo away mode sensor."""
-
-    def __init__(self, coordinator: ActronDataCoordinator) -> None:
-        """Initialize the away mode sensor."""
-        super().__init__(
-            coordinator,
-            "main",
-            "Away Mode",
-            SensorDeviceClass.ENUM,
-            None,  # Remove state class
-            None,
-        )
-
-    @property
-    def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        try:
-            return "On" if self.coordinator.data["main"]["away_mode"] else "Off"
-        except KeyError:
-            _LOGGER.error("Failed to get away mode status")
-        return None
-
-    @property
-    def options(self) -> list[str]:
-        """Return the list of available options."""
-        return ["On", "Off"]
-
-class ActronQuietModeSensor(ActronSensorBase):
-    """Representation of an Actron Air Neo quiet mode sensor."""
-
-    def __init__(self, coordinator: ActronDataCoordinator) -> None:
-        """Initialize the quiet mode sensor."""
-        super().__init__(
-            coordinator,
-            "main",
-            "Quiet Mode",
-            SensorDeviceClass.ENUM,
-            None,  # Remove state class
-            None,
-        )
-
-    @property
-    def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        try:
-            return "On" if self.coordinator.data["main"]["quiet_mode_active"] else "Off"
-        except KeyError:
-            _LOGGER.error("Failed to get quiet mode status")
-        return None
-
-    @property
-    def options(self) -> list[str]:
-        """Return the list of available options."""
-        return ["On", "Off"]
-
-class ActronZoneEnabledSensor(ActronSensorBase):
-    """Representation of an Actron Air Neo zone enabled sensor."""
-
-    def __init__(
-        self,
-        coordinator: ActronDataCoordinator,
-        zone_id: str,
-    ) -> None:
-        """Initialize the zone enabled sensor."""
-        super().__init__(
-            coordinator,
-            zone_id,
-            "Zone Enabled",
-            SensorDeviceClass.ENUM,
-            SensorStateClass.MEASUREMENT,
-            None,
-        )
-        self._zone_id = zone_id
-
-    @property
-    def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        try:
-            return "Enabled" if self.coordinator.data["zones"][self._zone_id]["is_enabled"] else "Disabled"
-        except KeyError:
-            _LOGGER.error("Failed to get zone enabled status for %s", self._zone_id)
-        return None
-
-    @property
-    def options(self) -> list[str]:
-        """Return the list of available options."""
-        return ["Enabled", "Disabled"]

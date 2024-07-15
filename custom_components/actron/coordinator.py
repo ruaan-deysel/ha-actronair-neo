@@ -68,7 +68,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
             "indoor_temp": master_info.get("LiveTemp_oC"),
             "indoor_humidity": master_info.get("LiveHumidity_pc"),
-            "outdoor_temp": master_info.get("LiveOutdoorTemp_oC", 3000.0),
+            "outdoor_temp": master_info.get("LiveOutdoorTemp_oC"),
             "away_mode": user_settings.get("AwayMode", False),
             "quiet_mode": user_settings.get("QuietMode", False),
             "quiet_mode_enabled": user_settings.get("QuietModeEnabled", False),

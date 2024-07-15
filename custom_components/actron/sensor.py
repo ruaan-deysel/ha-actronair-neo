@@ -119,15 +119,16 @@ class ActronTemperatureSensor(ActronSensorBase):
     def native_value(self) -> StateType:
         """Return the state of the sensor."""
         try:
-            if self._sensor_type == "main":
-                value = self.coordinator.data["main"]["indoor_temp" if self._sensor_id == "main" else "outdoor_temp"]
+            if self._sensor_type == "indoor":
+                return self.coordinator.data['main']['indoor_temp']
+            elif self._sensor_type == "outdoor":
+                return self.coordinator.data['main']['outdoor_temp']
             elif self._sensor_type == "zone":
-                value = self.coordinator.data["zones"][self._sensor_id]["temp"]
+                return self.coordinator.data["zones"][self._sensor_id]['temp']
             elif self._sensor_type == "peripheral":
-                value = self.coordinator.data["peripherals"][self._sensor_id]["temp"]
-            return value if value is not None and value != 3000.0 else None
+                return self.coordinator.data["peripherals"][self._sensor_id]['temp']
         except KeyError:
-            _LOGGER.error("Failed to get temperature for %s", self._sensor_id)
+            _LOGGER.error(f"Failed to get temperature for {self._sensor_id} ({self._sensor_type})")
         return None
 
 class ActronHumiditySensor(ActronSensorBase):
@@ -153,13 +154,13 @@ class ActronHumiditySensor(ActronSensorBase):
         """Return the state of the sensor."""
         try:
             if self._sensor_id == "main":
-                return self.coordinator.data["main"]["indoor_humidity"]
+                return self.coordinator.data['main']['indoor_humidity']
             elif self._sensor_id in self.coordinator.data["zones"]:
                 return self.coordinator.data["zones"][self._sensor_id]["humidity"]
             elif self._sensor_id in self.coordinator.data["peripherals"]:
                 return self.coordinator.data["peripherals"][self._sensor_id]["humidity"]
         except KeyError:
-            _LOGGER.error("Failed to get humidity for %s", self._sensor_id)
+            _LOGGER.error(f"Failed to get humidity for {self._sensor_id}")
         return None
 
 class ActronModeSensor(ActronSensorBase):
@@ -289,7 +290,7 @@ class ActronZoneEnabledSensor(ActronSensorBase):
         try:
             return "Enabled" if self.coordinator.data["zones"][self._zone_id]["is_enabled"] else "Disabled"
         except KeyError:
-            _LOGGER.error("Failed to get zone enabled status for %s", self._zone_id)
+            _LOGGER.error(f"Failed to get zone enabled status for {self._zone_id}")
         return None
 
     @property
@@ -321,7 +322,7 @@ class ActronBatterySensor(ActronSensorBase):
         try:
             return self.coordinator.data["peripherals"][self._sensor_id]["battery_level"]
         except KeyError:
-            _LOGGER.error("Failed to get battery level for %s", self._sensor_id)
+            _LOGGER.error(f"Failed to get battery level for {self._sensor_id}")
         return None
 
 class ActronSignalStrengthSensor(ActronSensorBase):
@@ -348,5 +349,5 @@ class ActronSignalStrengthSensor(ActronSensorBase):
         try:
             return self.coordinator.data["peripherals"][self._sensor_id]["signal_strength"]
         except KeyError:
-            _LOGGER.error("Failed to get signal strength for %s", self._sensor_id)
+            _LOGGER.error(f"Failed to get signal strength for {self._sensor_id}")
         return None

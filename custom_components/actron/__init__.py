@@ -2,16 +2,18 @@
 import asyncio
 import logging
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_USERNAME, CONF_PASSWORD, CONF_DEVICE_ID
+from homeassistant.const import CONF_USERNAME, CONF_PASSWORD, CONF_DEVICE_ID, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, PLATFORMS, DEFAULT_UPDATE_INTERVAL
+from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
 from .api import ActronApi, AuthenticationError, ApiError
 from .coordinator import ActronDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+PLATFORMS = [Platform.CLIMATE, Platform.SENSOR, Platform.SWITCH]
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Actron Air Neo component."""

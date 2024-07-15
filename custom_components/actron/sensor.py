@@ -48,18 +48,8 @@ async def async_setup_entry(
     # Zone sensors
     for zone_id in coordinator.data["zones"]:
         entities.extend([
-            ActronTemperatureSensor(coordinator, zone_id, "zone"),
-            ActronHumiditySensor(coordinator, zone_id),
-            ActronZoneEnabledSensor(coordinator, zone_id),
-        ])
-
-    # Peripheral sensors
-    for peripheral_id in coordinator.data["peripherals"]:
-        entities.extend([
-            ActronTemperatureSensor(coordinator, peripheral_id, "peripheral"),
-            ActronHumiditySensor(coordinator, peripheral_id),
-            ActronBatterySensor(coordinator, peripheral_id),
-            ActronSignalStrengthSensor(coordinator, peripheral_id),
+            ActronZoneTemperatureSensor(coordinator, zone_id),
+            ActronZoneHumiditySensor(coordinator, zone_id),
         ])
 
     async_add_entities(entities)
@@ -123,10 +113,6 @@ class ActronTemperatureSensor(ActronSensorBase):
                 return self.coordinator.data['main']['indoor_temp']
             elif self._sensor_type == "outdoor":
                 return self.coordinator.data['main']['outdoor_temp']
-            elif self._sensor_type == "zone":
-                return self.coordinator.data["zones"][self._sensor_id]['temp']
-            elif self._sensor_type == "peripheral":
-                return self.coordinator.data["peripherals"][self._sensor_id]['temp']
         except KeyError:
             _LOGGER.error(f"Failed to get temperature for {self._sensor_id} ({self._sensor_type})")
         return None
@@ -155,10 +141,6 @@ class ActronHumiditySensor(ActronSensorBase):
         try:
             if self._sensor_id == "main":
                 return self.coordinator.data['main']['indoor_humidity']
-            elif self._sensor_id in self.coordinator.data["zones"]:
-                return self.coordinator.data["zones"][self._sensor_id]["humidity"]
-            elif self._sensor_id in self.coordinator.data["peripherals"]:
-                return self.coordinator.data["peripherals"][self._sensor_id]["humidity"]
         except KeyError:
             _LOGGER.error(f"Failed to get humidity for {self._sensor_id}")
         return None
@@ -255,7 +237,7 @@ class ActronQuietModeSensor(ActronSensorBase):
     def native_value(self) -> StateType:
         """Return the state of the sensor."""
         try:
-            return "On" if self.coordinator.data["main"]["quiet_mode_active"] else "Off"
+            return "On" if self.coordinator.data["main"]["quiet_mode"] else "Off"
         except KeyError:
             _LOGGER.error("Failed to get quiet mode status")
         return None
@@ -265,89 +247,38 @@ class ActronQuietModeSensor(ActronSensorBase):
         """Return the list of available options."""
         return ["On", "Off"]
 
-class ActronZoneEnabledSensor(ActronSensorBase):
-    """Representation of an Actron Air Neo zone enabled sensor."""
+class ActronZoneTemperatureSensor(ActronSensorBase):
+    """Representation of an Actron Air Neo zone temperature sensor."""
 
-    def __init__(
-        self,
-        coordinator: ActronDataCoordinator,
-        zone_id: str,
-    ) -> None:
-        """Initialize the zone enabled sensor."""
+    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str):
         super().__init__(
             coordinator,
-            zone_id,
-            "Zone Enabled",
-            SensorDeviceClass.ENUM,
-            None,
-            None,
+            f"zone_{zone_id}",
+            f"Zone {zone_id} Temperature",
+            SensorDeviceClass.TEMPERATURE,
+            SensorStateClass.MEASUREMENT,
+            UnitOfTemperature.CELSIUS,
         )
         self._zone_id = zone_id
 
     @property
     def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        try:
-            return "Enabled" if self.coordinator.data["zones"][self._zone_id]["is_enabled"] else "Disabled"
-        except KeyError:
-            _LOGGER.error(f"Failed to get zone enabled status for {self._zone_id}")
-        return None
+        return self.coordinator.data['zones'][self._zone_id]['temp']
 
-    @property
-    def options(self) -> list[str]:
-        """Return the list of available options."""
-        return ["Enabled", "Disabled"]
+class ActronZoneHumiditySensor(ActronSensorBase):
+    """Representation of an Actron Air Neo zone humidity sensor."""
 
-class ActronBatterySensor(ActronSensorBase):
-    """Representation of an Actron Air Neo battery sensor."""
-
-    def __init__(
-        self,
-        coordinator: ActronDataCoordinator,
-        sensor_id: str,
-    ) -> None:
-        """Initialize the battery sensor."""
+    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str):
         super().__init__(
             coordinator,
-            sensor_id,
-            "Battery",
-            SensorDeviceClass.BATTERY,
+            f"zone_{zone_id}",
+            f"Zone {zone_id} Humidity",
+            SensorDeviceClass.HUMIDITY,
             SensorStateClass.MEASUREMENT,
             PERCENTAGE,
         )
+        self._zone_id = zone_id
 
     @property
     def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        try:
-            return self.coordinator.data["peripherals"][self._sensor_id]["battery_level"]
-        except KeyError:
-            _LOGGER.error(f"Failed to get battery level for {self._sensor_id}")
-        return None
-
-class ActronSignalStrengthSensor(ActronSensorBase):
-    """Representation of an Actron Air Neo signal strength sensor."""
-
-    def __init__(
-        self,
-        coordinator: ActronDataCoordinator,
-        sensor_id: str,
-    ) -> None:
-        """Initialize the signal strength sensor."""
-        super().__init__(
-            coordinator,
-            sensor_id,
-            "Signal Strength",
-            SensorDeviceClass.SIGNAL_STRENGTH,
-            SensorStateClass.MEASUREMENT,
-            SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
-        )
-
-    @property
-    def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        try:
-            return self.coordinator.data["peripherals"][self._sensor_id]["signal_strength"]
-        except KeyError:
-            _LOGGER.error(f"Failed to get signal strength for {self._sensor_id}")
-        return None
+        return self.coordinator.data['zones'][self._zone_id]['humidity']

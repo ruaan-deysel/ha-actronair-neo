@@ -8,7 +8,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.components.climate.const import HVACMode
 
-from .api import ActronApi, AuthenticationError, ApiError
+from .actron_api import ActronApi, AuthenticationError, ApiError
 from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL, HVAC_MODES
 
 _LOGGER = logging.getLogger(__name__)

@@ -1,60 +1,22 @@
-from homeassistant.const import (
-    UnitOfTemperature,
-    PERCENTAGE,
-    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
-    Platform
-)
-from homeassistant.components.climate.const import HVACMode
+"""Constants for the Actron Neo integration."""
 
-DOMAIN = "actron_air_neo"
-API_URL = "https://nimbus.actronair.com.au"
+DOMAIN = "actron_neo"
+PLATFORMS = ["climate"]
 
-PLATFORMS = [Platform.CLIMATE, Platform.SENSOR, Platform.SWITCH]
+BASE_URL = "https://nimbus.actronair.com.au"
 
-DEFAULT_UPDATE_INTERVAL = 60
+HVAC_MODE_OFF = "OFF"
+HVAC_MODE_HEAT = "HEAT"
+HVAC_MODE_COOL = "COOL"
+HVAC_MODE_AUTO = "AUTO"
+HVAC_MODE_FAN = "FAN"
 
-# HVAC modes
-HVAC_MODES = {
-    "OFF": HVACMode.OFF,
-    "AUTO": HVACMode.AUTO,
-    "COOL": HVACMode.COOL,
-    "HEAT": HVACMode.HEAT,
-    "FAN": HVACMode.FAN_ONLY,
-}
+FAN_MODE_AUTO = "AUTO"
+FAN_MODE_LOW = "LOW"
+FAN_MODE_MEDIUM = "MEDIUM"
+FAN_MODE_HIGH = "HIGH"
 
-# Fan modes
-FAN_LOW = "LOW"
-FAN_MEDIUM = "MEDIUM"
-FAN_HIGH = "HIGH"
+DEFAULT_MIN_TEMP = 10
+DEFAULT_MAX_TEMP = 32
 
-FAN_MODES = [FAN_LOW, FAN_MEDIUM, FAN_HIGH]
-
-# Attributes
-ATTR_INDOOR_TEMPERATURE = "indoor_temperature"
-ATTR_OUTDOOR_TEMPERATURE = "outdoor_temperature"
-ATTR_INDOOR_HUMIDITY = "indoor_humidity"
-ATTR_ZONE_TEMPERATURE = "zone_temperature"
-ATTR_ZONE_HUMIDITY = "zone_humidity"
-ATTR_BATTERY_LEVEL = "battery_level"
-ATTR_SIGNAL_STRENGTH = "signal_strength"
-ATTR_IS_ENABLED = "is_enabled"
-ATTR_SETPOINT_COOL = "setpoint_cool"
-ATTR_SETPOINT_HEAT = "setpoint_heat"
-
-# Units
-TEMP_UNIT = UnitOfTemperature.CELSIUS
-PERCENTAGE_UNIT = PERCENTAGE
-SIGNAL_STRENGTH_UNIT = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
-
-# Command types
-CMD_SET_SETTINGS = "set-settings"
-
-# API keys
-API_KEY_USER_AIRCON_SETTINGS = "UserAirconSettings"
-API_KEY_REMOTE_ZONE_INFO = "RemoteZoneInfo"
-API_KEY_IS_ON = "isOn"
-API_KEY_MODE = "Mode"
-API_KEY_FAN_MODE = "FanMode"
-API_KEY_TEMP_SETPOINT_COOL = "TemperatureSetpoint_Cool_oC"
-API_KEY_TEMP_SETPOINT_HEAT = "TemperatureSetpoint_Heat_oC"
-API_KEY_ENABLED_ZONES = "EnabledZones"
+ATTR_ZONE_INDEX = "zone_index"

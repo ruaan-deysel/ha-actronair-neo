@@ -1,6 +1,6 @@
-"""Constants for the Actron Neo integration."""
+"""Constants for the Actron Air Neo integration."""
 
-DOMAIN = "actron_neo"
+DOMAIN = "actron_air_neo"
 PLATFORMS = ["climate"]
 
 BASE_URL = "https://nimbus.actronair.com.au"

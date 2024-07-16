@@ -1,4 +1,4 @@
-"""API for Actron Neo."""
+"""API for Actron Air Neo."""
 import asyncio
 import logging
 import aiohttp
@@ -14,7 +14,7 @@ from .const import BASE_URL, HVAC_MODE_OFF, HVAC_MODE_HEAT, HVAC_MODE_COOL, HVAC
 _LOGGER = logging.getLogger(__name__)
 
 class ActronNeoAPI:
-    """API client for Actron Neo."""
+    """API client for Actron Air Neo."""
 
     def __init__(self, username: str, password: str, client_name: str, device_serial: str, storage_path: str):
         """Initialize the API client."""

@@ -1,6 +1,6 @@
 {
-  "domain": "actron_neo",
-  "name": "Actron Neo",
+  "domain": "actron_air_neo",
+  "name": "Actron Air Neo",
   "config_flow": true,
   "documentation": "https://github.com/domalab/ha-actronair-neo",
   "requirements": [],

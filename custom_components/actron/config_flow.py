@@ -1,4 +1,4 @@
-"""Config flow for Actron Neo integration."""
+"""Config flow for Actron Air Neo integration."""
 from __future__ import annotations
 
 import logging
@@ -45,10 +45,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         raise CannotConnect from err
 
     # Return info that you want to store in the config entry.
-    return {"title": f"Actron Neo ({api.device_serial})", "device_serial": api.device_serial}
+    return {"title": f"Actron Air Neo ({api.device_serial})", "device_serial": api.device_serial}
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Actron Neo."""
+    """Handle a config flow for Actron Air Neo."""
 
     VERSION = 1
 

@@ -1,7 +1,7 @@
 import aiohttp
 import logging
 from typing import Dict, Any, List
-from .const import API_URL
+from .const import BASE_URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class ActronAirNeoApi:
             raise e
 
     async def _request_pairing_token(self) -> str:
-        url = f"{API_URL}/api/v0/client/user-devices"
+        url = f"{BASE_URL}/api/v0/client/user-devices"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "username": self.username,
@@ -37,7 +37,7 @@ class ActronAirNeoApi:
         return response["pairingToken"]
 
     async def _request_bearer_token(self, pairing_token: str) -> str:
-        url = f"{API_URL}/api/v0/oauth/token"
+        url = f"{BASE_URL}/api/v0/oauth/token"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "grant_type": "refresh_token",
@@ -48,7 +48,7 @@ class ActronAirNeoApi:
         return response["access_token"]
 
     async def get_devices(self) -> List[Dict[str, str]]:
-        url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
+        url = f"{BASE_URL}/api/v0/client/ac-systems?includeNeo=true"
         response = await self._make_request(url, "GET")
         devices = []
         if '_embedded' in response and 'ac-systems' in response['_embedded']:

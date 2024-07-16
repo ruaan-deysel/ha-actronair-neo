@@ -1,6 +1,6 @@
-"""Constants for the Actron Air Neo integration."""
+"""Constants for the Actron Neo integration."""
 
-DOMAIN = "actron_air_neo"
+DOMAIN = "actron_neo"
 PLATFORMS = ["climate"]
 
 BASE_URL = "https://nimbus.actronair.com.au"
@@ -18,5 +18,3 @@ FAN_MODE_HIGH = "HIGH"
 
 DEFAULT_MIN_TEMP = 10
 DEFAULT_MAX_TEMP = 32
-
-ATTR_ZONE_INDEX = "zone_index"

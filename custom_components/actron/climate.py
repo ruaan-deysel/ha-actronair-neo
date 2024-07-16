@@ -1,4 +1,4 @@
-"""Support for Actron Air Neo climate devices."""
+"""Support for Actron Neo climate devices."""
 from __future__ import annotations
 
 import logging
@@ -53,9 +53,9 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Actron Air Neo climate devices."""
+    """Set up the Actron Neo climate devices."""
     api = hass.data[DOMAIN][config_entry.entry_id]
-    zones_as_heater_coolers = config_entry.data.get("zones_as_heater_coolers", False)
+    zones_as_heater_coolers = config_entry.options.get("zones_as_heater_coolers", False)
     
     # Create the master climate entity
     entities = [ActronNeoClimate(api, None, zones_as_heater_coolers)]
@@ -67,7 +67,7 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 class ActronNeoClimate(ClimateEntity):
-    """Representation of an Actron Air Neo climate device."""
+    """Representation of an Actron Neo climate device."""
 
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
 
@@ -78,14 +78,14 @@ class ActronNeoClimate(ClimateEntity):
         self._zones_as_heater_coolers = zones_as_heater_coolers
         
         if zone_index is None:
-            self._attr_name = "Actron Air Neo Master"
+            self._attr_name = "Actron Neo Master"
             self._attr_unique_id = f"{api.client_name}_climate_master"
             self._attr_hvac_modes = list(HVAC_MODES.values())
             self._attr_fan_modes = list(FAN_MODES.values())
         else:
             zone = next((z for z in api.zones if z['index'] == zone_index), None)
             if zone:
-                self._attr_name = f"Actron Air Neo {zone['name']}"
+                self._attr_name = f"Actron Neo {zone['name']}"
                 self._attr_unique_id = f"{api.client_name}_climate_zone_{zone_index}"
                 if zones_as_heater_coolers:
                     self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
@@ -118,7 +118,7 @@ class ActronNeoClimate(ClimateEntity):
                 self._update_zone(status)
             
         except Exception as e:
-            _LOGGER.error(f"Failed to update Actron Air Neo climate: {str(e)}")
+            _LOGGER.error(f"Failed to update Actron Neo climate: {str(e)}")
 
     def _update_master(self, status):
         """Update the master climate entity."""
@@ -171,7 +171,7 @@ class ActronNeoClimate(ClimateEntity):
                 await self._api.set_zone_temperature(self._zone_index, temperature, 
                                                     HVAC_MODE_COOL if self._attr_hvac_mode == HVACMode.COOL else HVAC_MODE_HEAT)
         except Exception as e:
-            _LOGGER.error(f"Failed to set temperature for Actron Air Neo: {str(e)}")
+            _LOGGER.error(f"Failed to set temperature for Actron Neo: {str(e)}")
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
@@ -193,7 +193,7 @@ class ActronNeoClimate(ClimateEntity):
                 else:
                     await self._api.set_zone_state(self._zone_index, hvac_mode != HVACMode.OFF)
         except Exception as e:
-            _LOGGER.error(f"Failed to set HVAC mode for Actron Air Neo: {str(e)}")
+            _LOGGER.error(f"Failed to set HVAC mode for Actron Neo: {str(e)}")
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
@@ -207,7 +207,7 @@ class ActronNeoClimate(ClimateEntity):
                     await self._api.set_fan_mode(key)
                     break
         except Exception as e:
-            _LOGGER.error(f"Failed to set fan mode for Actron Air Neo: {str(e)}")
+            _LOGGER.error(f"Failed to set fan mode for Actron Neo: {str(e)}")
 
     @property
     def hvac_mode(self) -> HVACMode | None:

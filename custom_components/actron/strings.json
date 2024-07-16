@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Actron Air Neo",
-        "description": "Enter your Actron Air Neo account credentials",
+        "title": "Connect to Actron Neo",
+        "description": "Enter your Actron Neo account credentials",
         "data": {
           "username": "Username",
           "password": "Password"
@@ -18,18 +18,18 @@
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to Actron Air Neo",
+      "cannot_connect": "Failed to connect to Actron Neo",
       "invalid_auth": "Invalid authentication",
       "unknown": "Unexpected error occurred"
     },
     "abort": {
-      "already_configured": "Actron Air Neo is already configured"
+      "already_configured": "Actron Neo is already configured"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Actron Air Neo Options",
+        "title": "Actron Neo Options",
         "data": {
           "zones_as_heater_coolers": "Expose zones as individual heater/cooler entities"
         }

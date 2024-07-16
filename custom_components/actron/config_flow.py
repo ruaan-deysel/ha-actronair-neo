@@ -1,77 +1,123 @@
+"""Config flow for Actron Neo integration."""
+from __future__ import annotations
+
 import logging
+from typing import Any
+
 import voluptuous as vol
 
-from homeassistant import config_entries, core, exceptions
-from homeassistant.core import callback
-import homeassistant.helpers.config_validation as cv
+from homeassistant import config_entries
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResult
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
+from .actron_api import ActronNeoAPI
 
 _LOGGER = logging.getLogger(__name__)
 
-class ActronAirNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Actron Air Neo."""
+STEP_USER_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required("username"): str,
+        vol.Required("password"): str,
+    }
+)
+
+STEP_ZONE_CONFIG_SCHEMA = vol.Schema(
+    {
+        vol.Required("zones_as_heater_coolers", default=False): bool,
+    }
+)
+
+async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
+    """Validate the user input allows us to connect."""
+    api = ActronNeoAPI(
+        username=data["username"],
+        password=data["password"],
+        client_name="homeassistant-actron-neo",
+        device_serial="",
+        storage_path=hass.config.path(".storage")
+    )
+
+    try:
+        await api.actron_que_api()
+    except Exception as err:
+        raise CannotConnect from err
+
+    # Return info that you want to store in the config entry.
+    return {"title": f"Actron Neo ({api.device_serial})", "device_serial": api.device_serial}
+
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Actron Neo."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
-    async def async_step_user(self, user_input=None):
+    def __init__(self):
+        """Initialize the config flow."""
+        self.api_info = None
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle the initial step."""
-        errors = {}
+        errors: dict[str, str] = {}
         if user_input is not None:
-            # Implement logic to authenticate with Actron Air Neo
             try:
-                valid = await self._test_credentials(user_input["username"], user_input["password"])
-                if valid:
-                    return self.async_create_entry(title="Actron Air Neo", data=user_input)
-                else:
-                    errors["base"] = "invalid_auth"
+                self.api_info = await validate_input(self.hass, user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
-            except Exception as e:
-                _LOGGER.exception("Unexpected exception: %s", e)
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
-
-        data_schema = vol.Schema({
-            vol.Required("username"): str,
-            vol.Required("password"): str,
-        })
+            else:
+                return await self.async_step_zone_config()
 
         return self.async_show_form(
-            step_id="user", data_schema=data_schema, errors=errors
+            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
         )
 
-    async def _test_credentials(self, username, password):
-        """Return true if credentials are valid."""
-        # Implement credential validation
-        return True
+    async def async_step_zone_config(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the zone configuration step."""
+        if user_input is not None:
+            return self.async_create_entry(title=self.api_info["title"], data={
+                "username": self.api_info["username"],
+                "password": self.api_info["password"],
+                "client_name": "homeassistant-actron-neo",
+                "device_serial": self.api_info["device_serial"],
+                "zones_as_heater_coolers": user_input["zones_as_heater_coolers"]
+            })
+
+        return self.async_show_form(
+            step_id="zone_config", data_schema=STEP_ZONE_CONFIG_SCHEMA
+        )
 
     @staticmethod
-    @callback
-    def async_get_options_flow(config_entry):
-        return ActronAirNeoOptionsFlowHandler(config_entry)
+    @config_entries.HANDLERS.register(DOMAIN)
+    class OptionsFlowHandler(config_entries.OptionsFlow):
+        def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+            """Initialize options flow."""
+            self.config_entry = config_entry
 
+        async def async_step_init(
+            self, user_input: dict[str, Any] | None = None
+        ) -> FlowResult:
+            """Manage the options."""
+            if user_input is not None:
+                return self.async_create_entry(title="", data=user_input)
 
-class ActronAirNeoOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options flow for Actron Air Neo."""
+            return self.async_show_form(
+                step_id="init",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(
+                            "zones_as_heater_coolers",
+                            default=self.config_entry.options.get("zones_as_heater_coolers", False),
+                        ): bool,
+                    }
+                ),
+            )
 
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        self.config_entry = config_entry
-
-    async def async_step_init(self, user_input=None):
-        """Manage the options."""
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-
-        data_schema = vol.Schema({
-            vol.Optional("zones_as_heater_coolers", default=self.config_entry.options.get("zones_as_heater_coolers", False)): bool,
-        })
-
-        return self.async_show_form(
-            step_id="init", data_schema=data_schema
-        )
-
-
-class CannotConnect(exceptions.HomeAssistantError):
+class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""

@@ -1,4 +1,4 @@
-"""The Actron Air Neo integration."""
+"""The Actron Neo integration."""
 import asyncio
 import logging
 
@@ -11,12 +11,12 @@ from .actron_api import ActronNeoAPI
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup(hass: HomeAssistant, config: dict):
-    """Set up the Actron Air Neo component."""
+    """Set up the Actron Neo component."""
     hass.data.setdefault(DOMAIN, {})
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Set up Actron Air Neo from a config entry."""
+    """Set up Actron Neo from a config entry."""
     api = ActronNeoAPI(
         entry.data["username"],
         entry.data["password"],

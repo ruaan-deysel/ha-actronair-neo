@@ -1,73 +1,231 @@
-import aiohttp
+"""API for Actron Neo."""
+import asyncio
 import logging
-from typing import Dict, Any, List
-from .const import BASE_URL
+import aiohttp
+import json
+import os
+from datetime import datetime, timedelta
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from .const import BASE_URL, HVAC_MODE_OFF, HVAC_MODE_HEAT, HVAC_MODE_COOL, HVAC_MODE_AUTO, HVAC_MODE_FAN
 
 _LOGGER = logging.getLogger(__name__)
 
-class ActronAirNeoApi:
-    def __init__(self, username: str, password: str):
+class ActronNeoAPI:
+    """API client for Actron Neo."""
+
+    def __init__(self, username: str, password: str, client_name: str, device_serial: str, storage_path: str):
+        """Initialize the API client."""
         self.username = username
         self.password = password
-        self.bearer_token = None
+        self.client_name = client_name
+        self.device_serial = device_serial
+        self.storage_path = storage_path
+        self.command_url = None
+        self.query_url = None
+        self.api_client_id = self.generate_client_id()
+        self.refresh_token = {"expires": 0, "token": ""}
+        self.bearer_token = {"expires": 0, "token": ""}
         self.session = None
+        self.zones = []
 
-    async def authenticate(self):
-        if self.session is None:
-            self.session = aiohttp.ClientSession()
+    def generate_client_id(self):
+        """Generate a unique client ID."""
+        import random
+        random_number = random.randint(10001, 99999)
+        return f"{self.client_name}-{random_number}"
 
-        try:
-            pairing_token = await self._request_pairing_token()
-            self.bearer_token = await self._request_bearer_token(pairing_token)
-        except Exception as e:
-            await self.close()
-            raise e
+    async def actron_que_api(self):
+        """Initialize the API connection."""
+        await self.token_generator()
+        await self.get_ac_systems()
+        self.command_url = f"{BASE_URL}/api/v0/client/ac-systems/cmds/send?serial={self.device_serial}"
+        self.query_url = f"{BASE_URL}/api/v0/client/ac-systems/status/latest?serial={self.device_serial}"
 
-    async def _request_pairing_token(self) -> str:
+    async def manage_api_request(self, request_content, retries=3, delay=3):
+        """Manage API requests with retry logic."""
+        async with aiohttp.ClientSession() as session:
+            for _ in range(retries):
+                try:
+                    async with session.request(
+                        method=request_content.method,
+                        url=request_content.url,
+                        headers=request_content.headers,
+                        data=request_content.data
+                    ) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        elif response.status == 401:
+                            await self.token_generator()
+                            request_content.headers["Authorization"] = f"Bearer {self.bearer_token['token']}"
+                        elif 500 <= response.status < 600:
+                            await asyncio.sleep(delay)
+                        else:
+                            raise Exception(f"API request failed with status {response.status}")
+                except Exception as e:
+                    _LOGGER.error(f"API request failed: {str(e)}")
+                    await asyncio.sleep(delay)
+            
+            raise Exception("Max retries exceeded")
+
+    async def get_refresh_token(self):
+        """Get a refresh token from the API."""
         url = f"{BASE_URL}/api/v0/client/user-devices"
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "username": self.username,
             "password": self.password,
+            "deviceName": self.client_name,
+            "deviceUniqueIdentifier": self.api_client_id,
             "client": "ios",
-            "deviceName": "HomeAssistant",
-            "deviceUniqueIdentifier": "HomeAssistant"
         }
-        response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
-        return response["pairingToken"]
-
-    async def _request_bearer_token(self, pairing_token: str) -> str:
-        url = f"{BASE_URL}/api/v0/oauth/token"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        request = aiohttp.RequestInfo(url=url, method="POST", headers=headers, data=data)
+        
+        response = await self.manage_api_request(request)
+        
+        self.refresh_token = {
+            "expires": datetime.fromisoformat(response["expires"]).timestamp(),
+            "token": response["pairingToken"]
+        }
+        
+        # Save to file
+        with open(os.path.join(self.storage_path, "refresh_token.json"), "w") as f:
+            json.dump(self.refresh_token, f)
+
+    async def get_bearer_token(self):
+        """Get a bearer token using the refresh token."""
+        url = f"{BASE_URL}/api/v0/oauth/token"
         data = {
             "grant_type": "refresh_token",
-            "refresh_token": pairing_token,
-            "client_id": "app"
+            "refresh_token": self.refresh_token["token"],
+            "client_id": "app",
         }
-        response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
-        return response["access_token"]
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        request = aiohttp.RequestInfo(url=url, method="POST", headers=headers, data=data)
+        
+        response = await self.manage_api_request(request)
+        
+        expires_at = datetime.now() + timedelta(seconds=response["expires_in"] - 300)
+        self.bearer_token = {
+            "expires": expires_at.timestamp(),
+            "token": response["access_token"]
+        }
+        
+        # Save to file
+        with open(os.path.join(self.storage_path, "bearer_token.json"), "w") as f:
+            json.dump(self.bearer_token, f)
 
-    async def get_devices(self) -> List[Dict[str, str]]:
+    async def token_generator(self):
+        """Generate or refresh tokens as needed."""
+        now = datetime.now().timestamp()
+        
+        if self.refresh_token["expires"] <= now:
+            await self.get_refresh_token()
+            await self.get_bearer_token()
+        elif self.bearer_token["expires"] <= now:
+            await self.get_bearer_token()
+
+    async def get_ac_systems(self):
+        """Get AC system information."""
         url = f"{BASE_URL}/api/v0/client/ac-systems?includeNeo=true"
-        response = await self._make_request(url, "GET")
-        devices = []
-        if '_embedded' in response and 'ac-systems' in response['_embedded']:
-            devices = response['_embedded']['ac-systems']
-        return devices
+        headers = {"Authorization": f"Bearer {self.bearer_token['token']}"}
+        request = aiohttp.RequestInfo(url=url, method="GET", headers=headers)
+        
+        response = await self.manage_api_request(request)
+        
+        systems = response["_embedded"]["ac-system"]
+        if len(systems) == 1 or not self.device_serial:
+            self.device_serial = systems[0]["serial"]
+        elif self.device_serial:
+            for system in systems:
+                if system["serial"] == self.device_serial:
+                    break
+            else:
+                raise Exception(f"Device with serial {self.device_serial} not found")
+        else:
+            raise Exception("Multiple AC systems found, please specify a device_serial")
 
-    async def _make_request(self, url: str, method: str, headers: Dict[str, str] = None, data: Dict[str, Any] = None, auth_required: bool = True):
-        if headers is None:
-            headers = {}
-        if auth_required and self.bearer_token:
-            headers["Authorization"] = f"Bearer {self.bearer_token}"
+    async def get_status(self):
+        """Get the current status of the AC system."""
+        headers = {
+            "Authorization": f"Bearer {self.bearer_token['token']}",
+            "Accept": "application/json"
+        }
+        request = aiohttp.RequestInfo(url=self.query_url, method="GET", headers=headers)
+        
+        response = await self.manage_api_request(request)
+        
+        # Process zones
+        self.zones = []
+        zone_data = response['lastKnownState']['RemoteZoneInfo']
+        zone_enabled_state = response['lastKnownState']['UserAirconSettings']['EnabledZones']
+        
+        for index, zone in enumerate(zone_data):
+            if zone['NV_Exists']:
+                self.zones.append({
+                    'name': zone['NV_Title'],
+                    'index': index,
+                    'enabled': zone_enabled_state[index],
+                    'current_temp': zone['LiveTemp_oC'],
+                    'set_temp_heat': zone['TemperatureSetpoint_Heat_oC'],
+                    'set_temp_cool': zone['TemperatureSetpoint_Cool_oC'],
+                    'min_temp': min(zone['MinHeatSetpoint'], zone['MinCoolSetpoint']),
+                    'max_temp': max(zone['MaxHeatSetpoint'], zone['MaxCoolSetpoint']),
+                })
+        
+        return response
 
-        async with self.session.request(method, url, headers=headers, data=data) as response:
-            if response.status not in [200, 201]:
-                _LOGGER.error(f"Error {response.status}: {await response.text()}")
-                response.raise_for_status()
-            return await response.json()
+    async def set_temperature(self, temp, mode):
+        """Set the target temperature."""
+        command = {"UserAirconSettings.TemperatureSetpoint_Cool_oC": temp} if mode == HVAC_MODE_COOL else {"UserAirconSettings.TemperatureSetpoint_Heat_oC": temp}
+        return await self.run_command(command)
 
-    async def close(self):
-        if self.session:
-            await self.session.close()
-            self.session = None
+    async def set_hvac_mode(self, mode):
+        """Set the HVAC mode."""
+        mode_mapping = {
+            HVAC_MODE_OFF: False,
+            HVAC_MODE_COOL: "COOL",
+            HVAC_MODE_HEAT: "HEAT",
+            HVAC_MODE_AUTO: "AUTO",
+            HVAC_MODE_FAN: "FAN"
+        }
+        if mode == HVAC_MODE_OFF:
+            command = {"UserAirconSettings.isOn": False}
+        else:
+            command = {"UserAirconSettings.isOn": True, "UserAirconSettings.Mode": mode_mapping[mode]}
+        return await self.run_command(command)
+
+    async def set_fan_mode(self, mode):
+        """Set the fan mode."""
+        command = {"UserAirconSettings.FanMode": mode}
+        return await self.run_command(command)
+
+    async def set_zone_state(self, zone_index: int, enabled: bool):
+        """Enable or disable a zone."""
+        command = {f"UserAirconSettings.EnabledZones[{zone_index}]": enabled}
+        return await self.run_command(command)
+
+    async def set_zone_temperature(self, zone_index: int, temp: float, mode: str):
+        """Set the target temperature for a specific zone."""
+        if mode == HVAC_MODE_COOL:
+            command = {f"RemoteZoneInfo[{zone_index}].TemperatureSetpoint_Cool_oC": temp}
+        else:
+            command = {f"RemoteZoneInfo[{zone_index}].TemperatureSetpoint_Heat_oC": temp}
+        return await self.run_command(command)
+
+    async def run_command(self, command):
+        """Send a command to the AC system."""
+        headers = {
+            "Authorization": f"Bearer {self.bearer_token['token']}",
+            "Content-Type": "application/json"
+        }
+        data = json.dumps({"command": {**command, "type": "set-settings"}})
+        request = aiohttp.RequestInfo(url=self.command_url, method="POST", headers=headers, data=data)
+        
+        response = await self.manage_api_request(request)
+        
+        if response.get("type") == "ack":
+            return True
+        return False

@@ -1,6 +1,6 @@
-# Work In Progress - Actron Air Neo Home Assistant Integration
+# Work In Progress - ActronAir Neo Home Assistant Integration
 
-This is a custom component for Home Assistant that integrates with the Actron Air Neo HVAC system.
+This is a custom component for Home Assistant that integrates with the ActronAir Neo HVAC system.
 
 ## Installation
 
@@ -11,7 +11,7 @@ This is a custom component for Home Assistant that integrates with the Actron Ai
     ```bash
     https://github.com/domalab/ha-actronair-neo
     ```
-3. Search for "Actron Air Neo" in HACS and install it.
+3. Search for "ActronAir Neo" in HACS and install it.
 
 ### Manual Installation
 
@@ -27,7 +27,7 @@ This is a custom component for Home Assistant that integrates with the Actron Ai
 ## Configuration
 
 1. Navigate to Configuration > Integrations in Home Assistant.
-2. Click on "Add Integration" and search for "Actron Air Neo".
+2. Click on "Add Integration" and search for "ActronAir Neo".
 3. Follow the prompts to enter your Actron Neo credentials.
 
 ## Usage

@@ -2,36 +2,51 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Actron Neo",
-        "description": "Enter your Actron Neo account credentials",
+        "title": "Set up Actron Air Neo",
+        "description": "Enter your Actron Air Neo account details",
         "data": {
           "username": "Username",
           "password": "Password"
         }
       },
-      "zone_config": {
-        "title": "Zone Configuration",
-        "description": "Choose how you want to control individual zones",
+      "select_device": {
+        "title": "Select Actron Air Neo Device",
+        "description": "Choose the device you want to add",
         "data": {
-          "zones_as_heater_coolers": "Expose zones as individual heater/cooler entities"
+          "device_id": "Device"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to Actron Neo",
       "invalid_auth": "Invalid authentication",
+      "no_devices": "No devices found on your account",
+      "cannot_connect": "Failed to connect to the Actron API",
       "unknown": "Unexpected error occurred"
     },
     "abort": {
-      "already_configured": "Actron Neo is already configured"
+      "already_configured": "This Actron Air Neo device is already configured"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Actron Neo Options",
+        "title": "Actron Air Neo Options",
         "data": {
-          "zones_as_heater_coolers": "Expose zones as individual heater/cooler entities"
+          "update_interval": "Update Interval (seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "climate": {
+      "actron_air_neo": {
+        "state_attributes": {
+          "fan_mode": {
+            "auto": "Auto",
+            "low": "Low",
+            "medium": "Medium",
+            "high": "High"
+          }
         }
       }
     }

@@ -71,10 +71,15 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def fan_mode(self) -> str | None:
-        fan_mode = self.coordinator.data['main']['fan_mode']
-        if fan_mode == "MED":
-            return FAN_MEDIUM
-        return FAN_MODES.get(fan_mode, FAN_LOW)
+        return FAN_MODES.get(self.coordinator.data['main']['fan_mode'], FAN_LOW)
+
+    @property
+    def is_aux_heat(self) -> bool:
+        return self.coordinator.data['main']['compressor_mode'] == 'ON'
+
+    @property
+    def current_humidity(self) -> int | None:
+        return self.coordinator.data['main']['indoor_humidity']
 
     async def async_set_temperature(self, **kwargs):
         if ATTR_TEMPERATURE in kwargs:

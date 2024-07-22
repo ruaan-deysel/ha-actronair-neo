@@ -59,51 +59,34 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Parsing raw data: %s", data)
         parsed_data = {
             "main": {
-                "is_on": False,
-                "mode": "OFF",
-                "fan_mode": "AUTO",
-                "temp_setpoint_cool": None,
-                "temp_setpoint_heat": None,
-                "indoor_temp": None,
-                "indoor_humidity": None,
+                "is_on": data.get("powerState") == "ON",
+                "mode": data.get("climateMode", "OFF"),
+                "fan_mode": data.get("fanMode", "AUTO"),
+                "temp_setpoint_cool": data.get("masterCoolingSetTemp"),
+                "temp_setpoint_heat": data.get("masterHeatingSetTemp"),
+                "indoor_temp": data.get("masterCurrentTemp"),
+                "indoor_humidity": data.get("masterCurrentHumidity"),
+                "compressor_mode": data.get("compressorMode"),
+                "fan_running": data.get("fanRunning", False),
+                "away_mode": data.get("awayMode", False),
+                "quiet_mode": data.get("quietMode", False),
+                "compressor_chasing_temp": data.get("compressorChasingTemp"),
+                "compressor_current_temp": data.get("compressorCurrentTemp"),
             },
             "zones": {}
         }
         
-        try:
-            system_data_key = next((key for key in data.get("lastKnownState", {}).keys() if key.startswith("<") and key.endswith(">")), None)
-            if not system_data_key:
-                _LOGGER.error("No valid system data key found in the data")
-                return parsed_data
-
-            system_data = data.get("lastKnownState", {}).get(system_data_key, {})
-            
-            user_settings = system_data.get("UserAirconSettings", {})
-            master_info = system_data.get("MasterInfo", {})
-
-            parsed_data["main"] = {
-                "is_on": user_settings.get("isOn", False),
-                "mode": user_settings.get("Mode", "OFF"),
-                "fan_mode": user_settings.get("FanMode", "AUTO"),
-                "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
-                "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
-                "indoor_temp": master_info.get("LiveTemp_oC"),
-                "indoor_humidity": master_info.get("LiveHumidity_pc"),
+        for zone in data.get("zoneCurrentStatus", []):
+            zone_id = f"zone_{zone['zoneIndex'] + 1}"
+            parsed_data["zones"][zone_id] = {
+                "name": zone.get("zoneName"),
+                "temp": zone.get("currentTemp"),
+                "humidity": zone.get("currentHumidity"),
+                "is_enabled": zone.get("zoneEnabled", False),
+                "temp_setpoint_cool": zone.get("currentCoolingSetTemp"),
+                "temp_setpoint_heat": zone.get("currentHeatingSetTemp"),
+                "sensor_battery": zone.get("zoneSensorBattery"),
             }
-
-            for i, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
-                if zone.get("NV_Exists", False):
-                    zone_id = f"zone_{i+1}"
-                    parsed_data["zones"][zone_id] = {
-                        "name": zone.get("NV_Title", f"Zone {i+1}"),
-                        "temp": zone.get("LiveTemp_oC"),
-                        "humidity": zone.get("LiveHumidity_pc"),
-                        "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
-                    }
-
-        except Exception as e:
-            _LOGGER.error(f"Error parsing data: {e}")
-            _LOGGER.debug(f"Raw data: {data}")
 
         _LOGGER.debug("Parsed data: %s", parsed_data)
         return parsed_data
@@ -114,11 +97,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         try:
             mode = next(k for k, v in {"OFF": HVACMode.OFF, "AUTO": HVACMode.AUTO, "COOL": HVACMode.COOL, "HEAT": HVACMode.HEAT, "FAN": HVACMode.FAN_ONLY}.items() if v == hvac_mode)
             if mode == "OFF":
-                await self.api.send_command(self.device_id, {"UserAirconSettings.isOn": False})
+                await self.api.send_command(self.device_id, {"powerState": "OFF"})
             else:
                 await self.api.send_command(self.device_id, {
-                    "UserAirconSettings.isOn": True,
-                    "UserAirconSettings.Mode": mode
+                    "powerState": "ON",
+                    "climateMode": mode
                 })
             await self.async_request_refresh()
             _LOGGER.debug("HVAC mode set successfully")
@@ -130,9 +113,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Set temperature."""
         _LOGGER.debug("Setting temperature to: %s (Cooling: %s)", temperature, is_cooling)
         try:
-            setting = "Cool" if is_cooling else "Heat"
+            setting = "masterCoolingSetTemp" if is_cooling else "masterHeatingSetTemp"
             await self.api.send_command(self.device_id, {
-                f"UserAirconSettings.TemperatureSetpoint_{setting}_oC": temperature
+                setting: temperature
             })
             await self.async_request_refresh()
             _LOGGER.debug("Temperature set successfully")
@@ -144,7 +127,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Set fan mode."""
         _LOGGER.debug("Setting fan mode to: %s", fan_mode)
         try:
-            await self.api.send_command(self.device_id, {"UserAirconSettings.FanMode": fan_mode})
+            await self.api.send_command(self.device_id, {"fanMode": fan_mode})
             await self.async_request_refresh()
             _LOGGER.debug("Fan mode set successfully")
         except Exception as err:
@@ -155,7 +138,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Set zone state."""
         _LOGGER.debug("Setting zone %s state to: %s", zone_index, is_on)
         try:
-            await self.api.send_command(self.device_id, {f"UserAirconSettings.EnabledZones[{zone_index}]": is_on})
+            await self.api.send_command(self.device_id, {f"zoneCurrentStatus[{zone_index}].zoneEnabled": is_on})
             await self.async_request_refresh()
             _LOGGER.debug("Zone state set successfully")
         except Exception as err:

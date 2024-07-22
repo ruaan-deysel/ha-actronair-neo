@@ -57,38 +57,53 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         _LOGGER.debug("Parsing raw data: %s", data)
-        parsed_data = {}
-        
-        system_data_key = next((key for key in data.get("lastKnownState", {}).keys() if key.startswith("<") and key.endswith(">")), None)
-        if not system_data_key:
-            _LOGGER.error("No valid system data key found in the data")
-            return parsed_data
-
-        system_data = data.get("lastKnownState", {}).get(system_data_key, {})
-        
-        user_settings = system_data.get("UserAirconSettings", {})
-        master_info = system_data.get("MasterInfo", {})
-
-        parsed_data["main"] = {
-            "is_on": user_settings.get("isOn", False),
-            "mode": user_settings.get("Mode", "OFF"),
-            "fan_mode": user_settings.get("FanMode", "AUTO"),
-            "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
-            "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
-            "indoor_temp": master_info.get("LiveTemp_oC"),
-            "indoor_humidity": master_info.get("LiveHumidity_pc"),
+        parsed_data = {
+            "main": {
+                "is_on": False,
+                "mode": "OFF",
+                "fan_mode": "AUTO",
+                "temp_setpoint_cool": None,
+                "temp_setpoint_heat": None,
+                "indoor_temp": None,
+                "indoor_humidity": None,
+            },
+            "zones": {}
         }
+        
+        try:
+            system_data_key = next((key for key in data.get("lastKnownState", {}).keys() if key.startswith("<") and key.endswith(">")), None)
+            if not system_data_key:
+                _LOGGER.error("No valid system data key found in the data")
+                return parsed_data
 
-        parsed_data["zones"] = {}
-        for i, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
-            if zone.get("NV_Exists", False):
-                zone_id = f"zone_{i+1}"
-                parsed_data["zones"][zone_id] = {
-                    "name": zone.get("NV_Title", f"Zone {i+1}"),
-                    "temp": zone.get("LiveTemp_oC"),
-                    "humidity": zone.get("LiveHumidity_pc"),
-                    "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
-                }
+            system_data = data.get("lastKnownState", {}).get(system_data_key, {})
+            
+            user_settings = system_data.get("UserAirconSettings", {})
+            master_info = system_data.get("MasterInfo", {})
+
+            parsed_data["main"] = {
+                "is_on": user_settings.get("isOn", False),
+                "mode": user_settings.get("Mode", "OFF"),
+                "fan_mode": user_settings.get("FanMode", "AUTO"),
+                "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
+                "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
+                "indoor_temp": master_info.get("LiveTemp_oC"),
+                "indoor_humidity": master_info.get("LiveHumidity_pc"),
+            }
+
+            for i, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
+                if zone.get("NV_Exists", False):
+                    zone_id = f"zone_{i+1}"
+                    parsed_data["zones"][zone_id] = {
+                        "name": zone.get("NV_Title", f"Zone {i+1}"),
+                        "temp": zone.get("LiveTemp_oC"),
+                        "humidity": zone.get("LiveHumidity_pc"),
+                        "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
+                    }
+
+        except Exception as e:
+            _LOGGER.error(f"Error parsing data: {e}")
+            _LOGGER.debug(f"Raw data: {data}")
 
         _LOGGER.debug("Parsed data: %s", parsed_data)
         return parsed_data

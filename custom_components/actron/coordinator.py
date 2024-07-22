@@ -7,8 +7,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.components.climate.const import HVACMode
 
-from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
 from .api import ActronApi, AuthenticationError, ApiError
+from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
 
 import logging
 
@@ -24,23 +24,14 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         )
         self.api = api
         self.device_id = device_id
-        _LOGGER.debug("ActronDataCoordinator initialized with device_id: %s", device_id)
 
     async def _async_update_data(self) -> Dict[str, Any]:
-        _LOGGER.debug("Starting data update for device: %s", self.device_id)
         try:
             if not self.api.bearer_token:
-                _LOGGER.debug("No bearer token, authenticating...")
                 await self.api.authenticate()
-                _LOGGER.debug("Authentication successful")
 
-            _LOGGER.debug("Fetching AC status from API")
             status = await self.api.get_ac_status(self.device_id)
-            _LOGGER.debug("AC status fetched successfully")
-            
-            parsed_data = self._parse_data(status)
-            _LOGGER.debug("Data parsed: %s", parsed_data)
-            return parsed_data
+            return self._parse_data(status)
 
         except AuthenticationError as auth_err:
             _LOGGER.error("Authentication error: %s", auth_err)
@@ -56,61 +47,43 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise UpdateFailed("Unexpected error occurred") from err
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        _LOGGER.debug("Parsing raw data: %s", data)
-        parsed_data = {
-            "main": {
-                "is_on": False,
-                "mode": "OFF",
-                "fan_mode": "AUTO",
-                "temp_setpoint_cool": None,
-                "temp_setpoint_heat": None,
-                "indoor_temp": None,
-                "indoor_humidity": None,
-            },
-            "zones": {}
-        }
+        parsed_data = {}
         
-        try:
-            system_data_key = next((key for key in data.get("lastKnownState", {}).keys() if key.startswith("<") and key.endswith(">")), None)
-            if not system_data_key:
-                _LOGGER.error("No valid system data key found in the data")
-                return parsed_data
+        system_data_key = next((key for key in data.get("lastKnownState", {}).keys() if key.startswith("<") and key.endswith(">")), None)
+        if not system_data_key:
+            _LOGGER.error("No valid system data key found in the data")
+            return parsed_data
 
-            system_data = data.get("lastKnownState", {}).get(system_data_key, {})
-            
-            user_settings = system_data.get("UserAirconSettings", {})
-            master_info = system_data.get("MasterInfo", {})
+        system_data = data.get("lastKnownState", {}).get(system_data_key, {})
+        
+        user_settings = system_data.get("UserAirconSettings", {})
+        master_info = system_data.get("MasterInfo", {})
 
-            parsed_data["main"] = {
-                "is_on": user_settings.get("isOn", False),
-                "mode": user_settings.get("Mode", "OFF"),
-                "fan_mode": user_settings.get("FanMode", "AUTO"),
-                "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
-                "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
-                "indoor_temp": master_info.get("LiveTemp_oC"),
-                "indoor_humidity": master_info.get("LiveHumidity_pc"),
-            }
+        parsed_data["main"] = {
+            "is_on": user_settings.get("isOn", False),
+            "mode": user_settings.get("Mode", "OFF"),
+            "fan_mode": user_settings.get("FanMode", "AUTO"),
+            "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
+            "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
+            "indoor_temp": master_info.get("LiveTemp_oC"),
+            "indoor_humidity": master_info.get("LiveHumidity_pc"),
+        }
 
-            for i, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
-                if zone.get("NV_Exists", False):
-                    zone_id = f"zone_{i+1}"
-                    parsed_data["zones"][zone_id] = {
-                        "name": zone.get("NV_Title", f"Zone {i+1}"),
-                        "temp": zone.get("LiveTemp_oC"),
-                        "humidity": zone.get("LiveHumidity_pc"),
-                        "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
-                    }
+        parsed_data["zones"] = {}
+        for i, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
+            if zone.get("NV_Exists", False):
+                zone_id = f"zone_{i+1}"
+                parsed_data["zones"][zone_id] = {
+                    "name": zone.get("NV_Title", f"Zone {i+1}"),
+                    "temp": zone.get("LiveTemp_oC"),
+                    "humidity": zone.get("LiveHumidity_pc"),
+                    "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
+                }
 
-        except Exception as e:
-            _LOGGER.error(f"Error parsing data: {e}")
-            _LOGGER.debug(f"Raw data: {data}")
-
-        _LOGGER.debug("Parsed data: %s", parsed_data)
         return parsed_data
 
     async def set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
-        _LOGGER.debug("Setting HVAC mode to: %s", hvac_mode)
         try:
             mode = next(k for k, v in {"OFF": HVACMode.OFF, "AUTO": HVACMode.AUTO, "COOL": HVACMode.COOL, "HEAT": HVACMode.HEAT, "FAN": HVACMode.FAN_ONLY}.items() if v == hvac_mode)
             if mode == "OFF":
@@ -121,43 +94,36 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     "UserAirconSettings.Mode": mode
                 })
             await self.async_request_refresh()
-            _LOGGER.debug("HVAC mode set successfully")
         except Exception as err:
             _LOGGER.error("Failed to set HVAC mode: %s", err)
             raise
 
     async def set_temperature(self, temperature: float, is_cooling: bool) -> None:
         """Set temperature."""
-        _LOGGER.debug("Setting temperature to: %s (Cooling: %s)", temperature, is_cooling)
         try:
             setting = "Cool" if is_cooling else "Heat"
             await self.api.send_command(self.device_id, {
                 f"UserAirconSettings.TemperatureSetpoint_{setting}_oC": temperature
             })
             await self.async_request_refresh()
-            _LOGGER.debug("Temperature set successfully")
         except Exception as err:
             _LOGGER.error("Failed to set temperature: %s", err)
             raise
 
     async def set_fan_mode(self, fan_mode: str) -> None:
         """Set fan mode."""
-        _LOGGER.debug("Setting fan mode to: %s", fan_mode)
         try:
             await self.api.send_command(self.device_id, {"UserAirconSettings.FanMode": fan_mode})
             await self.async_request_refresh()
-            _LOGGER.debug("Fan mode set successfully")
         except Exception as err:
             _LOGGER.error("Failed to set fan mode: %s", err)
             raise
 
     async def set_zone_state(self, zone_index: int, is_on: bool) -> None:
         """Set zone state."""
-        _LOGGER.debug("Setting zone %s state to: %s", zone_index, is_on)
         try:
             await self.api.send_command(self.device_id, {f"UserAirconSettings.EnabledZones[{zone_index}]": is_on})
             await self.async_request_refresh()
-            _LOGGER.debug("Zone state set successfully")
         except Exception as err:
             _LOGGER.error("Failed to set zone state: %s", err)
             raise

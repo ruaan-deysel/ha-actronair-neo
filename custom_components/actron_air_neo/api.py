@@ -14,21 +14,31 @@ class ActronApi:
 
     async def login(self):
         _LOGGER.info("Attempting to log in to Actron API")
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/auth/login", json={
+            async with session.post(f"{self.base_url}/auth/login", headers=headers, json={
                 "username": self.username,
                 "password": self.password
             }) as response:
+                response_text = await response.text()
+                _LOGGER.debug("Login response text: %s", response_text)
                 data = await response.json()
-                _LOGGER.debug("Login response: %s", data)
+                _LOGGER.debug("Login response JSON: %s", data)
                 self.access_token = data["access_token"]
                 self.refresh_token = data["refresh_token"]
                 _LOGGER.info("Login successful, tokens obtained")
 
     async def refresh_token(self):
         _LOGGER.info("Attempting to refresh token")
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/auth/refresh", json={
+            async with session.post(f"{self.base_url}/auth/refresh", headers=headers, json={
                 "refresh_token": self.refresh_token
             }) as response:
                 data = await response.json()

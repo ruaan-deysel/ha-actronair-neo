@@ -1,0 +1,22 @@
+{
+    "title": "Actron Neo Integration",
+    "config": {
+      "step": {
+        "user": {
+          "title": "Configure Actron Neo",
+          "data": {
+            "username": "Username",
+            "password": "Password",
+            "refresh_interval": "Refresh Interval (seconds)"
+          }
+        }
+      },
+      "error": {
+        "auth": "Failed to authenticate, please check your username and password"
+      },
+      "abort": {
+        "already_configured": "This device is already configured"
+      }
+    }
+  }
+  

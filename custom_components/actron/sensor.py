@@ -1,106 +1,86 @@
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    PERCENTAGE,
-    UnitOfTemperature,
-)
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import StateType
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
+from homeassistant.helpers.entity import Entity
+from homeassistant.const import TEMP_CELSIUS, DEVICE_CLASS_TEMPERATURE, DEVICE_CLASS_HUMIDITY
 from .const import DOMAIN
-from .coordinator import ActronDataCoordinator
-
 import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
-    """Set up the Actron Air Neo sensors."""
-    coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = []
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    """Set up Actron Neo sensors from a config entry."""
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+    async_add_entities([
+        ActronTemperatureSensor(coordinator),
+        ActronHumiditySensor(coordinator),
+    ])
 
-    for zone_id in coordinator.data["zones"]:
-        entities.extend([
-            ActronZoneTemperatureSensor(coordinator, zone_id),
-            ActronZoneHumiditySensor(coordinator, zone_id),
-        ])
+class ActronTemperatureSensor(Entity):
+    """Representation of a Actron Neo Temperature Sensor."""
 
-    async_add_entities(entities)
-
-class ActronSensorBase(CoordinatorEntity, SensorEntity):
-    """Base class for Actron Air Neo sensors."""
-
-    def __init__(
-        self,
-        coordinator: ActronDataCoordinator,
-        zone_id: str,
-        name: str,
-        device_class: SensorDeviceClass,
-        state_class: SensorStateClass,
-        native_unit_of_measurement: str,
-    ) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._zone_id = zone_id
-        self._attr_name = f"Actron Air Neo {coordinator.data['zones'][zone_id]['name']} {name}"
-        self._attr_unique_id = f"{DOMAIN}_{coordinator.device_id}_zone_{zone_id}_{name.lower().replace(' ', '_')}"
-        self._attr_device_class = device_class
-        self._attr_state_class = state_class
-        self._attr_native_unit_of_measurement = native_unit_of_measurement
+    def __init__(self, coordinator):
+        self._coordinator = coordinator
+        self._name = "Actron Temperature"
+        self._state = None
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.device_id)},
-            "name": "Actron Air Neo",
-            "manufacturer": "Actron Air",
-            "model": "Neo",
-        }
-
-class ActronZoneTemperatureSensor(ActronSensorBase):
-    """Representation of an Actron Air Neo zone temperature sensor."""
-
-    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str):
-        """Initialize the temperature sensor."""
-        super().__init__(
-            coordinator,
-            zone_id,
-            "Temperature",
-            SensorDeviceClass.TEMPERATURE,
-            SensorStateClass.MEASUREMENT,
-            UnitOfTemperature.CELSIUS,
-        )
+    def name(self):
+        """Return the name of the sensor."""
+        return self._name
 
     @property
-    def native_value(self) -> StateType:
+    def state(self):
         """Return the state of the sensor."""
-        return self.coordinator.data['zones'][self._zone_id]['temp']
-
-class ActronZoneHumiditySensor(ActronSensorBase):
-    """Representation of an Actron Air Neo zone humidity sensor."""
-
-    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str):
-        """Initialize the humidity sensor."""
-        super().__init__(
-            coordinator,
-            zone_id,
-            "Humidity",
-            SensorDeviceClass.HUMIDITY,
-            SensorStateClass.MEASUREMENT,
-            PERCENTAGE,
-        )
+        return self._state
 
     @property
-    def native_value(self) -> StateType:
+    def unit_of_measurement(self):
+        """Return the unit of measurement."""
+        return TEMP_CELSIUS
+
+    @property
+    def device_class(self):
+        """Return the device class."""
+        return DEVICE_CLASS_TEMPERATURE
+
+    async def async_update(self):
+        """Fetch new state data for the sensor."""
+        _LOGGER.info("Updating Actron Temperature Sensor")
+        await self._coordinator.async_request_refresh()
+        status = self._coordinator.data
+        self._state = status.get("masterCurrentTemp")
+        _LOGGER.debug("Current Temperature: %s", self._state)
+
+class ActronHumiditySensor(Entity):
+    """Representation of a Actron Neo Humidity Sensor."""
+
+    def __init__(self, coordinator):
+        self._coordinator = coordinator
+        self._name = "Actron Humidity"
+        self._state = None
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return self._name
+
+    @property
+    def state(self):
         """Return the state of the sensor."""
-        return self.coordinator.data['zones'][self._zone_id]['humidity']
+        return self._state
+
+    @property
+    def unit_of_measurement(self):
+        """Return the unit of measurement."""
+        return "%"
+
+    @property
+    def device_class(self):
+        """Return the device class."""
+        return DEVICE_CLASS_HUMIDITY
+
+    async def async_update(self):
+        """Fetch new state data for the sensor."""
+        _LOGGER.info("Updating Actron Humidity Sensor")
+        await self._coordinator.async_request_refresh()
+        status = self._coordinator.data
+        self._state = status.get("masterCurrentHumidity")
+        _LOGGER.debug("Current Humidity: %s", self._state)

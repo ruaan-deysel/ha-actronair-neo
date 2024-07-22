@@ -1,54 +1,5 @@
-"""Constants for the Actron Air Neo integration."""
-from homeassistant.const import (
-    UnitOfTemperature,
-    PERCENTAGE,
-    Platform
-)
-from homeassistant.components.climate.const import HVACMode
-
-DOMAIN = "actron_air_neo"
-API_URL = "https://nimbus.actronair.com.au"
-
-PLATFORMS = [Platform.CLIMATE, Platform.SENSOR, Platform.SWITCH]
-
-DEFAULT_UPDATE_INTERVAL = 60
-
-# HVAC modes
-HVAC_MODES = {
-    "OFF": HVACMode.OFF,
-    "AUTO": HVACMode.AUTO,
-    "COOL": HVACMode.COOL,
-    "HEAT": HVACMode.HEAT,
-    "FAN": HVACMode.FAN_ONLY,
-}
-
-# Fan modes
-FAN_LOW = "LOW"
-FAN_MEDIUM = "MED"
-FAN_HIGH = "HIGH"
-
-FAN_MODES = [FAN_LOW, FAN_MEDIUM, FAN_HIGH]
-
-# Attributes
-ATTR_INDOOR_TEMPERATURE = "indoor_temperature"
-ATTR_INDOOR_HUMIDITY = "indoor_humidity"
-ATTR_ZONE_TEMPERATURE = "zone_temperature"
-ATTR_ZONE_HUMIDITY = "zone_humidity"
-ATTR_IS_ENABLED = "is_enabled"
-
-# Units
-TEMP_UNIT = UnitOfTemperature.CELSIUS
-PERCENTAGE_UNIT = PERCENTAGE
-
-# Command types
-CMD_SET_SETTINGS = "set-settings"
-
-# API keys
-API_KEY_USER_AIRCON_SETTINGS = "UserAirconSettings"
-API_KEY_REMOTE_ZONE_INFO = "RemoteZoneInfo"
-API_KEY_IS_ON = "isOn"
-API_KEY_MODE = "Mode"
-API_KEY_FAN_MODE = "FanMode"
-API_KEY_TEMP_SETPOINT_COOL = "TemperatureSetpoint_Cool_oC"
-API_KEY_TEMP_SETPOINT_HEAT = "TemperatureSetpoint_Heat_oC"
-API_KEY_ENABLED_ZONES = "EnabledZones"
+DOMAIN = "actron_neo"
+CONF_USERNAME = "username"
+CONF_PASSWORD = "password"
+CONF_REFRESH_INTERVAL = "refresh_interval"
+CONF_SERIAL_NUMBER = "serial_number"

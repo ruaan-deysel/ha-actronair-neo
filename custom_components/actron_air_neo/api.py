@@ -12,49 +12,66 @@ class ActronApi:
         self.refresh_token = None
         self.device_serial_number = None
 
-    async def login(self):
-        _LOGGER.info("Attempting to log in to Actron API")
+    async def request_pairing_token(self):
+        _LOGGER.info("Requesting pairing token from Actron API")
         headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {
+            "username": self.username,
+            "password": self.password,
+            "client": "ios",
+            "deviceName": "home_assistant",
+            "deviceUniqueIdentifier": "home_assistant_123"
         }
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/auth/login", headers=headers, json={
-                "username": self.username,
-                "password": self.password
-            }) as response:
+            async with session.post(f"{self.base_url}/api/v0/client/user-devices", headers=headers, data=data) as response:
                 response_text = await response.text()
-                _LOGGER.debug("Login response text: %s", response_text)
-                data = await response.json()
-                _LOGGER.debug("Login response JSON: %s", data)
-                self.access_token = data["access_token"]
-                self.refresh_token = data["refresh_token"]
-                _LOGGER.info("Login successful, tokens obtained")
+                _LOGGER.debug("Pairing token response text: %s", response_text)
+                try:
+                    data = await response.json()
+                    _LOGGER.debug("Pairing token response JSON: %s", data)
+                    self.refresh_token = data["pairingToken"]
+                    _LOGGER.info("Pairing token obtained successfully")
+                except Exception as e:
+                    _LOGGER.error("Error decoding pairing token response: %s", e)
+                    raise
 
-    async def refresh_token(self):
-        _LOGGER.info("Attempting to refresh token")
+    async def request_bearer_token(self):
+        _LOGGER.info("Requesting bearer token from Actron API")
         headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token,
+            "client_id": "app"
         }
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/auth/refresh", headers=headers, json={
-                "refresh_token": self.refresh_token
-            }) as response:
-                data = await response.json()
-                _LOGGER.debug("Token refresh response: %s", data)
-                self.access_token = data["access_token"]
-                self.refresh_token = data["refresh_token"]
-                _LOGGER.info("Token refreshed successfully")
+            async with session.post(f"{self.base_url}/api/v0/oauth/token", headers=headers, data=data) as response:
+                response_text = await response.text()
+                _LOGGER.debug("Bearer token response text: %s", response_text)
+                try:
+                    data = await response.json()
+                    _LOGGER.debug("Bearer token response JSON: %s", data)
+                    self.access_token = data["access_token"]
+                    _LOGGER.info("Bearer token obtained successfully")
+                except Exception as e:
+                    _LOGGER.error("Error decoding bearer token response: %s", e)
+                    raise
+
+    async def login(self):
+        await self.request_pairing_token()
+        await self.request_bearer_token()
 
     async def get_device_serial_number(self):
         headers = {"Authorization": f"Bearer {self.access_token}"}
         _LOGGER.info("Fetching device serial number from Actron API")
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{self.base_url}/hvac/device", headers=headers) as response:
+            async with session.get(f"{self.base_url}/api/v0/client/ac-systems", headers=headers, params={"includeNeo": "true"}) as response:
                 data = await response.json()
                 _LOGGER.debug("Device serial number response: %s", data)
-                self.device_serial_number = data.get("serialNumber")
+                self.device_serial_number = data[0]["serial"]
                 _LOGGER.info("Device serial number: %s", self.device_serial_number)
                 return self.device_serial_number
 
@@ -62,7 +79,7 @@ class ActronApi:
         headers = {"Authorization": f"Bearer {self.access_token}"}
         _LOGGER.info("Fetching status from Actron API")
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{self.base_url}/hvac/status", headers=headers) as response:
+            async with session.get(f"{self.base_url}/api/v0/client/ac-systems/status/latest", headers=headers, params={"serial": self.device_serial_number}) as response:
                 status = await response.json()
                 _LOGGER.debug("Status response: %s", status)
                 return status
@@ -71,7 +88,7 @@ class ActronApi:
         headers = {"Authorization": f"Bearer {self.access_token}"}
         _LOGGER.info("Setting power state to %s", state)
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/hvac/power", headers=headers, json={"state": state}) as response:
+            async with session.post(f"{self.base_url}/api/v0/client/ac-systems/cmds/send", headers=headers, params={"serial": self.device_serial_number}, json={"command": {"UserAirconSettings.isOn": state == "ON", "type": "set-settings"}}) as response:
                 data = await response.json()
                 _LOGGER.debug("Set power state response: %s", data)
                 return data
@@ -80,7 +97,7 @@ class ActronApi:
         headers = {"Authorization": f"Bearer {self.access_token}"}
         _LOGGER.info("Setting climate mode to %s", mode)
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/hvac/mode", headers=headers, json={"mode": mode}) as response:
+            async with session.post(f"{self.base_url}/api/v0/client/ac-systems/cmds/send", headers=headers, params={"serial": self.device_serial_number}, json={"command": {"UserAirconSettings.Mode": mode, "type": "set-settings"}}) as response:
                 data = await response.json()
                 _LOGGER.debug("Set climate mode response: %s", data)
                 return data
@@ -89,7 +106,7 @@ class ActronApi:
         headers = {"Authorization": f"Bearer {self.access_token}"}
         _LOGGER.info("Setting fan mode to %s", mode)
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/hvac/fan", headers=headers, json={"mode": mode}) as response:
+            async with session.post(f"{self.base_url}/api/v0/client/ac-systems/cmds/send", headers=headers, params={"serial": self.device_serial_number}, json={"command": {"UserAirconSettings.FanMode": mode, "type": "set-settings"}}) as response:
                 data = await response.json()
                 _LOGGER.debug("Set fan mode response: %s", data)
                 return data
@@ -98,7 +115,7 @@ class ActronApi:
         headers = {"Authorization": f"Bearer {self.access_token}"}
         _LOGGER.info("Setting target temperature to %s", temperature)
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/hvac/temperature", headers=headers, json={"temperature": temperature}) as response:
+            async with session.post(f"{self.base_url}/api/v0/client/ac-systems/cmds/send", headers=headers, params={"serial": self.device_serial_number}, json={"command": {"UserAirconSettings.TemperatureSetpoint_Cool_oC": temperature, "type": "set-settings"}}) as response:
                 data = await response.json()
                 _LOGGER.debug("Set target temperature response: %s", data)
                 return data
@@ -107,7 +124,7 @@ class ActronApi:
         headers = {"Authorization": f"Bearer {self.access_token}"}
         _LOGGER.info("Setting zone %s state to %s", zone_name, state)
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/hvac/zone", headers=headers, json={"zone": zone_name, "state": state}) as response:
+            async with session.post(f"{self.base_url}/api/v0/client/ac-systems/cmds/send", headers=headers, params={"serial": self.device_serial_number}, json={"command": {f"UserAirconSettings.EnabledZones[{zone_name}]": state, "type": "set-settings"}}) as response:
                 data = await response.json()
                 _LOGGER.debug("Set zone state response: %s", data)
                 return data

@@ -33,6 +33,7 @@ class ActronApi:
             "deviceName": "HomeAssistant",
             "deviceUniqueIdentifier": "HomeAssistant"
         }
+        _LOGGER.debug(f"Requesting pairing token from: {url}")
         response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
         return response["pairingToken"]
 
@@ -44,11 +45,13 @@ class ActronApi:
             "refresh_token": pairing_token,
             "client_id": "app"
         }
+        _LOGGER.debug(f"Requesting bearer token from: {url}")
         response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
         return response["access_token"]
 
     async def get_devices(self) -> List[Dict[str, str]]:
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
+        _LOGGER.debug(f"Fetching devices from: {url}")
         response = await self._make_request(url, "GET")
         devices = []
         if '_embedded' in response and 'ac-system' in response['_embedded']:
@@ -56,17 +59,20 @@ class ActronApi:
                 devices.append({
                     'serial': system.get('serial', 'Unknown'),
                     'name': system.get('description', 'Unknown Device'),
-                    'type': system.get('type', 'Unknown')  # Add type to differentiate between Que and Neo
+                    'type': system.get('type', 'Unknown')
                 })
+        _LOGGER.debug(f"Found devices: {devices}")
         return devices
 
     async def get_ac_status(self, serial: str) -> Dict[str, Any]:
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
+        _LOGGER.debug(f"Fetching AC status from: {url}")
         return await self._make_request(url, "GET")
 
     async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
         data = {"command": {**command, "type": CMD_SET_SETTINGS}}
+        _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
         return await self._make_request(url, "POST", json=data)
 
     async def _make_request(self, url: str, method: str, headers: Dict[str, str] = None, data: Dict[str, Any] = None, json: Dict[str, Any] = None, auth_required: bool = True) -> Dict[str, Any]:
@@ -78,9 +84,11 @@ class ActronApi:
         if auth_required:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
 
+        _LOGGER.debug(f"Making {method} request to: {url}")
         try:
             async with self.session.request(method, url, headers=headers, data=data, json=json) as response:
                 if response.status == 200:
+                    _LOGGER.debug(f"Request successful, status code: {response.status}")
                     return await response.json()
                 else:
                     text = await response.text()

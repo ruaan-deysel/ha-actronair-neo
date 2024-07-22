@@ -98,6 +98,7 @@ class ActronApi:
     async def close(self):
         if self.session:
             await self.session.close()
+            self.session = None
 
 class AuthenticationError(Exception):
     """Raised when authentication fails."""

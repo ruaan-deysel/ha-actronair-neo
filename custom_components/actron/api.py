@@ -57,17 +57,47 @@ class ActronApi:
                 _LOGGER.debug("Status response: %s", status)
                 return status
 
-    # Other methods for setting power state, climate mode, etc.
+    async def set_power_state(self, state: str):
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+        _LOGGER.info("Setting power state to %s", state)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{self.base_url}/hvac/power", headers=headers, json={"state": state}) as response:
+                data = await response.json()
+                _LOGGER.debug("Set power state response: %s", data)
+                return data
 
+    async def set_climate_mode(self, mode: str):
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+        _LOGGER.info("Setting climate mode to %s", mode)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{self.base_url}/hvac/mode", headers=headers, json={"mode": mode}) as response:
+                data = await response.json()
+                _LOGGER.debug("Set climate mode response: %s", data)
+                return data
 
-class ActronEntity(Entity):
-    def __init__(self, api):
-        self.api = api
+    async def set_fan_mode(self, mode: str):
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+        _LOGGER.info("Setting fan mode to %s", mode)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{self.base_url}/hvac/fan", headers=headers, json={"mode": mode}) as response:
+                data = await response.json()
+                _LOGGER.debug("Set fan mode response: %s", data)
+                return data
 
-    @property
-    def should_poll(self):
-        return True
+    async def set_target_temperature(self, temperature: float):
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+        _LOGGER.info("Setting target temperature to %s", temperature)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{self.base_url}/hvac/temperature", headers=headers, json={"temperature": temperature}) as response:
+                data = await response.json()
+                _LOGGER.debug("Set target temperature response: %s", data)
+                return data
 
-    async def async_update(self):
-        _LOGGER.info("Updating entity state")
-        await self.api.get_status()
+    async def set_zone_state(self, zone_name: str, state: bool):
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+        _LOGGER.info("Setting zone %s state to %s", zone_name, state)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{self.base_url}/hvac/zone", headers=headers, json={"zone": zone_name, "state": state}) as response:
+                data = await response.json()
+                _LOGGER.debug("Set zone state response: %s", data)
+                return data

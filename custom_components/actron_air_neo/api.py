@@ -6,22 +6,19 @@ from .const import API_URL, CMD_SET_SETTINGS
 _LOGGER = logging.getLogger(__name__)
 
 class ActronApi:
-    def __init__(self, username: str, password: str):
+    def __init__(self, username: str, password: str, session: aiohttp.ClientSession = None):
         self.username = username
         self.password = password
         self.bearer_token = None
-        self.session = None
+        self.session = session or aiohttp.ClientSession()
 
     async def authenticate(self):
-        if self.session is None:
-            self.session = aiohttp.ClientSession()
-
         try:
             pairing_token = await self._request_pairing_token()
             self.bearer_token = await self._request_bearer_token(pairing_token)
         except Exception as e:
-            await self.close()
-            raise e
+            _LOGGER.error("Authentication failed: %s", e)
+            raise
 
     async def _request_pairing_token(self) -> str:
         url = f"{API_URL}/api/v0/client/user-devices"
@@ -101,7 +98,6 @@ class ActronApi:
     async def close(self):
         if self.session:
             await self.session.close()
-            self.session = None
 
 class AuthenticationError(Exception):
     """Raised when authentication fails."""

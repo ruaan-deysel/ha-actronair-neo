@@ -81,27 +81,27 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
             temp = kwargs[ATTR_TEMPERATURE]
             is_cooling = self.hvac_mode == HVACMode.COOL
             await self.coordinator.set_temperature(temp, is_cooling)
-            self.async_write_ha_state()
+            await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode):
         await self.coordinator.set_hvac_mode(hvac_mode)
-        self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
     async def async_set_fan_mode(self, fan_mode: str):
         mode = next((k for k, v in FAN_MODES.items() if v == fan_mode), None)
         if mode:
             await self.coordinator.set_fan_mode(mode)
-            self.async_write_ha_state()
+            await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:
         """Turn the entity on."""
         await self.coordinator.set_hvac_mode(HVACMode.AUTO)
-        self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self) -> None:
         """Turn the entity off."""
         await self.coordinator.set_hvac_mode(HVACMode.OFF)
-        self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
     async def async_update(self):
         """Update the entity."""

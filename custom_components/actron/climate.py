@@ -50,6 +50,8 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
             ClimateEntityFeature.TURN_ON |
             ClimateEntityFeature.TURN_OFF
         )
+        self._attr_hvac_mode = HVACMode.OFF
+        self._attr_temperature = None
         _LOGGER.debug(f"Initialized ActronClimate entity: {self._attr_unique_id}")
 
     @property
@@ -124,4 +126,7 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         """Update the entity."""
         _LOGGER.debug("Updating ActronClimate entity")
         await self.coordinator.async_request_refresh()
+        data = self.coordinator.data
+        self._attr_hvac_mode = data.get('hvac_mode', HVACMode.OFF)
+        self._attr_temperature = data.get('temperature', None)
         _LOGGER.debug(f"Current data: {self.coordinator.data}")

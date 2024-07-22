@@ -1,7 +1,7 @@
 {
   "domain": "actron_air_neo",
   "name": "Actron Air Neo",
-  "version": "0.2.0",
+  "version": "0.0.1",
   "documentation": "https://github.com/domalab/ha-actronair-neo/wiki",
   "issue_tracker": "https://github.com/domalab/ha-actronair-neo/issues",
   "dependencies": [],

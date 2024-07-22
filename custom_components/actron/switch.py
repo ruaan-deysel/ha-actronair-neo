@@ -35,3 +35,12 @@ class ActronZoneSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs):
         zone_index = int(self._zone_id.split('_')[1]) - 1
         await self.coordinator.set_zone_state(zone_index, False)
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.device_id)},
+            "name": "Actron Air Neo",
+            "manufacturer": "Actron Air",
+            "model": "Neo",
+        }

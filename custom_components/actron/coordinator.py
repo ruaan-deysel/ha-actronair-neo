@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from datetime import timedelta
 from typing import Any, Dict
 
@@ -9,7 +8,9 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.components.climate.const import HVACMode
 
 from .api import ActronApi, AuthenticationError, ApiError
-from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL, HVAC_MODES
+from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
+
+import logging
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +57,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         system_data = data.get("lastKnownState", {}).get(system_data_key, {})
         
         user_settings = system_data.get("UserAirconSettings", {})
-        live_aircon = system_data.get("LiveAircon", {})
         master_info = system_data.get("MasterInfo", {})
 
         parsed_data["main"] = {
@@ -67,16 +67,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
             "indoor_temp": master_info.get("LiveTemp_oC"),
             "indoor_humidity": master_info.get("LiveHumidity_pc"),
-            "outdoor_temp": master_info.get("LiveOutdoorTemp_oC"),
-            "away_mode": user_settings.get("AwayMode", False),
-            "quiet_mode": user_settings.get("QuietMode", False),
-            "control_all_zones": master_info.get("ControlAllZones", False),
-            "compressor_state": live_aircon.get("CompressorMode"),
-            "fan_running": live_aircon.get("AmRunningFan", False),
         }
-
-        if parsed_data["main"]["outdoor_temp"] == 3000.0:
-            parsed_data["main"]["outdoor_temp"] = None
 
         parsed_data["zones"] = {}
         for i, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
@@ -86,8 +77,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     "name": zone.get("NV_Title", f"Zone {i+1}"),
                     "temp": zone.get("LiveTemp_oC"),
                     "humidity": zone.get("LiveHumidity_pc"),
-                    "setpoint_cool": zone.get("TemperatureSetpoint_Cool_oC"),
-                    "setpoint_heat": zone.get("TemperatureSetpoint_Heat_oC"),
                     "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
                 }
 
@@ -96,7 +85,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
         try:
-            mode = next(k for k, v in HVAC_MODES.items() if v == hvac_mode)
+            mode = next(k for k, v in {"OFF": HVACMode.OFF, "AUTO": HVACMode.AUTO, "COOL": HVACMode.COOL, "HEAT": HVACMode.HEAT, "FAN": HVACMode.FAN_ONLY}.items() if v == hvac_mode)
             if mode == "OFF":
                 await self.api.send_command(self.device_id, {"UserAirconSettings.isOn": False})
             else:
@@ -130,15 +119,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Failed to set fan mode: %s", err)
             raise
 
-    async def set_preset_mode(self, away_mode: bool) -> None:
-        """Set preset mode (away mode)."""
-        try:
-            await self.api.send_command(self.device_id, {"UserAirconSettings.AwayMode": away_mode})
-            await self.async_request_refresh()
-        except Exception as err:
-            _LOGGER.error("Failed to set preset mode: %s", err)
-            raise
-
     async def set_zone_state(self, zone_index: int, is_on: bool) -> None:
         """Set zone state."""
         try:
@@ -146,17 +126,4 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error("Failed to set zone state: %s", err)
-            raise
-
-    async def set_zone_temperature(self, zone_id: str, temperature: float, is_cooling: bool) -> None:
-        """Set zone temperature."""
-        try:
-            zone_index = int(zone_id.split('_')[1]) - 1
-            setting = "Cool" if is_cooling else "Heat"
-            await self.api.send_command(self.device_id, {
-                f"RemoteZoneInfo[{zone_index}].TemperatureSetpoint_{setting}_oC": temperature
-            })
-            await self.async_request_refresh()
-        except Exception as err:
-            _LOGGER.error("Failed to set zone temperature: %s", err)
             raise

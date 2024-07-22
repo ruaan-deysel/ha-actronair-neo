@@ -5,7 +5,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 import logging
 
-from .const import DOMAIN
+from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
 from .api import ActronApi, AuthenticationError, ApiError
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,22 +33,19 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             "username": user_input["username"],
                             "password": user_input["password"],
                             "device_id": device["serial"],
-                            "device_type": device["type"]
                         }
                     )
                 
                 # If there are multiple devices, move to the device selection step
                 return await self.async_step_select_device(devices=devices, user_input=user_input)
 
-            except AuthenticationError as auth_err:
-                _LOGGER.error(f"Authentication error: {auth_err}")
+            except AuthenticationError:
                 errors["base"] = "invalid_auth"
-            except ApiError as api_err:
-                _LOGGER.error(f"API error: {api_err}")
+            except ApiError:
                 errors["base"] = "cannot_connect"
-            except Exception as err:
-                _LOGGER.exception(f"Unexpected error: {err}")
-                errors["base"] = f"unknown: {str(err)}"
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="user",
@@ -69,7 +66,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "username": user_input["username"],
                     "password": user_input["password"],
                     "device_id": user_input["device_id"],
-                    "device_type": selected_device["type"]
                 }
             )
 
@@ -77,5 +73,29 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="select_device",
             data_schema=vol.Schema({
                 vol.Required("device_id"): vol.In({device["serial"]: f"{device['name']} ({device['type']})" for device in devices}),
+            })
+        )
+
+    @staticmethod
+    def async_get_options_flow(config_entry):
+        return OptionsFlowHandler(config_entry)
+
+class OptionsFlowHandler(config_entries.OptionsFlow):
+    def __init__(self, config_entry):
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(self, user_input=None):
+        """Manage the options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "update_interval",
+                    default=self.config_entry.options.get("update_interval", DEFAULT_UPDATE_INTERVAL)
+                ): int,
             })
         )

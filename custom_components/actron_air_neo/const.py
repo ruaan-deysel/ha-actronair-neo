@@ -1,4 +1,4 @@
-DOMAIN = "actron_neo"
+DOMAIN = "actron_air_neo"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_REFRESH_INTERVAL = "refresh_interval"

@@ -31,6 +31,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 await self.api.authenticate()
 
             status = await self.api.get_ac_status(self.device_id)
+            _LOGGER.debug(f"API status response: {status}")
             parsed_data = self._parse_data(status)
             _LOGGER.debug(f"Parsed data: {parsed_data}")
             return parsed_data
@@ -49,6 +50,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise UpdateFailed("Unexpected error occurred") from err
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        _LOGGER.debug(f"Raw data from API: {data}")
         parsed_data = {}
         
         system_data_key = next((key for key in data.get("lastKnownState", {}).keys() if key.startswith("<") and key.endswith(">")), None)
@@ -60,6 +62,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         
         user_settings = system_data.get("UserAirconSettings", {})
         master_info = system_data.get("MasterInfo", {})
+
+        _LOGGER.debug(f"user_settings: {user_settings}")
+        _LOGGER.debug(f"master_info: {master_info}")
 
         parsed_data["main"] = {
             "is_on": user_settings.get("isOn", False),

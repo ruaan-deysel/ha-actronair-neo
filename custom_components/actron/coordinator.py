@@ -31,7 +31,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 await self.api.authenticate()
 
             status = await self.api.get_ac_status(self.device_id)
-            return self._parse_data(status)
+            parsed_data = self._parse_data(status)
+            _LOGGER.debug(f"Parsed data: {parsed_data}")
+            return parsed_data
 
         except AuthenticationError as auth_err:
             _LOGGER.error("Authentication error: %s", auth_err)

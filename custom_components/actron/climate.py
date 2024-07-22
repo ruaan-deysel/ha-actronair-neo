@@ -56,16 +56,16 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        temp = self.coordinator.data['main']['indoor_temp']
+        temp = self.coordinator.data['main'].get('indoor_temp')
         _LOGGER.debug(f"Current temperature: {temp}")
         return temp
 
     @property
     def target_temperature(self) -> float | None:
         if self.hvac_mode == HVACMode.COOL:
-            temp = self.coordinator.data['main']['temp_setpoint_cool']
+            temp = self.coordinator.data['main'].get('temp_setpoint_cool')
         elif self.hvac_mode == HVACMode.HEAT:
-            temp = self.coordinator.data['main']['temp_setpoint_heat']
+            temp = self.coordinator.data['main'].get('temp_setpoint_heat')
         else:
             temp = None
         _LOGGER.debug(f"Target temperature: {temp}")
@@ -73,16 +73,16 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode:
-        if not self.coordinator.data['main']['is_on']:
+        if not self.coordinator.data['main'].get('is_on'):
             mode = HVACMode.OFF
         else:
-            mode = HVAC_MODES.get(self.coordinator.data['main']['mode'], HVACMode.OFF)
+            mode = HVAC_MODES.get(self.coordinator.data['main'].get('mode'), HVACMode.OFF)
         _LOGGER.debug(f"HVAC mode: {mode}")
         return mode
 
     @property
     def fan_mode(self) -> str | None:
-        fan_mode = self.coordinator.data['main']['fan_mode']
+        fan_mode = self.coordinator.data['main'].get('fan_mode')
         if fan_mode == "MED":
             mode = FAN_MEDIUM
         else:
@@ -127,6 +127,6 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         _LOGGER.debug("Updating ActronClimate entity")
         await self.coordinator.async_request_refresh()
         data = self.coordinator.data
-        self._attr_hvac_mode = data.get('hvac_mode', HVACMode.OFF)
-        self._attr_temperature = data.get('temperature', None)
+        self._attr_hvac_mode = data['main'].get('hvac_mode', HVACMode.OFF)
+        self._attr_temperature = data['main'].get('temperature', None)
         _LOGGER.debug(f"Current data: {self.coordinator.data}")

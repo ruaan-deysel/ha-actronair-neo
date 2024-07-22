@@ -1,9 +1,9 @@
 {
-    "title": "Actron Neo Integration",
+    "title": "ActronAir Neo Integration",
     "config": {
       "step": {
         "user": {
-          "title": "Configure Actron Neo",
+          "title": "Configure ActronAir Neo",
           "data": {
             "username": "Username",
             "password": "Password",

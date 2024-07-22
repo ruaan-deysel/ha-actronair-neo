@@ -25,8 +25,11 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             api = ActronApi(username, password)
 
             try:
-                await api.login()
-                serial_number = await api.get_device_serial_number()
+                await api.authenticate()
+                devices = await api.get_devices()
+                if not devices:
+                    raise Exception("No devices found")
+                serial_number = devices[0]['serial']
                 return self.async_create_entry(
                     title="ActronNeo",
                     data={

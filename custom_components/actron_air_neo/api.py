@@ -1,176 +1,110 @@
 import aiohttp
 import logging
+from typing import Dict, Any, List
+from .const import API_URL, CMD_SET_SETTINGS
 
 _LOGGER = logging.getLogger(__name__)
 
 class ActronApi:
-    def __init__(self, username, password):
-        self.base_url = "https://nimbus.actronair.com.au"
+    def __init__(self, username: str, password: str):
         self.username = username
         self.password = password
-        self.access_token = None
-        self.refresh_token = None
-        self.device_serial_number = None
+        self.bearer_token = None
+        self.session = None
 
-    async def request_pairing_token(self):
-        _LOGGER.info("Requesting pairing token from Actron API")
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
+    async def authenticate(self):
+        if self.session is None:
+            self.session = aiohttp.ClientSession()
+
+        try:
+            pairing_token = await self._request_pairing_token()
+            self.bearer_token = await self._request_bearer_token(pairing_token)
+        except Exception as e:
+            await self.close()
+            raise e
+
+    async def _request_pairing_token(self) -> str:
+        url = f"{API_URL}/api/v0/client/user-devices"
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "username": self.username,
             "password": self.password,
             "client": "ios",
-            "deviceName": "home_assistant",
-            "deviceUniqueIdentifier": "home_assistant_123"
+            "deviceName": "HomeAssistant",
+            "deviceUniqueIdentifier": "HomeAssistant"
         }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/api/v0/client/user-devices", headers=headers, data=data) as response:
-                response_text = await response.text()
-                _LOGGER.debug("Pairing token response text: %s", response_text)
-                try:
-                    data = await response.json()
-                    _LOGGER.debug("Pairing token response JSON: %s", data)
-                    self.refresh_token = data["pairingToken"]
-                    _LOGGER.info("Pairing token obtained successfully")
-                except Exception as e:
-                    _LOGGER.error("Error decoding pairing token response: %s", e)
-                    raise
+        _LOGGER.debug(f"Requesting pairing token from: {url}")
+        response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+        return response["pairingToken"]
 
-    async def request_bearer_token(self):
-        _LOGGER.info("Requesting bearer token from Actron API")
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
+    async def _request_bearer_token(self, pairing_token: str) -> str:
+        url = f"{API_URL}/api/v0/oauth/token"
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "grant_type": "refresh_token",
-            "refresh_token": self.refresh_token,
+            "refresh_token": pairing_token,
             "client_id": "app"
         }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/api/v0/oauth/token", headers=headers, data=data) as response:
-                response_text = await response.text()
-                _LOGGER.debug("Bearer token response text: %s", response_text)
-                try:
-                    data = await response.json()
-                    _LOGGER.debug("Bearer token response JSON: %s", data)
-                    self.access_token = data["access_token"]
-                    _LOGGER.info("Bearer token obtained successfully")
-                except Exception as e:
-                    _LOGGER.error("Error decoding bearer token response: %s", e)
-                    raise
+        _LOGGER.debug(f"Requesting bearer token from: {url}")
+        response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+        return response["access_token"]
 
-    async def login(self):
+    async def get_devices(self) -> List[Dict[str, str]]:
+        url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
+        _LOGGER.debug(f"Fetching devices from: {url}")
+        response = await self._make_request(url, "GET")
+        devices = []
+        if '_embedded' in response and 'ac-system' in response['_embedded']:
+            for system in response['_embedded']['ac-system']:
+                devices.append({
+                    'serial': system.get('serial', 'Unknown'),
+                    'name': system.get('description', 'Unknown Device'),
+                    'type': system.get('type', 'Unknown')
+                })
+        _LOGGER.debug(f"Found devices: {devices}")
+        return devices
+
+    async def get_ac_status(self, serial: str) -> Dict[str, Any]:
+        url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
+        _LOGGER.debug(f"Fetching AC status from: {url}")
+        return await self._make_request(url, "GET")
+
+    async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
+        url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
+        data = {"command": {**command, "type": CMD_SET_SETTINGS}}
+        _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
+        return await self._make_request(url, "POST", json=data)
+
+    async def _make_request(self, url: str, method: str, headers: Dict[str, str] = None, data: Dict[str, Any] = None, json: Dict[str, Any] = None, auth_required: bool = True) -> Dict[str, Any]:
+        if auth_required and not self.bearer_token:
+            raise AuthenticationError("Not authenticated")
+
+        if headers is None:
+            headers = {}
+        if auth_required:
+            headers["Authorization"] = f"Bearer {self.bearer_token}"
+
+        _LOGGER.debug(f"Making {method} request to: {url}")
         try:
-            await self.request_pairing_token()
-            await self.request_bearer_token()
-        except Exception as e:
-            _LOGGER.error("Error during login: %s", e)
-            raise
+            async with self.session.request(method, url, headers=headers, data=data, json=json) as response:
+                if response.status == 200:
+                    _LOGGER.debug(f"Request successful, status code: {response.status}")
+                    return await response.json()
+                else:
+                    text = await response.text()
+                    _LOGGER.error(f"API request failed: {response.status}, {text}")
+                    raise ApiError(f"API request failed: {response.status}, {text}")
+        except aiohttp.ClientError as err:
+            _LOGGER.error(f"Network error during API request: {err}")
+            raise ApiError(f"Network error during API request: {err}")
 
-    async def get_device_serial_number(self):
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        _LOGGER.info("Fetching device serial number from Actron API")
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{self.base_url}/api/v0/client/ac-systems", headers=headers, params={"includeNeo": "true"}) as response:
-                response_text = await response.text()
-                _LOGGER.debug("Device serial number response text: %s", response_text)
-                try:
-                    data = await response.json()
-                    _LOGGER.debug("Device serial number response JSON: %s", data)
-                    self.device_serial_number = data[0]["serial"]
-                    _LOGGER.info("Device serial number: %s", self.device_serial_number)
-                    return self.device_serial_number
-                except Exception as e:
-                    _LOGGER.error("Error decoding device serial number response: %s", e)
-                    raise
+    async def close(self):
+        if self.session:
+            await self.session.close()
+            self.session = None
 
-    async def get_status(self):
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        _LOGGER.info("Fetching status from Actron API")
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{self.base_url}/api/v0/client/ac-systems/status/latest", headers=headers, params={"serial": self.device_serial_number}) as response:
-                response_text = await response.text()
-                _LOGGER.debug("Status response text: %s", response_text)
-                try:
-                    status = await response.json()
-                    _LOGGER.debug("Status response JSON: %s", status)
-                    return status
-                except Exception as e:
-                    _LOGGER.error("Error decoding status response: %s", e)
-                    raise
+class AuthenticationError(Exception):
+    """Raised when authentication fails."""
 
-    async def set_power_state(self, state: str):
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        _LOGGER.info("Setting power state to %s", state)
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/api/v0/client/ac-systems/cmds/send", headers=headers, params={"serial": self.device_serial_number}, json={"command": {"UserAirconSettings.isOn": state == "ON", "type": "set-settings"}}) as response:
-                response_text = await response.text()
-                _LOGGER.debug("Set power state response text: %s", response_text)
-                try:
-                    data = await response.json()
-                    _LOGGER.debug("Set power state response JSON: %s", data)
-                    return data
-                except Exception as e:
-                    _LOGGER.error("Error decoding set power state response: %s", e)
-                    raise
-
-    async def set_climate_mode(self, mode: str):
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        _LOGGER.info("Setting climate mode to %s", mode)
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/api/v0/client/ac-systems/cmds/send", headers=headers, params={"serial": self.device_serial_number}, json={"command": {"UserAirconSettings.Mode": mode, "type": "set-settings"}}) as response:
-                response_text = await response.text()
-                _LOGGER.debug("Set climate mode response text: %s", response_text)
-                try:
-                    data = await response.json()
-                    _LOGGER.debug("Set climate mode response JSON: %s", data)
-                    return data
-                except Exception as e:
-                    _LOGGER.error("Error decoding set climate mode response: %s", e)
-                    raise
-
-    async def set_fan_mode(self, mode: str):
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        _LOGGER.info("Setting fan mode to %s", mode)
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/api/v0/client/ac-systems/cmds/send", headers=headers, params={"serial": self.device_serial_number}, json={"command": {"UserAirconSettings.FanMode": mode, "type": "set-settings"}}) as response:
-                response_text = await response.text()
-                _LOGGER.debug("Set fan mode response text: %s", response_text)
-                try:
-                    data = await response.json()
-                    _LOGGER.debug("Set fan mode response JSON: %s", data)
-                    return data
-                except Exception as e:
-                    _LOGGER.error("Error decoding set fan mode response: %s", e)
-                    raise
-
-    async def set_target_temperature(self, temperature: float):
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        _LOGGER.info("Setting target temperature to %s", temperature)
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/api/v0/client/ac-systems/cmds/send", headers=headers, params={"serial": self.device_serial_number}, json={"command": {"UserAirconSettings.TemperatureSetpoint_Cool_oC": temperature, "type": "set-settings"}}) as response:
-                response_text = await response.text()
-                _LOGGER.debug("Set target temperature response text: %s", response_text)
-                try:
-                    data = await response.json()
-                    _LOGGER.debug("Set target temperature response JSON: %s", data)
-                    return data
-                except Exception as e:
-                    _LOGGER.error("Error decoding set target temperature response: %s", e)
-                    raise
-
-    async def set_zone_state(self, zone_name: str, state: bool):
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        _LOGGER.info("Setting zone %s state to %s", zone_name, state)
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/api/v0/client/ac-systems/cmds/send", headers=headers, params={"serial": self.device_serial_number}, json={"command": {f"UserAirconSettings.EnabledZones[{zone_name}]": state, "type": "set-settings"}}) as response:
-                response_text = await response.text()
-                _LOGGER.debug("Set zone state response text: %s", response_text)
-                try:
-                    data = await response.json()
-                    _LOGGER.debug("Set zone state response JSON: %s", data)
-                    return data
-                except Exception as e:
-                    _LOGGER.error("Error decoding set zone state response: %s", e)
-                    raise
+class ApiError(Exception):
+    """Raised when an API call fails."""

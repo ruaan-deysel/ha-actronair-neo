@@ -2,7 +2,7 @@ import logging
 import voluptuous as vol
 from typing import Any, Dict, Optional
 
-from homeassistant import config_entries
+from homeassistant import config_entries, exceptions
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import aiohttp_client
@@ -78,6 +78,8 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await ActronConfigFlow().async_step_user()
 
 class ActronOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle Actron Air Neo options."""
+
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
@@ -103,3 +105,9 @@ class ActronOptionsFlowHandler(config_entries.OptionsFlow):
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> ActronOptionsFlowHandler:
         return ActronOptionsFlowHandler(config_entry)
+
+class CannotConnect(exceptions.HomeAssistantError):
+    """Error to indicate we cannot connect."""
+
+class InvalidAuth(exceptions.HomeAssistantError):
+    """Error to indicate there is invalid auth."""

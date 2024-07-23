@@ -68,7 +68,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         parsed_data["main"] = {
             "is_on": user_settings.get("isOn", False),
-            "mode": user_settings.get("Mode", "OFF"),
+            "mode": self._parse_hvac_mode(user_settings.get("Mode")),
             "fan_mode": user_settings.get("FanMode", "AUTO"),
             "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
             "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
@@ -88,6 +88,16 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 }
 
         return parsed_data
+
+    def _parse_hvac_mode(self, mode: str) -> str:
+        if mode == "COOL":
+            return HVACMode.COOL
+        elif mode == "HEAT":
+            return HVACMode.HEAT
+        elif mode == "FAN":
+            return HVACMode.FAN_ONLY
+        else:
+            return HVACMode.OFF
 
     async def set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""

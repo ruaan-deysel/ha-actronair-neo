@@ -1,5 +1,6 @@
 import aiohttp
 import logging
+import asyncio
 from typing import Dict, Any, List
 from .const import API_URL, CMD_SET_SETTINGS
 
@@ -11,6 +12,7 @@ class ActronApi:
         self.password = password
         self.bearer_token = None
         self.session = session or aiohttp.ClientSession()
+        self.rate_limit = asyncio.Semaphore(5)  # Limit to 5 concurrent requests
 
     async def authenticate(self):
         try:
@@ -18,7 +20,7 @@ class ActronApi:
             self.bearer_token = await self._request_bearer_token(pairing_token)
         except Exception as e:
             _LOGGER.error("Authentication failed: %s", e)
-            raise
+            raise AuthenticationError(str(e))
 
     async def _request_pairing_token(self) -> str:
         url = f"{API_URL}/api/v0/client/user-devices"
@@ -73,27 +75,32 @@ class ActronApi:
         return await self._make_request(url, "POST", json=data)
 
     async def _make_request(self, url: str, method: str, headers: Dict[str, str] = None, data: Dict[str, Any] = None, json: Dict[str, Any] = None, auth_required: bool = True) -> Dict[str, Any]:
-        if auth_required and not self.bearer_token:
-            raise AuthenticationError("Not authenticated")
+        async with self.rate_limit:
+            if auth_required and not self.bearer_token:
+                await self.authenticate()
 
-        if headers is None:
-            headers = {}
-        if auth_required:
-            headers["Authorization"] = f"Bearer {self.bearer_token}"
+            if headers is None:
+                headers = {}
+            if auth_required:
+                headers["Authorization"] = f"Bearer {self.bearer_token}"
 
-        _LOGGER.debug(f"Making {method} request to: {url}")
-        try:
-            async with self.session.request(method, url, headers=headers, data=data, json=json) as response:
-                if response.status == 200:
-                    _LOGGER.debug(f"Request successful, status code: {response.status}")
-                    return await response.json()
-                else:
-                    text = await response.text()
-                    _LOGGER.error(f"API request failed: {response.status}, {text}")
-                    raise ApiError(f"API request failed: {response.status}, {text}")
-        except aiohttp.ClientError as err:
-            _LOGGER.error(f"Network error during API request: {err}")
-            raise ApiError(f"Network error during API request: {err}")
+            _LOGGER.debug(f"Making {method} request to: {url}")
+            try:
+                async with self.session.request(method, url, headers=headers, data=data, json=json) as response:
+                    if response.status == 200:
+                        _LOGGER.debug(f"Request successful, status code: {response.status}")
+                        return await response.json()
+                    elif response.status == 401 and auth_required:
+                        _LOGGER.warning("Bearer token expired, refreshing...")
+                        await self.authenticate()
+                        return await self._make_request(url, method, headers, data, json, auth_required)
+                    else:
+                        text = await response.text()
+                        _LOGGER.error(f"API request failed: {response.status}, {text}")
+                        raise ApiError(f"API request failed: {response.status}, {text}")
+            except aiohttp.ClientError as err:
+                _LOGGER.error(f"Network error during API request: {err}")
+                raise ApiError(f"Network error during API request: {err}")
 
     async def close(self):
         if self.session:

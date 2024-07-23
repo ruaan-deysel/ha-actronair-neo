@@ -6,7 +6,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.components.climate.const import HVACMode
 
-from .api import ActronApi, AuthenticationError, ApiError
+from .api import ActronApi, AuthenticationError, ApiError, RateLimitError
 from .const import DOMAIN
 
 import logging
@@ -26,23 +26,22 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> Dict[str, Any]:
         try:
-            if not self.api.bearer_token:
-                await self.api.authenticate()
-
             status = await self.api.get_ac_status(self.device_id)
             _LOGGER.debug(f"API status response: {status}")
             parsed_data = self._parse_data(status)
             _LOGGER.debug(f"Parsed data: {parsed_data}")
             return parsed_data
-
         except AuthenticationError as auth_err:
             _LOGGER.error("Authentication error: %s", auth_err)
             raise ConfigEntryAuthFailed("Authentication failed") from auth_err
+        except RateLimitError as rate_err:
+            _LOGGER.warning("Rate limit exceeded: %s", rate_err)
+            raise UpdateFailed("Rate limit exceeded") from rate_err
         except ApiError as api_err:
             _LOGGER.error("API error: %s", api_err)
             raise UpdateFailed("Failed to fetch data from Actron API") from api_err
         except Exception as err:
-            _LOGGER.error("Unexpected error occurred: %s", err)
+            _LOGGER.exception("Unexpected error occurred: %s", err)
             raise UpdateFailed("Unexpected error occurred") from err
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:

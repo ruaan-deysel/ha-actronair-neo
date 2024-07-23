@@ -1,22 +1,54 @@
 {
-    "title": "ActronAir Neo Integration",
-    "config": {
-      "step": {
-        "user": {
-          "title": "Configure ActronAir Neo",
-          "data": {
-            "username": "Username",
-            "password": "Password",
-            "refresh_interval": "Refresh Interval (seconds)"
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Actron Air Neo",
+        "description": "Please enter your Actron Air Neo credentials.",
+        "data": {
+          "username": "Username",
+          "password": "Password",
+          "refresh_interval": "Refresh Interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid authentication",
+      "cannot_connect": "Failed to connect",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Actron Air Neo Options",
+        "data": {
+          "refresh_interval": "Refresh Interval (seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "climate": {
+      "actron_air_neo": {
+        "state_attributes": {
+          "fan_mode": {
+            "low": "Low",
+            "medium": "Medium",
+            "high": "High"
           }
         }
+      }
+    },
+    "sensor": {
+      "actron_temperature": {
+        "name": "Actron Temperature"
       },
-      "error": {
-        "auth": "Failed to authenticate, please check your username and password"
-      },
-      "abort": {
-        "already_configured": "This device is already configured"
+      "actron_humidity": {
+        "name": "Actron Humidity"
       }
     }
   }
-  
+}

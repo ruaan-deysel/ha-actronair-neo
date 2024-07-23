@@ -1,12 +1,17 @@
 {
   "domain": "actron_air_neo",
-  "name": "ActronAir Neo",
-  "version": "0.0.1",
-  "documentation": "https://github.com/domalab/ha-actronair-neo/wiki",
-  "issue_tracker": "https://github.com/domalab/ha-actronair-neo/issues",
-  "dependencies": [],
+  "name": "Actron Air Neo",
   "codeowners": ["@domalab"],
-  "requirements": [],
+  "config_flow": true,
+  "documentation": "https://github.com/domalab/ha-actronair-neo/wiki",
   "iot_class": "cloud_polling",
-  "config_flow": true
+  "issue_tracker": "https://github.com/domalab/ha-actronair-neo/issues",
+  "requirements": [],
+  "version": "0.0.1",
+  "zeroconf": [],
+  "ssdp": [],
+  "homekit": {},
+  "dependencies": [],
+  "after_dependencies": [],
+  "integration_type": "device"
 }

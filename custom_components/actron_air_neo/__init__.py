@@ -11,7 +11,7 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["climate", "sensor"]
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Actron Air Neo from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
@@ -25,12 +25,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     try:
         await api.authenticate()
-    except AuthenticationError as err:
-        _LOGGER.error("Failed to authenticate: %s", err)
-        raise ConfigEntryNotReady from err
-    except ApiError as err:
-        _LOGGER.error("Failed to connect to Actron Air Neo API: %s", err)
-        raise ConfigEntryNotReady from err
+    except AuthenticationError as auth_err:
+        _LOGGER.error("Failed to authenticate: %s", auth_err)
+        raise ConfigEntryNotReady from auth_err
+    except ApiError as api_err:
+        _LOGGER.error("Failed to connect to Actron Air Neo API: %s", api_err)
+        raise ConfigEntryNotReady from api_err
 
     coordinator = ActronDataCoordinator(hass, api, serial_number, refresh_interval)
     await coordinator.async_config_entry_first_refresh()
@@ -41,7 +41,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     return True
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:

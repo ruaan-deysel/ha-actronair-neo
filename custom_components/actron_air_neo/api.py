@@ -47,8 +47,9 @@ class ActronApi:
             "deviceName": "HomeAssistant",
             "deviceUniqueIdentifier": "HomeAssistant"
         }
-        _LOGGER.debug(f"Requesting pairing token from: {url}")
+        _LOGGER.debug(f"Requesting pairing token from: {url} with data: {data}")
         response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+        _LOGGER.debug(f"Pairing token response: {response}")
         return response["pairingToken"]
 
     async def _request_bearer_token(self, pairing_token: str) -> str:
@@ -59,8 +60,9 @@ class ActronApi:
             "refresh_token": pairing_token,
             "client_id": "app"
         }
-        _LOGGER.debug(f"Requesting bearer token from: {url}")
+        _LOGGER.debug(f"Requesting bearer token from: {url} with data: {data}")
         response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+        _LOGGER.debug(f"Bearer token response: {response}")
         return response["access_token"]
 
     async def _make_request(self, url: str, method: str, **kwargs) -> Dict[str, Any]:
@@ -69,11 +71,12 @@ class ActronApi:
         retries = 3
         for attempt in range(retries):
             try:
-                if not self.token:
+                if not self.token and kwargs.get("auth_required", True):
                     await self.authenticate()
 
                 headers = kwargs.get('headers', {})
-                headers['Authorization'] = f'Bearer {self.token}'
+                if self.token and kwargs.get("auth_required", True):
+                    headers['Authorization'] = f'Bearer {self.token}'
                 kwargs['headers'] = headers
 
                 async with self.session.request(method, url, **kwargs) as response:
@@ -147,3 +150,8 @@ class ActronApi:
         data = {"command": command}
         _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
         return await self._make_request(url, "POST", json=data)
+
+    async def close(self):
+        if self.session:
+            await self.session.close()
+            self.session = None

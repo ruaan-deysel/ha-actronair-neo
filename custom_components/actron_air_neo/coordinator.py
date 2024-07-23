@@ -90,6 +90,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         return parsed_data
 
     def _parse_hvac_mode(self, mode: str) -> str:
+        if not mode:
+            return HVACMode.OFF
+        mode = mode.upper()
         if mode == "COOL":
             return HVACMode.COOL
         elif mode == "HEAT":

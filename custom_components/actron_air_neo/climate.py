@@ -1,5 +1,5 @@
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature
-from homeassistant.components.climate.const import HVACMode
+from homeassistant.components.climate.const import HVACMode, HVACAction
 from homeassistant.const import TEMP_CELSIUS, ATTR_TEMPERATURE
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -48,7 +48,21 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_mode(self):
+        if not self.coordinator.data['main'].get('is_on'):
+            return HVACMode.OFF
         return self.coordinator.data['main'].get('mode', HVACMode.OFF)
+
+    @property
+    def hvac_action(self):
+        if not self.coordinator.data['main'].get('is_on'):
+            return HVACAction.OFF
+        if self.hvac_mode == HVACMode.COOL:
+            return HVACAction.COOLING
+        elif self.hvac_mode == HVACMode.HEAT:
+            return HVACAction.HEATING
+        elif self.hvac_mode == HVACMode.FAN_ONLY:
+            return HVACAction.FAN
+        return HVACAction.IDLE
 
     @property
     def fan_mode(self):
@@ -60,12 +74,13 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
             return
         is_cooling = self.hvac_mode == HVACMode.COOL
         await self.coordinator.set_temperature(temperature, is_cooling)
-        await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode):
         await self.coordinator.set_hvac_mode(hvac_mode)
-        await self.coordinator.async_request_refresh()
 
     async def async_set_fan_mode(self, fan_mode):
         await self.coordinator.set_fan_mode(fan_mode)
-        await self.coordinator.async_request_refresh()
+
+    @property
+    def current_humidity(self):
+        return self.coordinator.data['main'].get('indoor_humidity')

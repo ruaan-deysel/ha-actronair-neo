@@ -38,7 +38,7 @@ class ActronOptionsFlowHandler(config_entries.OptionsFlow):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> ActronOptionsFlowHandler:
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> "ActronOptionsFlowHandler":
         return ActronOptionsFlowHandler(config_entry)
 
 

@@ -7,6 +7,15 @@ from .const import API_URL
 
 _LOGGER = logging.getLogger(__name__)
 
+class AuthenticationError(Exception):
+    """Raised when authentication fails."""
+
+class ApiError(Exception):
+    """Raised when an API call fails."""
+
+class RateLimitError(Exception):
+    """Raised when rate limit is exceeded."""
+
 class ActronApi:
     def __init__(self, username: str, password: str, session: aiohttp.ClientSession):
         self.username = username
@@ -120,12 +129,3 @@ class ActronApi:
         data = {"command": command}
         _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
         return await self._make_request(url, "POST", json=data)
-
-class AuthenticationError(Exception):
-    """Raised when authentication fails."""
-
-class ApiError(Exception):
-    """Raised when an API call fails."""
-
-class RateLimitError(Exception):
-    """Raised when rate limit is exceeded."""

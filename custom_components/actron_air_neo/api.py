@@ -27,15 +27,14 @@ class ActronApi:
         self.max_requests_per_minute = 60  # Adjust as needed
 
     async def authenticate(self):
-        if self.session is None:
-            self.session = aiohttp.ClientSession()
-
+        """Authenticate and get the token."""
         try:
             pairing_token = await self._request_pairing_token()
-            self.bearer_token = await self._request_bearer_token(pairing_token)
+            self.token = await self._request_bearer_token(pairing_token)
+            _LOGGER.debug("Authentication successful")
         except Exception as e:
-            await self.close()
-            raise e
+            _LOGGER.error(f"Authentication failed: {e}")
+            raise AuthenticationError(str(e))
 
     async def _request_pairing_token(self) -> str:
         url = f"{API_URL}/api/v0/client/user-devices"
@@ -47,9 +46,8 @@ class ActronApi:
             "deviceName": "HomeAssistant",
             "deviceUniqueIdentifier": "HomeAssistant"
         }
-        _LOGGER.debug(f"Requesting pairing token from: {url} with data: {data}")
-        response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
-        _LOGGER.debug(f"Pairing token response: {response}")
+        _LOGGER.debug(f"Requesting pairing token from: {url}")
+        response = await self._make_request(url, "POST", headers=headers, data=data)
         return response["pairingToken"]
 
     async def _request_bearer_token(self, pairing_token: str) -> str:
@@ -60,9 +58,8 @@ class ActronApi:
             "refresh_token": pairing_token,
             "client_id": "app"
         }
-        _LOGGER.debug(f"Requesting bearer token from: {url} with data: {data}")
-        response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
-        _LOGGER.debug(f"Bearer token response: {response}")
+        _LOGGER.debug(f"Requesting bearer token from: {url}")
+        response = await self._make_request(url, "POST", headers=headers, data=data)
         return response["access_token"]
 
     async def _make_request(self, url: str, method: str, **kwargs) -> Dict[str, Any]:
@@ -71,11 +68,8 @@ class ActronApi:
         retries = 3
         for attempt in range(retries):
             try:
-                if not self.token and kwargs.get("auth_required", True):
-                    await self.authenticate()
-
                 headers = kwargs.get('headers', {})
-                if self.token and kwargs.get("auth_required", True):
+                if self.token:
                     headers['Authorization'] = f'Bearer {self.token}'
                 kwargs['headers'] = headers
 
@@ -84,7 +78,7 @@ class ActronApi:
                     
                     if response.status == 200:
                         return await response.json()
-                    elif response.status == 401:
+                    elif response.status == 401 and self.token:
                         _LOGGER.warning("Token expired, re-authenticating...")
                         await self.authenticate()
                         continue
@@ -150,8 +144,3 @@ class ActronApi:
         data = {"command": command}
         _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
         return await self._make_request(url, "POST", json=data)
-
-    async def close(self):
-        if self.session:
-            await self.session.close()
-            self.session = None

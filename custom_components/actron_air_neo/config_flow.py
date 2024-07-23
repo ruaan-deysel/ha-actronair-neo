@@ -51,12 +51,15 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: Dict[str, str] = {}
         
         if user_input is not None:
+            _LOGGER.debug(f"User input received: {user_input}")
             try:
                 return await self.validate_input(user_input)
             except AuthenticationError:
                 errors["base"] = "invalid_auth"
+                _LOGGER.error("Invalid authentication")
             except ApiError:
                 errors["base"] = "cannot_connect"
+                _LOGGER.error("Cannot connect to Actron Air Neo API")
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -79,17 +82,27 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         password = user_input[CONF_PASSWORD]
         refresh_interval = user_input[CONF_REFRESH_INTERVAL]
 
+        _LOGGER.debug(f"Validating input: username={username}, refresh_interval={refresh_interval}")
+
         session = aiohttp_client.async_get_clientsession(self.hass)
         api = ActronApi(username, password, session=session)
 
-        await api.authenticate()
+        try:
+            await api.authenticate()
+            _LOGGER.debug("Authentication successful")
+        except AuthenticationError:
+            _LOGGER.error("Authentication failed")
+            raise
+
         devices = await api.get_devices()
         
         if not devices:
+            _LOGGER.error("No devices found")
             raise ApiError("No devices found")
         
         # For simplicity, we're selecting the first device found
         serial_number = devices[0]['serial']
+        _LOGGER.debug(f"Device found: {devices[0]}")
 
         return self.async_create_entry(
             title=f"Actron Air Neo ({devices[0]['name']})",

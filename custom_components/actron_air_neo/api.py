@@ -27,23 +27,41 @@ class ActronApi:
         self.max_requests_per_minute = 60  # Adjust as needed
 
     async def authenticate(self):
-        """Authenticate and get the token."""
-        url = f"{API_URL}/auth/login"
-        data = {"username": self.username, "password": self.password}
-        
+        if self.session is None:
+            self.session = aiohttp.ClientSession()
+
         try:
-            async with self.session.post(url, json=data) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    self.token = result.get('token')
-                    if not self.token:
-                        raise AuthenticationError("No token received in the response")
-                    _LOGGER.debug("Authentication successful")
-                else:
-                    text = await response.text()
-                    raise AuthenticationError(f"Authentication failed: {response.status}, {text}")
-        except aiohttp.ClientError as err:
-            raise AuthenticationError(f"Network error during authentication: {err}")
+            pairing_token = await self._request_pairing_token()
+            self.bearer_token = await self._request_bearer_token(pairing_token)
+        except Exception as e:
+            await self.close()
+            raise e
+
+    async def _request_pairing_token(self) -> str:
+        url = f"{API_URL}/api/v0/client/user-devices"
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        data = {
+            "username": self.username,
+            "password": self.password,
+            "client": "ios",
+            "deviceName": "HomeAssistant",
+            "deviceUniqueIdentifier": "HomeAssistant"
+        }
+        _LOGGER.debug(f"Requesting pairing token from: {url}")
+        response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+        return response["pairingToken"]
+
+    async def _request_bearer_token(self, pairing_token: str) -> str:
+        url = f"{API_URL}/api/v0/oauth/token"
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": pairing_token,
+            "client_id": "app"
+        }
+        _LOGGER.debug(f"Requesting bearer token from: {url}")
+        response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+        return response["access_token"]
 
     async def _make_request(self, url: str, method: str, **kwargs) -> Dict[str, Any]:
         await self._wait_for_rate_limit()

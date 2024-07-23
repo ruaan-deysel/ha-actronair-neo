@@ -52,17 +52,26 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         if user_input is not None:
             _LOGGER.debug(f"User input received: {user_input}")
-            try:
-                return await self.validate_input(user_input)
-            except AuthenticationError:
-                errors["base"] = "invalid_auth"
-                _LOGGER.error("Invalid authentication")
-            except ApiError:
-                errors["base"] = "cannot_connect"
-                _LOGGER.error("Cannot connect to Actron Air Neo API")
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
+
+            # Check for empty username or password
+            if not user_input[CONF_USERNAME]:
+                errors["base"] = "username_required"
+                _LOGGER.error("Username is required")
+            elif not user_input[CONF_PASSWORD]:
+                errors["base"] = "password_required"
+                _LOGGER.error("Password is required")
+            else:
+                try:
+                    return await self.validate_input(user_input)
+                except AuthenticationError:
+                    errors["base"] = "invalid_auth"
+                    _LOGGER.error("Invalid authentication")
+                except ApiError:
+                    errors["base"] = "cannot_connect"
+                    _LOGGER.error("Cannot connect to Actron Air Neo API")
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Unexpected exception")
+                    errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="user",

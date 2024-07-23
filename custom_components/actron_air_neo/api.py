@@ -24,7 +24,7 @@ class ActronApi:
         self.token = None
         self.rate_limit = asyncio.Semaphore(5)  # Limit to 5 concurrent requests
         self.request_times = []
-        self.max_requests_per_minute = 60  # Adjust as needed
+        self.max_requests_per_minute = 30  # Reduced from 60 to 30
 
     async def authenticate(self):
         """Authenticate and get the token."""
@@ -65,7 +65,7 @@ class ActronApi:
     async def _make_request(self, url: str, method: str, **kwargs) -> Dict[str, Any]:
         await self._wait_for_rate_limit()
 
-        retries = 3
+        retries = 5  # Increased from 3 to 5
         for attempt in range(retries):
             try:
                 headers = kwargs.get('headers', {})
@@ -85,6 +85,12 @@ class ActronApi:
                         continue
                     elif response.status == 429:
                         raise RateLimitError("Rate limit exceeded")
+                    elif response.status == 500:
+                        _LOGGER.error(f"Server error (500) on attempt {attempt + 1}")
+                        if attempt == retries - 1:
+                            raise ApiError(f"Persistent server error after {retries} attempts")
+                        await asyncio.sleep(10 * (2 ** attempt))  # Longer exponential backoff
+                        continue
                     else:
                         text = await response.text()
                         raise ApiError(f"API request failed: {response.status}, {text}")
@@ -93,24 +99,17 @@ class ActronApi:
                 _LOGGER.error(f"Network error on attempt {attempt + 1}: {err}")
                 if attempt == retries - 1:
                     raise ApiError(f"Network error after {retries} attempts: {err}")
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                await asyncio.sleep(5 * (2 ** attempt))  # Longer exponential backoff
 
             except asyncio.TimeoutError:
                 _LOGGER.error(f"Timeout error on attempt {attempt + 1}")
                 if attempt == retries - 1:
                     raise ApiError(f"Timeout error after {retries} attempts")
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                await asyncio.sleep(5 * (2 ** attempt))  # Longer exponential backoff
 
             except RateLimitError:
                 _LOGGER.warning(f"Rate limit hit on attempt {attempt + 1}, waiting before retry")
                 await asyncio.sleep(60)  # Wait for 1 minute before retrying
-
-            except ApiError as err:
-                _LOGGER.error(f"API error on attempt {attempt + 1}: {err}")
-                if self._is_retryable_error(err):
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                else:
-                    raise  # Re-raise if it's not a retryable error
 
     async def _wait_for_rate_limit(self):
         """Wait if we're approaching the rate limit."""
@@ -120,11 +119,6 @@ class ActronApi:
             sleep_time = 60 - (now - self.request_times[0]).total_seconds()
             _LOGGER.warning(f"Rate limit approaching, waiting for {sleep_time:.2f} seconds")
             await asyncio.sleep(sleep_time)
-
-    def _is_retryable_error(self, err: ApiError) -> bool:
-        """Determine if an error is retryable."""
-        retryable_statuses = [500, 502, 503, 504]  # Example retryable status codes
-        return any(str(status) in str(err) for status in retryable_statuses)
 
     async def get_devices(self) -> List[Dict[str, str]]:
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
@@ -150,4 +144,8 @@ class ActronApi:
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
         data = {"command": command}
         _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
-        return await self._make_request(url, "POST", json=data)
+        try:
+            return await self._make_request(url, "POST", json=data)
+        except ApiError as e:
+            _LOGGER.error(f"Failed to send command: {e}")
+            return {}  # Return empty dict instead of raising to avoid breaking the integration

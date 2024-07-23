@@ -1,86 +1,51 @@
-from homeassistant.helpers.entity import Entity
-from homeassistant.const import TEMP_CELSIUS, DEVICE_CLASS_TEMPERATURE, DEVICE_CLASS_HUMIDITY
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.const import UnitOfTemperature
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
 from .const import DOMAIN
+from .coordinator import ActronDataCoordinator
+
 import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
     """Set up Actron Neo sensors from a config entry."""
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([
         ActronTemperatureSensor(coordinator),
         ActronHumiditySensor(coordinator),
     ])
 
-class ActronTemperatureSensor(Entity):
-    """Representation of a Actron Neo Temperature Sensor."""
+class ActronTemperatureSensor(CoordinatorEntity, SensorEntity):
+    """Representation of an Actron Neo Temperature Sensor."""
 
-    def __init__(self, coordinator):
-        self._coordinator = coordinator
-        self._name = "Actron Temperature"
-        self._state = None
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
+    def __init__(self, coordinator: ActronDataCoordinator):
+        super().__init__(coordinator)
+        self._attr_name = "Actron Temperature"
+        self._attr_unique_id = f"{coordinator.device_id}_temperature"
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the sensor."""
-        return self._state
+        return self.coordinator.data['main'].get('indoor_temp')
+
+class ActronHumiditySensor(CoordinatorEntity, SensorEntity):
+    """Representation of an Actron Neo Humidity Sensor."""
+
+    def __init__(self, coordinator: ActronDataCoordinator):
+        super().__init__(coordinator)
+        self._attr_name = "Actron Humidity"
+        self._attr_unique_id = f"{coordinator.device_id}_humidity"
+        self._attr_native_unit_of_measurement = "%"
+        self._attr_device_class = SensorDeviceClass.HUMIDITY
 
     @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return TEMP_CELSIUS
-
-    @property
-    def device_class(self):
-        """Return the device class."""
-        return DEVICE_CLASS_TEMPERATURE
-
-    async def async_update(self):
-        """Fetch new state data for the sensor."""
-        _LOGGER.info("Updating Actron Temperature Sensor")
-        await self._coordinator.async_request_refresh()
-        status = self._coordinator.data
-        self._state = status.get("masterCurrentTemp")
-        _LOGGER.debug("Current Temperature: %s", self._state)
-
-class ActronHumiditySensor(Entity):
-    """Representation of a Actron Neo Humidity Sensor."""
-
-    def __init__(self, coordinator):
-        self._coordinator = coordinator
-        self._name = "Actron Humidity"
-        self._state = None
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def state(self):
+    def native_value(self):
         """Return the state of the sensor."""
-        return self._state
-
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return "%"
-
-    @property
-    def device_class(self):
-        """Return the device class."""
-        return DEVICE_CLASS_HUMIDITY
-
-    async def async_update(self):
-        """Fetch new state data for the sensor."""
-        _LOGGER.info("Updating Actron Humidity Sensor")
-        await self._coordinator.async_request_refresh()
-        status = self._coordinator.data
-        self._state = status.get("masterCurrentHumidity")
-        _LOGGER.debug("Current Humidity: %s", self._state)
+        return self.coordinator.data['main'].get('indoor_humidity')

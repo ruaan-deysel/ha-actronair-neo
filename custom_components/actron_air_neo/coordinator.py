@@ -46,50 +46,53 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise UpdateFailed("Unexpected error occurred") from err
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        _LOGGER.debug(f"Raw data from API: {data}")
-        parsed_data = {}
-        
-        system_data_key = next((key for key in data.get("lastKnownState", {}).keys() if key.startswith("<") and key.endswith(">")), None)
-        if not system_data_key:
-            _LOGGER.error("No valid system data key found in the data")
+        try:
+            system_data_key = next((key for key in data.get("lastKnownState", {}).keys() if key.startswith("<") and key.endswith(">")), None)
+            if not system_data_key:
+                raise KeyError("No valid system data key found in the data")
+
+            system_data = data["lastKnownState"][system_data_key]
+            main_data = system_data.get("SystemStatus_Local", {})
+            user_settings = data.get("UserAirconSettings", {})
+            
+            temp = main_data.get("SensorInputs", {}).get("SHTC1", {}).get("Temperature_oC")
+            humidity = main_data.get("SensorInputs", {}).get("SHTC1", {}).get("RelativeHumidity_pc")
+
+            parsed_data = {
+                "main": {
+                    "is_on": data.get("isOnline", False),
+                    "mode": user_settings.get("Mode"),
+                    "fan_mode": user_settings.get("FanMode"),
+                    "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
+                    "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
+                    "indoor_temp": temp,
+                    "indoor_humidity": humidity,
+                }
+            }
+
+            # Parse zone data if available
+            parsed_data["zones"] = {}
+            for i, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
+                if zone.get("NV_Exists", False):
+                    zone_id = f"zone_{i+1}"
+                    parsed_data["zones"][zone_id] = {
+                        "name": zone.get("NV_Title", f"Zone {i+1}"),
+                        "temp": zone.get("LiveTemp_oC"),
+                        "humidity": zone.get("LiveHumidity_pc"),
+                        "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
+                    }
+
             return parsed_data
 
-        system_data = data.get("lastKnownState", {}).get(system_data_key, {})
-        
-        user_settings = system_data.get("UserAirconSettings", {})
-        master_info = system_data.get("MasterInfo", {})
-
-        _LOGGER.debug(f"user_settings: {user_settings}")
-        _LOGGER.debug(f"master_info: {master_info}")
-
-        parsed_data["main"] = {
-            "is_on": user_settings.get("isOn", False),
-            "mode": user_settings.get("Mode", "OFF"),
-            "fan_mode": user_settings.get("FanMode", "MEDIUM"),
-            "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
-            "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
-            "indoor_temp": master_info.get("LiveTemp_oC"),
-            "indoor_humidity": master_info.get("LiveHumidity_pc"),
-        }
-
-        parsed_data["zones"] = {}
-        for i, zone in enumerate(system_data.get("RemoteZoneInfo", [])):
-            if zone.get("NV_Exists", False):
-                zone_id = f"zone_{i+1}"
-                parsed_data["zones"][zone_id] = {
-                    "name": zone.get("NV_Title", f"Zone {i+1}"),
-                    "temp": zone.get("LiveTemp_oC"),
-                    "humidity": zone.get("LiveHumidity_pc"),
-                    "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
-                }
-
-        return parsed_data
+        except KeyError as e:
+            _LOGGER.error(f"Failed to parse API response: {e}")
+            return {}
 
     async def set_hvac_mode(self, hvac_mode: str) -> None:
         """Set HVAC mode."""
         try:
-            is_on = hvac_mode != "OFF"
-            mode = hvac_mode if hvac_mode != "OFF" else None
+            is_on = hvac_mode != HVACMode.OFF
+            mode = hvac_mode if hvac_mode != HVACMode.OFF else None
             await self.api.send_command(self.device_id, {
                 "UserAirconSettings.isOn": is_on,
                 "UserAirconSettings.Mode": mode

@@ -3,7 +3,7 @@ import asyncio
 import logging
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
-from .const import API_URL
+from .const import API_URL, API_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,7 +73,8 @@ class ActronApi:
                     headers['Authorization'] = f'Bearer {self.token}'
                 kwargs['headers'] = headers
 
-                async with self.session.request(method, url, **kwargs) as response:
+                _LOGGER.debug(f"Making {method} request to: {url}")
+                async with self.session.request(method, url, timeout=API_TIMEOUT, **kwargs) as response:
                     self.request_times.append(datetime.now())
                     
                     if response.status == 200:
@@ -92,6 +93,12 @@ class ActronApi:
                 _LOGGER.error(f"Network error on attempt {attempt + 1}: {err}")
                 if attempt == retries - 1:
                     raise ApiError(f"Network error after {retries} attempts: {err}")
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+
+            except asyncio.TimeoutError:
+                _LOGGER.error(f"Timeout error on attempt {attempt + 1}")
+                if attempt == retries - 1:
+                    raise ApiError(f"Timeout error after {retries} attempts")
                 await asyncio.sleep(2 ** attempt)  # Exponential backoff
 
             except RateLimitError:

@@ -12,7 +12,7 @@ CONF_SERIAL_NUMBER = "serial_number"
 DEFAULT_REFRESH_INTERVAL = 60  # seconds
 
 # API related constants
-API_URL = "https://api.actronair.com.au"
+API_URL = "https://nimbus.actronair.com.au"
 API_TIMEOUT = 10  # seconds
 
 # HVAC modes

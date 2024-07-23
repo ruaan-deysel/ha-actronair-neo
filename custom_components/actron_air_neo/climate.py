@@ -37,11 +37,11 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         )
 
     @property
-    def current_temperature(self):
+    def current_temperature(self) -> float | None:
         return self.coordinator.data['main'].get('indoor_temp')
 
     @property
-    def target_temperature(self):
+    def target_temperature(self) -> float | None:
         if self.hvac_mode in [HVACMode.COOL, HVACMode.AUTO]:
             return self.coordinator.data['main'].get('temp_setpoint_cool')
         elif self.hvac_mode == HVACMode.HEAT:
@@ -49,14 +49,14 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         return None
 
     @property
-    def hvac_mode(self):
+    def hvac_mode(self) -> HVACMode:
         if not self.coordinator.data['main'].get('is_on'):
             return HVACMode.OFF
-        mode = self.coordinator.data['main'].get('mode', HVACMode.OFF)
+        mode = self.coordinator.data['main'].get('mode')
         return self._actron_to_ha_hvac_mode(mode)
 
     @property
-    def hvac_action(self):
+    def hvac_action(self) -> HVACAction | None:
         if not self.coordinator.data['main'].get('is_on'):
             return HVACAction.OFF
         if self.hvac_mode == HVACMode.COOL:
@@ -71,21 +71,21 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         return HVACAction.IDLE
 
     @property
-    def fan_mode(self):
+    def fan_mode(self) -> str | None:
         return self.coordinator.data['main'].get('fan_mode')
 
-    async def async_set_temperature(self, **kwargs):
+    async def async_set_temperature(self, **kwargs) -> None:
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
         is_cooling = self.hvac_mode in [HVACMode.COOL, HVACMode.AUTO]
         await self.coordinator.set_temperature(temperature, is_cooling)
 
-    async def async_set_hvac_mode(self, hvac_mode):
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         actron_mode = self._ha_to_actron_hvac_mode(hvac_mode)
         await self.coordinator.set_hvac_mode(actron_mode)
 
-    async def async_set_fan_mode(self, fan_mode):
+    async def async_set_fan_mode(self, fan_mode: str) -> None:
         await self.coordinator.set_fan_mode(fan_mode)
 
     async def async_turn_on(self) -> None:
@@ -96,8 +96,10 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         """Turn the entity off."""
         await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.OFF))
 
-    def _actron_to_ha_hvac_mode(self, mode: str) -> str:
+    def _actron_to_ha_hvac_mode(self, mode: str | None) -> HVACMode:
         """Convert Actron HVAC mode to HA HVAC mode."""
+        if mode is None:
+            return HVACMode.OFF
         mode_map = {
             "AUTO": HVACMode.AUTO,
             "HEAT": HVACMode.HEAT,
@@ -107,7 +109,7 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         }
         return mode_map.get(mode.upper(), HVACMode.OFF)
 
-    def _ha_to_actron_hvac_mode(self, mode: str) -> str:
+    def _ha_to_actron_hvac_mode(self, mode: HVACMode) -> str:
         """Convert HA HVAC mode to Actron HVAC mode."""
         mode_map = {
             HVACMode.AUTO: "AUTO",

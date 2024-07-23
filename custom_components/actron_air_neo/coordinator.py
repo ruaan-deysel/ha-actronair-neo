@@ -69,7 +69,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         parsed_data["main"] = {
             "is_on": user_settings.get("isOn", False),
             "mode": self._parse_hvac_mode(user_settings.get("Mode")),
-            "fan_mode": user_settings.get("FanMode", "AUTO"),
+            "fan_mode": user_settings.get("FanMode", "MEDIUM"),
             "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
             "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
             "indoor_temp": master_info.get("LiveTemp_oC"),
@@ -102,7 +102,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
         try:
-            mode = next(k for k, v in {"OFF": HVACMode.OFF, "AUTO": HVACMode.AUTO, "COOL": HVACMode.COOL, "HEAT": HVACMode.HEAT, "FAN": HVACMode.FAN_ONLY}.items() if v == hvac_mode)
+            mode = next(k for k, v in {"OFF": HVACMode.OFF, "COOL": HVACMode.COOL, "HEAT": HVACMode.HEAT, "FAN": HVACMode.FAN_ONLY}.items() if v == hvac_mode)
             if mode == "OFF":
                 await self.api.send_command(self.device_id, {"UserAirconSettings.isOn": False})
             else:
@@ -130,6 +130,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_fan_mode(self, fan_mode: str) -> None:
         """Set fan mode."""
         try:
+            if fan_mode not in ["LOW", "MEDIUM", "HIGH"]:
+                _LOGGER.error(f"Invalid fan mode: {fan_mode}")
+                return
             await self.api.send_command(self.device_id, {"UserAirconSettings.FanMode": fan_mode})
             await self.async_request_refresh()
         except Exception as err:

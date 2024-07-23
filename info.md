@@ -1,37 +1,78 @@
-# ActronAir Neo Home Assistant Integration
+# Actron Air Neo Integration for Home Assistant
 
-This is a custom component for Home Assistant that integrates with the ActronAir Neo HVAC system.
+> **IMPORTANT NOTICE:** This integration is currently under active development. It may contain bugs or incomplete features. Use at your own risk and please report any issues you encounter.
+
+This integration allows you to control and monitor your Actron Air Neo air conditioning system through Home Assistant.
+
+## Development Status
+
+This integration is in active development. Here are a few things to keep in mind:
+
+- Features may be added, changed, or removed without notice.
+- There might be bugs or unexpected behavior.
+- Regular updates may be necessary as the integration evolves.
+- Feedback and contributions are welcome to help improve the integration.
+
+## Features
+
+- Control your Actron Air Neo system (on/off, mode, temperature, fan speed)
+- Monitor current temperature and humidity
+- Automatic updates of system status
 
 ## Installation
 
-### HACS Installation
+### HACS (Recommended)
 
-1. Ensure you have [HACS](https://hacs.xyz) installed.
-2. Add this repository to HACS as a custom repository:
-    ```bash
-    https://github.com/domalab/ha-actronair-neo
-    ```
-3. Search for "Actron Air Neo" in HACS and install it.
+1. Ensure that [HACS](https://hacs.xyz/) is installed.
+2. Search for "Actron Air Neo" in the HACS store.
+3. Install the integration.
+4. Restart Home Assistant.
 
-### Manual Installation
+### Manual
 
-1. Clone this repository into your Home Assistant `custom_components` directory:
-    ```bash
-    git clone https://github.com/domalab/ha-actronair-neo.git
-    ```
-2. Move the `actron_air_neo` directory to the `custom_components` directory in your Home Assistant configuration:
-    ```bash
-    mv actron_air_neo_home_assistant/custom_components/actron_air_neo custom_components/
-    ```
+1. Copy the `actron_air_neo` folder into your `custom_components` directory.
+2. Restart Home Assistant.
 
 ## Configuration
 
-1. Navigate to Configuration > Integrations in Home Assistant.
-2. Click on "Add Integration" and search for "Actron Air Neo".
-3. Follow the prompts to enter your Actron Air Neo credentials.
+1. In Home Assistant, go to Configuration > Integrations.
+2. Click the "+ ADD INTEGRATION" button.
+3. Search for "Actron Air Neo" and select it.
+4. Enter your Actron Air Neo username and password.
+5. Follow the prompts to complete the setup.
 
 ## Usage
 
-- **Temperature Control**: You can set the desired temperature for each zone.
-- **Mode Control**: You can switch between HVAC modes (e.g., heat, cool, off).
-- **Zone Control**: You can turn individual zones on or off.
+After setup, your Actron Air Neo system will appear as a climate entity in Home Assistant. You can control it from the Home Assistant frontend or include it in your automations.
+
+## Entities
+
+- Climate: Main control for your Actron Air Neo system.
+- Sensor: Temperature and humidity readings.
+
+## Options
+
+You can adjust the following options in the integration settings:
+
+- Refresh Interval: How often the integration should fetch updates from the Actron Air Neo API.
+
+## Troubleshooting
+
+If you encounter any issues:
+
+1. Check that your credentials are correct.
+2. Ensure your Actron Air Neo system is online and accessible.
+3. Check the Home Assistant logs for any error messages.
+4. If you encounter a bug, please report it on our GitHub issues page.
+
+## Contributing
+
+Contributions to this integration are welcome. Please fork the repository and submit a pull request with your changes.
+
+## License
+
+This integration is released under the MIT License.
+
+## Disclaimer
+
+This integration is not officially associated with or endorsed by Actron Air.

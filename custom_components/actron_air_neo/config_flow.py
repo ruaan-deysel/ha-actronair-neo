@@ -22,7 +22,7 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             refresh_interval = user_input[CONF_REFRESH_INTERVAL]
 
             session = aiohttp_client.async_get_clientsession(self.hass)
-            api = ActronApi(username, password)
+            api = ActronApi(username, password, session=session)
 
             try:
                 await api.authenticate()

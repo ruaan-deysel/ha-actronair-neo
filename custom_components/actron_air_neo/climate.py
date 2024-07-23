@@ -27,11 +27,13 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         self._attr_name = "Actron Air Neo"
         self._attr_unique_id = f"{coordinator.device_id}_climate"
         self._attr_temperature_unit = TEMP_CELSIUS
-        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.FAN_ONLY]
+        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.AUTO, HVACMode.COOL, HVACMode.HEAT, HVACMode.FAN_ONLY]
         self._attr_fan_modes = [FAN_LOW, FAN_MEDIUM, FAN_HIGH]
         self._attr_supported_features = (
             ClimateEntityFeature.TARGET_TEMPERATURE 
             | ClimateEntityFeature.FAN_MODE
+            | ClimateEntityFeature.TURN_ON
+            | ClimateEntityFeature.TURN_OFF
         )
 
     @property
@@ -40,7 +42,7 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def target_temperature(self):
-        if self.hvac_mode == HVACMode.COOL:
+        if self.hvac_mode in [HVACMode.COOL, HVACMode.AUTO]:
             return self.coordinator.data['main'].get('temp_setpoint_cool')
         elif self.hvac_mode == HVACMode.HEAT:
             return self.coordinator.data['main'].get('temp_setpoint_heat')
@@ -50,7 +52,8 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
     def hvac_mode(self):
         if not self.coordinator.data['main'].get('is_on'):
             return HVACMode.OFF
-        return self.coordinator.data['main'].get('mode', HVACMode.OFF)
+        mode = self.coordinator.data['main'].get('mode', HVACMode.OFF)
+        return self._actron_to_ha_hvac_mode(mode)
 
     @property
     def hvac_action(self):
@@ -62,6 +65,9 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
             return HVACAction.HEATING
         elif self.hvac_mode == HVACMode.FAN_ONLY:
             return HVACAction.FAN
+        elif self.hvac_mode == HVACMode.AUTO:
+            # You might need to determine if it's actually heating or cooling
+            return HVACAction.IDLE
         return HVACAction.IDLE
 
     @property
@@ -72,15 +78,42 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
-        is_cooling = self.hvac_mode == HVACMode.COOL
+        is_cooling = self.hvac_mode in [HVACMode.COOL, HVACMode.AUTO]
         await self.coordinator.set_temperature(temperature, is_cooling)
 
     async def async_set_hvac_mode(self, hvac_mode):
-        await self.coordinator.set_hvac_mode(hvac_mode)
+        actron_mode = self._ha_to_actron_hvac_mode(hvac_mode)
+        await self.coordinator.set_hvac_mode(actron_mode)
 
     async def async_set_fan_mode(self, fan_mode):
         await self.coordinator.set_fan_mode(fan_mode)
 
-    @property
-    def current_humidity(self):
-        return self.coordinator.data['main'].get('indoor_humidity')
+    async def async_turn_on(self) -> None:
+        """Turn the entity on."""
+        await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.AUTO))
+
+    async def async_turn_off(self) -> None:
+        """Turn the entity off."""
+        await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.OFF))
+
+    def _actron_to_ha_hvac_mode(self, mode: str) -> str:
+        """Convert Actron HVAC mode to HA HVAC mode."""
+        mode_map = {
+            "AUTO": HVACMode.AUTO,
+            "HEAT": HVACMode.HEAT,
+            "COOL": HVACMode.COOL,
+            "FAN": HVACMode.FAN_ONLY,
+            "OFF": HVACMode.OFF,
+        }
+        return mode_map.get(mode.upper(), HVACMode.OFF)
+
+    def _ha_to_actron_hvac_mode(self, mode: str) -> str:
+        """Convert HA HVAC mode to Actron HVAC mode."""
+        mode_map = {
+            HVACMode.AUTO: "AUTO",
+            HVACMode.HEAT: "HEAT",
+            HVACMode.COOL: "COOL",
+            HVACMode.FAN_ONLY: "FAN",
+            HVACMode.OFF: "OFF",
+        }
+        return mode_map.get(mode, "OFF")

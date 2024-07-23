@@ -1,4 +1,3 @@
-import asyncio
 from datetime import timedelta
 from typing import Any, Dict
 
@@ -8,7 +7,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.components.climate.const import HVACMode
 
 from .api import ActronApi, AuthenticationError, ApiError
-from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
+from .const import DOMAIN
 
 import logging
 
@@ -42,11 +41,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         except ApiError as api_err:
             _LOGGER.error("API error: %s", api_err)
             raise UpdateFailed("Failed to fetch data from Actron API") from api_err
-        except asyncio.TimeoutError as timeout_err:
-            _LOGGER.error("Timeout error: %s", timeout_err)
-            raise UpdateFailed("Timeout while fetching data from Actron API") from timeout_err
         except Exception as err:
-            _LOGGER.exception("Unexpected error occurred: %s", err)
+            _LOGGER.error("Unexpected error occurred: %s", err)
             raise UpdateFailed("Unexpected error occurred") from err
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -68,7 +64,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         parsed_data["main"] = {
             "is_on": user_settings.get("isOn", False),
-            "mode": self._parse_hvac_mode(user_settings.get("Mode")),
+            "mode": user_settings.get("Mode", "OFF"),
             "fan_mode": user_settings.get("FanMode", "MEDIUM"),
             "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
             "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
@@ -89,30 +85,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         return parsed_data
 
-    def _parse_hvac_mode(self, mode: str) -> str:
-        if not mode:
-            return HVACMode.OFF
-        mode = mode.upper()
-        if mode == "COOL":
-            return HVACMode.COOL
-        elif mode == "HEAT":
-            return HVACMode.HEAT
-        elif mode == "FAN":
-            return HVACMode.FAN_ONLY
-        else:
-            return HVACMode.OFF
-
-    async def set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+    async def set_hvac_mode(self, hvac_mode: str) -> None:
         """Set HVAC mode."""
         try:
-            mode = next(k for k, v in {"OFF": HVACMode.OFF, "COOL": HVACMode.COOL, "HEAT": HVACMode.HEAT, "FAN": HVACMode.FAN_ONLY}.items() if v == hvac_mode)
-            if mode == "OFF":
-                await self.api.send_command(self.device_id, {"UserAirconSettings.isOn": False})
-            else:
-                await self.api.send_command(self.device_id, {
-                    "UserAirconSettings.isOn": True,
-                    "UserAirconSettings.Mode": mode
-                })
+            is_on = hvac_mode != "OFF"
+            mode = hvac_mode if hvac_mode != "OFF" else None
+            await self.api.send_command(self.device_id, {
+                "UserAirconSettings.isOn": is_on,
+                "UserAirconSettings.Mode": mode
+            })
             await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error("Failed to set HVAC mode: %s", err)

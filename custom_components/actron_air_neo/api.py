@@ -7,11 +7,11 @@ from .const import API_URL, CMD_SET_SETTINGS
 _LOGGER = logging.getLogger(__name__)
 
 class ActronApi:
-    def __init__(self, username: str, password: str, session: aiohttp.ClientSession = None):
+    def __init__(self, username: str, password: str, session: aiohttp.ClientSession):
         self.username = username
         self.password = password
         self.bearer_token = None
-        self.session = session or aiohttp.ClientSession()
+        self.session = session
         self.rate_limit = asyncio.Semaphore(5)  # Limit to 5 concurrent requests
 
     async def authenticate(self):
@@ -101,11 +101,6 @@ class ActronApi:
             except aiohttp.ClientError as err:
                 _LOGGER.error(f"Network error during API request: {err}")
                 raise ApiError(f"Network error during API request: {err}")
-
-    async def close(self):
-        if self.session:
-            await self.session.close()
-            self.session = None
 
 class AuthenticationError(Exception):
     """Raised when authentication fails."""

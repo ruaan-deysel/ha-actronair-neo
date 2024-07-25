@@ -23,8 +23,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         )
         self.api = api
         self.device_id = device_id
+        _LOGGER.info(f"Initializing ActronDataCoordinator for device {device_id} with update interval {update_interval} seconds")
 
     async def _async_update_data(self) -> Dict[str, Any]:
+        """Fetch data from API endpoint."""
+        _LOGGER.debug(f"Fetching data for device {self.device_id}")
         try:
             status = await self.api.get_ac_status(self.device_id)
             _LOGGER.debug(f"API status response: {status}")
@@ -32,19 +35,21 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             _LOGGER.debug(f"Parsed data: {parsed_data}")
             return parsed_data
         except AuthenticationError as auth_err:
-            _LOGGER.error("Authentication error: %s", auth_err)
+            _LOGGER.error(f"Authentication error for device {self.device_id}: {auth_err}")
             raise ConfigEntryAuthFailed("Authentication failed") from auth_err
         except RateLimitError as rate_err:
-            _LOGGER.warning("Rate limit exceeded: %s", rate_err)
+            _LOGGER.warning(f"Rate limit exceeded for device {self.device_id}: {rate_err}")
             raise UpdateFailed("Rate limit exceeded") from rate_err
         except ApiError as api_err:
-            _LOGGER.error("API error: %s", api_err)
+            _LOGGER.error(f"API error for device {self.device_id}: {api_err}")
             raise UpdateFailed("Failed to fetch data from Actron API") from api_err
         except Exception as err:
-            _LOGGER.exception("Unexpected error occurred: %s", err)
+            _LOGGER.exception(f"Unexpected error occurred for device {self.device_id}: {err}")
             raise UpdateFailed("Unexpected error occurred") from err
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse the data from the API into a format suitable for the climate entity."""
+        _LOGGER.debug(f"Parsing data for device {self.device_id}")
         try:
             user_settings = data.get("UserAirconSettings", {})
             master_info = data.get("MasterInfo", {})
@@ -61,7 +66,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 }
             }
 
-            _LOGGER.debug(f"Parsed main data: {parsed_data['main']}")
+            _LOGGER.debug(f"Parsed main data for device {self.device_id}: {parsed_data['main']}")
 
             # Parse zone data if available
             parsed_data["zones"] = {}
@@ -75,53 +80,76 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                         "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
                     }
 
-            _LOGGER.debug(f"Parsed zone data: {parsed_data['zones']}")
+            _LOGGER.debug(f"Parsed zone data for device {self.device_id}: {parsed_data['zones']}")
 
             return parsed_data
 
         except KeyError as e:
-            _LOGGER.error(f"Failed to parse API response: {e}")
+            _LOGGER.error(f"Failed to parse API response for device {self.device_id}: {e}")
             return {"main": {}, "zones": {}}
 
     async def set_hvac_mode(self, hvac_mode: str) -> None:
         """Set HVAC mode."""
+        _LOGGER.info(f"Setting HVAC mode to {hvac_mode} for device {self.device_id}")
         try:
             is_on = hvac_mode != HVACMode.OFF
             mode = hvac_mode if hvac_mode != HVACMode.OFF else None
-            await self.api.send_command(self.device_id, {
+            command = {
                 "UserAirconSettings.isOn": is_on,
                 "UserAirconSettings.Mode": mode
-            })
+            }
+            _LOGGER.debug(f"Sending command to set HVAC mode: {command}")
+            await self.api.send_command(self.device_id, command)
+            _LOGGER.info(f"Successfully set HVAC mode to {hvac_mode} for device {self.device_id}")
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set HVAC mode: %s", err)
+            _LOGGER.error(f"Failed to set HVAC mode to {hvac_mode} for device {self.device_id}: {err}")
+            raise
 
     async def set_temperature(self, temperature: float, is_cooling: bool) -> None:
         """Set temperature."""
+        setting = "Cool" if is_cooling else "Heat"
+        _LOGGER.info(f"Setting {setting} temperature to {temperature} for device {self.device_id}")
         try:
-            setting = "Cool" if is_cooling else "Heat"
-            await self.api.send_command(self.device_id, {
+            command = {
                 f"UserAirconSettings.TemperatureSetpoint_{setting}_oC": temperature
-            })
+            }
+            _LOGGER.debug(f"Sending command to set temperature: {command}")
+            await self.api.send_command(self.device_id, command)
+            _LOGGER.info(f"Successfully set {setting} temperature to {temperature} for device {self.device_id}")
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set temperature: %s", err)
+            _LOGGER.error(f"Failed to set {setting} temperature to {temperature} for device {self.device_id}: {err}")
+            raise
 
     async def set_fan_mode(self, fan_mode: str) -> None:
         """Set fan mode."""
+        _LOGGER.info(f"Setting fan mode to {fan_mode} for device {self.device_id}")
         try:
-            if fan_mode not in ["LOW", "MEDIUM", "HIGH"]:
-                _LOGGER.error(f"Invalid fan mode: {fan_mode}")
-                return
-            await self.api.send_command(self.device_id, {"UserAirconSettings.FanMode": fan_mode})
+            command = {"UserAirconSettings.FanMode": fan_mode}
+            _LOGGER.debug(f"Sending command to set fan mode: {command}")
+            await self.api.send_command(self.device_id, command)
+            _LOGGER.info(f"Successfully set fan mode to {fan_mode} for device {self.device_id}")
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set fan mode: %s", err)
+            _LOGGER.error(f"Failed to set fan mode to {fan_mode} for device {self.device_id}: {err}")
+            raise
 
     async def set_zone_state(self, zone_index: int, is_on: bool) -> None:
         """Set zone state."""
+        _LOGGER.info(f"Setting zone {zone_index} state to {'on' if is_on else 'off'} for device {self.device_id}")
         try:
-            await self.api.send_command(self.device_id, {f"UserAirconSettings.EnabledZones[{zone_index}]": is_on})
+            command = {f"UserAirconSettings.EnabledZones[{zone_index}]": is_on}
+            _LOGGER.debug(f"Sending command to set zone state: {command}")
+            await self.api.send_command(self.device_id, command)
+            _LOGGER.info(f"Successfully set zone {zone_index} state to {'on' if is_on else 'off'} for device {self.device_id}")
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set zone state: %s", err)
+            _LOGGER.error(f"Failed to set zone {zone_index} state to {'on' if is_on else 'off'} for device {self.device_id}: {err}")
+            raise
+
+    async def async_force_update(self) -> None:
+        """Force an immediate data update."""
+        _LOGGER.info(f"Forcing an immediate data update for device {self.device_id}")
+        await self.async_refresh()
+        _LOGGER.info(f"Forced update completed for device {self.device_id}")

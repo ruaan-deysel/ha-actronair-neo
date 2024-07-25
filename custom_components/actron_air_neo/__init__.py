@@ -37,6 +37,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
+    async def force_update(call):
+        """Handle the service call to force an update."""
+        await coordinator.async_force_update()
+
+    hass.services.async_register(DOMAIN, "force_update", force_update)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True

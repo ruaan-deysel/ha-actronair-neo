@@ -3,7 +3,7 @@ import asyncio
 import logging
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
-from .const import API_URL, API_TIMEOUT, ERROR_RATE_LIMIT
+from .const import API_URL, API_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class ActronApi:
                 "password": self.password,
                 "client_id": "app"
             }
-            _LOGGER.debug("Authenticating with Actron Air Neo API")
+            _LOGGER.debug(f"Authenticating with Actron Air Neo API")
             response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
             self.token = response.get("access_token")
             if not self.token:
@@ -47,7 +47,37 @@ class ActronApi:
             _LOGGER.error(f"Authentication failed: {e}")
             raise AuthenticationError(str(e))
 
-    # ... [rest of the methods remain unchanged] ...
+    async def get_devices(self) -> List[Dict[str, str]]:
+        url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
+        _LOGGER.debug(f"Fetching devices from: {url}")
+        response = await self._make_request(url, "GET")
+        devices = []
+        if '_embedded' in response and 'ac-system' in response['_embedded']:
+            for system in response['_embedded']['ac-system']:
+                devices.append({
+                    'serial': system.get('serial', 'Unknown'),
+                    'name': system.get('description', 'Unknown Device'),
+                    'type': system.get('type', 'Unknown')
+                })
+        _LOGGER.debug(f"Found devices: {devices}")
+        return devices
+
+    async def get_ac_status(self, serial: str) -> Dict[str, Any]:
+        url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
+        _LOGGER.debug(f"Fetching AC status from: {url}")
+        return await self._make_request(url, "GET")
+
+    async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
+        url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
+        data = {"command": command}
+        _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
+        try:
+            response = await self._make_request(url, "POST", json=data)
+            _LOGGER.debug(f"Command response: {response}")
+            return response
+        except ApiError as e:
+            _LOGGER.error(f"Failed to send command: {e}")
+            return {"error": str(e)}
 
     async def _make_request(self, url: str, method: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
         await self._wait_for_rate_limit()
@@ -73,7 +103,7 @@ class ActronApi:
                         await self.authenticate()
                         continue
                     elif response.status == 429:
-                        raise RateLimitError(ERROR_RATE_LIMIT)
+                        raise RateLimitError("Rate limit exceeded")
                     elif response.status == 500:
                         text = await response.text()
                         _LOGGER.error(f"Server error (500) on attempt {attempt + 1}: {text}")

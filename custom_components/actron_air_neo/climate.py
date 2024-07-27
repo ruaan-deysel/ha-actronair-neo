@@ -6,7 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MIN_TEMP, MAX_TEMP
+from .const import DOMAIN
 from .coordinator import ActronDataCoordinator
 
 import logging
@@ -16,6 +16,9 @@ _LOGGER = logging.getLogger(__name__)
 FAN_LOW = "LOW"
 FAN_MEDIUM = "MEDIUM"
 FAN_HIGH = "HIGH"
+
+MIN_TEMP = 10
+MAX_TEMP = 30
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator = hass.data[DOMAIN][entry.entry_id]
@@ -84,39 +87,22 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
             return
         temperature = min(max(temperature, MIN_TEMP), MAX_TEMP)
         is_cooling = self.hvac_mode in [HVACMode.COOL, HVACMode.AUTO]
-        try:
-            await self.coordinator.set_temperature(temperature, is_cooling)
-        except Exception as e:
-            _LOGGER.error(f"Failed to set temperature: {e}")
-        finally:
-            await self.coordinator.async_request_refresh()
+        await self.coordinator.set_temperature(temperature, is_cooling)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         actron_mode = self._ha_to_actron_hvac_mode(hvac_mode)
-        try:
-            result = await self.coordinator.set_hvac_mode(actron_mode)
-            if isinstance(result, dict) and 'error' in result:
-                _LOGGER.error(f"Failed to set HVAC mode: {result['error']}")
-        except Exception as e:
-            _LOGGER.error(f"Error setting HVAC mode: {e}")
-        finally:
-            await self.coordinator.async_request_refresh()
+        await self.coordinator.set_hvac_mode(actron_mode)
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        try:
-            await self.coordinator.set_fan_mode(fan_mode)
-        except Exception as e:
-            _LOGGER.error(f"Failed to set fan mode: {e}")
-        finally:
-            await self.coordinator.async_request_refresh()
+        await self.coordinator.set_fan_mode(fan_mode)
 
     async def async_turn_on(self) -> None:
         """Turn the entity on."""
-        await self.async_set_hvac_mode(HVACMode.AUTO)
+        await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.AUTO))
 
     async def async_turn_off(self) -> None:
         """Turn the entity off."""
-        await self.async_set_hvac_mode(HVACMode.OFF)
+        await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.OFF))
 
     def _actron_to_ha_hvac_mode(self, mode: str | None) -> HVACMode:
         """Convert Actron HVAC mode to HA HVAC mode."""

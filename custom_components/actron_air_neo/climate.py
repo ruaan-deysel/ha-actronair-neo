@@ -27,7 +27,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 class ActronClimate(CoordinatorEntity, ClimateEntity):
     def __init__(self, coordinator: ActronDataCoordinator):
         super().__init__(coordinator)
-        self._attr_name = "Actron Air Neo"
+        self._attr_name = "ActronAir Neo"
         self._attr_unique_id = f"{coordinator.device_id}_climate"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_hvac_modes = [HVACMode.OFF, HVACMode.AUTO, HVACMode.COOL, HVACMode.HEAT, HVACMode.FAN_ONLY]

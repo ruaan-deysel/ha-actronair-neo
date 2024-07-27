@@ -1,6 +1,6 @@
 {
   "domain": "actron_air_neo",
-  "name": "Actron Air Neo",
+  "name": "ActronAir Neo",
   "codeowners": ["@domalab"],
   "config_flow": true,
   "documentation": "https://github.com/domalab/ha-actronair-neo/wiki",

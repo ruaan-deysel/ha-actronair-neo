@@ -25,7 +25,7 @@ class ActronTemperatureSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator: ActronDataCoordinator):
         super().__init__(coordinator)
-        self._attr_name = "Actron Temperature"
+        self._attr_name = "ActronAir Temperature"
         self._attr_unique_id = f"{coordinator.device_id}_temperature"
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -44,7 +44,7 @@ class ActronHumiditySensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator: ActronDataCoordinator):
         super().__init__(coordinator)
-        self._attr_name = "Actron Humidity"
+        self._attr_name = "ActronAir Humidity"
         self._attr_unique_id = f"{coordinator.device_id}_humidity"
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_device_class = SensorDeviceClass.HUMIDITY

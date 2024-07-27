@@ -1,8 +1,8 @@
-# Actron Air Neo Integration for Home Assistant
+# ActronAir Neo Integration for Home Assistant
 
 > **IMPORTANT NOTICE:** This integration is currently under active development. It may contain bugs or incomplete features. Use at your own risk and please report any issues you encounter.
 
-This integration allows you to control and monitor your Actron Air Neo air conditioning system through Home Assistant.
+This integration allows you to control and monitor your ActronAir Neo air conditioning system through Home Assistant.
 
 ## Development Status
 
@@ -15,7 +15,7 @@ This integration is in active development. Here are a few things to keep in mind
 
 ## Features
 
-- Control your Actron Air Neo system (on/off, mode, temperature, fan speed)
+- Control your ActronAir Neo system (on/off, mode, temperature, fan speed)
 - Monitor current temperature and humidity
 - Automatic updates of system status
 
@@ -24,7 +24,7 @@ This integration is in active development. Here are a few things to keep in mind
 ### HACS (Recommended)
 
 1. Ensure that [HACS](https://hacs.xyz/) is installed.
-2. Search for "Actron Air Neo" in the HACS store.
+2. Search for "ActronAir Neo" in the HACS store.
 3. Install the integration.
 4. Restart Home Assistant.
 
@@ -37,31 +37,31 @@ This integration is in active development. Here are a few things to keep in mind
 
 1. In Home Assistant, go to Configuration > Integrations.
 2. Click the "+ ADD INTEGRATION" button.
-3. Search for "Actron Air Neo" and select it.
-4. Enter your Actron Air Neo username and password.
+3. Search for "ActronAir Neo" and select it.
+4. Enter your ActronAir Neo username and password.
 5. Follow the prompts to complete the setup.
 
 ## Usage
 
-After setup, your Actron Air Neo system will appear as a climate entity in Home Assistant. You can control it from the Home Assistant frontend or include it in your automations.
+After setup, your ActronAir Neo system will appear as a climate entity in Home Assistant. You can control it from the Home Assistant frontend or include it in your automations.
 
 ## Entities
 
-- Climate: Main control for your Actron Air Neo system.
+- Climate: Main control for your ActronAir Neo system.
 - Sensor: Temperature and humidity readings.
 
 ## Options
 
 You can adjust the following options in the integration settings:
 
-- Refresh Interval: How often the integration should fetch updates from the Actron Air Neo API.
+- Refresh Interval: How often the integration should fetch updates from the ActronAir Neo API.
 
 ## Troubleshooting
 
 If you encounter any issues:
 
 1. Check that your credentials are correct.
-2. Ensure your Actron Air Neo system is online and accessible.
+2. Ensure your ActronAir Neo system is online and accessible.
 3. Check the Home Assistant logs for any error messages.
 4. If you encounter a bug, please report it on our GitHub issues page.
 
@@ -75,4 +75,4 @@ This integration is released under the MIT License.
 
 ## Disclaimer
 
-This integration is not officially associated with or endorsed by Actron Air.
+This integration is not officially associated with or endorsed by ActronAir.

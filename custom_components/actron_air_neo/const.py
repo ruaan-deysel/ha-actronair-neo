@@ -40,5 +40,5 @@ ERROR_CANNOT_CONNECT = "cannot_connect"
 ERROR_UNKNOWN = "unknown"
 
 # Device identifiers
-DEVICE_MANUFACTURER = "Actron Air"
+DEVICE_MANUFACTURER = "ActronAir"
 DEVICE_MODEL = "Neo"

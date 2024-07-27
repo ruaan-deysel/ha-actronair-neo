@@ -23,7 +23,7 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str):
         super().__init__(coordinator)
         self.zone_id = zone_id
-        self._attr_name = f"Actron Zone {coordinator.data['zones'][zone_id]['name']}"
+        self._attr_name = f"ActronAir Zone {coordinator.data['zones'][zone_id]['name']}"
         self._attr_unique_id = f"{coordinator.device_id}_zone_{zone_id}"
 
     @property

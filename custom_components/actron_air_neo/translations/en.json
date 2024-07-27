@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Actron Air Neo",
-        "description": "Please enter your Actron Air Neo credentials.",
+        "title": "Connect to ActronAir Neo",
+        "description": "Please enter your ActronAir Neo credentials.",
         "data": {
           "username": "Username",
           "password": "Password",
@@ -23,7 +23,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Actron Air Neo Options",
+        "title": "ActronAir Neo Options",
         "data": {
           "refresh_interval": "Refresh Interval (seconds)"
         }
@@ -43,11 +43,11 @@
       }
     },
     "sensor": {
-      "actron_temperature": {
-        "name": "Actron Temperature"
+      "actronair_temperature": {
+        "name": "ActronAir Temperature"
       },
-      "actron_humidity": {
-        "name": "Actron Humidity"
+      "actronair_humidity": {
+        "name": "ActronAir Humidity"
       }
     }
   }

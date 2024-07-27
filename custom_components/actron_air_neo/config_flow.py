@@ -114,7 +114,7 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         _LOGGER.debug(f"Device found: {devices[0]}")
 
         return self.async_create_entry(
-            title=f"Actron Air Neo ({devices[0]['name']})",
+            title=f"ActronAir Neo ({devices[0]['name']})",
             data={
                 CONF_USERNAME: username,
                 CONF_PASSWORD: password,

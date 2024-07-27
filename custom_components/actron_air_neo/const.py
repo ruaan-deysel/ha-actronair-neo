@@ -38,6 +38,7 @@ ATTR_SETPOINT_HEAT = "setpoint_heat"
 ERROR_AUTH = "invalid_auth"
 ERROR_CANNOT_CONNECT = "cannot_connect"
 ERROR_UNKNOWN = "unknown"
+ERROR_RATE_LIMIT = "rate_limit_exceeded"  # New error message
 
 # Device identifiers
 DEVICE_MANUFACTURER = "Actron Air"

@@ -3,7 +3,7 @@ import asyncio
 import logging
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
-from .const import API_URL, API_TIMEOUT
+from .const import API_URL, API_TIMEOUT, ERROR_RATE_LIMIT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,52 +24,41 @@ class ActronApi:
         self.token = None
         self.rate_limit = asyncio.Semaphore(5)  # Limit to 5 concurrent requests
         self.request_times = []
-        self.max_requests_per_minute = 30  # Reduced from 60 to 30
+        self.max_requests_per_minute = 20  # Reduced from 30 to 20
 
     async def authenticate(self):
         """Authenticate and get the token."""
         try:
-            pairing_token = await self._request_pairing_token()
-            self.token = await self._request_bearer_token(pairing_token)
+            url = f"{API_URL}/api/v0/oauth/token"
+            headers = {"Content-Type": "application/x-www-form-urlencoded"}
+            data = {
+                "grant_type": "password",
+                "username": self.username,
+                "password": self.password,
+                "client_id": "app"
+            }
+            _LOGGER.debug("Authenticating with Actron Air Neo API")
+            response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+            self.token = response.get("access_token")
+            if not self.token:
+                raise AuthenticationError("No token received in the response")
             _LOGGER.debug("Authentication successful")
         except Exception as e:
             _LOGGER.error(f"Authentication failed: {e}")
             raise AuthenticationError(str(e))
 
-    async def _request_pairing_token(self) -> str:
-        url = f"{API_URL}/api/v0/client/user-devices"
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        data = {
-            "username": self.username,
-            "password": self.password,
-            "client": "ios",
-            "deviceName": "HomeAssistant",
-            "deviceUniqueIdentifier": "HomeAssistant"
-        }
-        _LOGGER.debug(f"Requesting pairing token from: {url}")
-        response = await self._make_request(url, "POST", headers=headers, data=data)
-        return response["pairingToken"]
+    # ... [rest of the methods remain unchanged] ...
 
-    async def _request_bearer_token(self, pairing_token: str) -> str:
-        url = f"{API_URL}/api/v0/oauth/token"
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        data = {
-            "grant_type": "refresh_token",
-            "refresh_token": pairing_token,
-            "client_id": "app"
-        }
-        _LOGGER.debug(f"Requesting bearer token from: {url}")
-        response = await self._make_request(url, "POST", headers=headers, data=data)
-        return response["access_token"]
-
-    async def _make_request(self, url: str, method: str, **kwargs) -> Dict[str, Any]:
+    async def _make_request(self, url: str, method: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
         await self._wait_for_rate_limit()
 
-        retries = 5  # Increased from 3 to 5
+        retries = 3
         for attempt in range(retries):
             try:
                 headers = kwargs.get('headers', {})
-                if self.token:
+                if auth_required:
+                    if not self.token:
+                        await self.authenticate()
                     headers['Authorization'] = f'Bearer {self.token}'
                 kwargs['headers'] = headers
 
@@ -79,17 +68,18 @@ class ActronApi:
                     
                     if response.status == 200:
                         return await response.json()
-                    elif response.status == 401 and self.token:
+                    elif response.status == 401 and auth_required:
                         _LOGGER.warning("Token expired, re-authenticating...")
                         await self.authenticate()
                         continue
                     elif response.status == 429:
-                        raise RateLimitError("Rate limit exceeded")
+                        raise RateLimitError(ERROR_RATE_LIMIT)
                     elif response.status == 500:
-                        _LOGGER.error(f"Server error (500) on attempt {attempt + 1}")
+                        text = await response.text()
+                        _LOGGER.error(f"Server error (500) on attempt {attempt + 1}: {text}")
                         if attempt == retries - 1:
-                            raise ApiError(f"Persistent server error after {retries} attempts")
-                        await asyncio.sleep(10 * (2 ** attempt))  # Longer exponential backoff
+                            raise ApiError(f"Persistent server error after {retries} attempts: {text}")
+                        await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
                         continue
                     else:
                         text = await response.text()
@@ -99,53 +89,18 @@ class ActronApi:
                 _LOGGER.error(f"Network error on attempt {attempt + 1}: {err}")
                 if attempt == retries - 1:
                     raise ApiError(f"Network error after {retries} attempts: {err}")
-                await asyncio.sleep(5 * (2 ** attempt))  # Longer exponential backoff
+                await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
 
             except asyncio.TimeoutError:
                 _LOGGER.error(f"Timeout error on attempt {attempt + 1}")
                 if attempt == retries - 1:
                     raise ApiError(f"Timeout error after {retries} attempts")
-                await asyncio.sleep(5 * (2 ** attempt))  # Longer exponential backoff
-
-            except RateLimitError:
-                _LOGGER.warning(f"Rate limit hit on attempt {attempt + 1}, waiting before retry")
-                await asyncio.sleep(60)  # Wait for 1 minute before retrying
+                await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
 
     async def _wait_for_rate_limit(self):
-        """Wait if we're approaching the rate limit."""
         now = datetime.now()
         self.request_times = [t for t in self.request_times if now - t < timedelta(minutes=1)]
         if len(self.request_times) >= self.max_requests_per_minute:
             sleep_time = 60 - (now - self.request_times[0]).total_seconds()
             _LOGGER.warning(f"Rate limit approaching, waiting for {sleep_time:.2f} seconds")
             await asyncio.sleep(sleep_time)
-
-    async def get_devices(self) -> List[Dict[str, str]]:
-        url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
-        _LOGGER.debug(f"Fetching devices from: {url}")
-        response = await self._make_request(url, "GET")
-        devices = []
-        if '_embedded' in response and 'ac-system' in response['_embedded']:
-            for system in response['_embedded']['ac-system']:
-                devices.append({
-                    'serial': system.get('serial', 'Unknown'),
-                    'name': system.get('description', 'Unknown Device'),
-                    'type': system.get('type', 'Unknown')
-                })
-        _LOGGER.debug(f"Found devices: {devices}")
-        return devices
-
-    async def get_ac_status(self, serial: str) -> Dict[str, Any]:
-        url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
-        _LOGGER.debug(f"Fetching AC status from: {url}")
-        return await self._make_request(url, "GET")
-
-    async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
-        url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
-        data = {"command": command}
-        _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
-        try:
-            return await self._make_request(url, "POST", json=data)
-        except ApiError as e:
-            _LOGGER.error(f"Failed to send command: {e}")
-            return {}  # Return empty dict instead of raising to avoid breaking the integration

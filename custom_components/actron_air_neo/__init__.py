@@ -1,9 +1,11 @@
+"""The Actron Air Neo integration."""
 import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.exceptions import ConfigEntryNotReady
 from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD, CONF_REFRESH_INTERVAL, CONF_SERIAL_NUMBER
+from .const import ERROR_CANNOT_CONNECT, ERROR_UNKNOWN
 from .coordinator import ActronDataCoordinator
 from .api import ActronApi, AuthenticationError, ApiError
 
@@ -33,7 +35,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady from api_err
 
     coordinator = ActronDataCoordinator(hass, api, serial_number, refresh_interval)
-    await coordinator.async_config_entry_first_refresh()
+
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except ConfigEntryNotReady:
+        _LOGGER.error(ERROR_CANNOT_CONNECT)
+        raise
+    except Exception as err:
+        _LOGGER.error("%s: %s", ERROR_UNKNOWN, err)
+        raise ConfigEntryNotReady from err
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 

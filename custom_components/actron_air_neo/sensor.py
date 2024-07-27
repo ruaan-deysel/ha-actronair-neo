@@ -1,5 +1,5 @@
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfTemperature, PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -33,7 +33,11 @@ class ActronTemperatureSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        return self.coordinator.data['main'].get('indoor_temp')
+        try:
+            return self.coordinator.data['main'].get('indoor_temp')
+        except Exception as e:
+            _LOGGER.error(f"Error getting temperature value: {e}")
+            return None
 
 class ActronHumiditySensor(CoordinatorEntity, SensorEntity):
     """Representation of an Actron Neo Humidity Sensor."""
@@ -42,10 +46,14 @@ class ActronHumiditySensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._attr_name = "Actron Humidity"
         self._attr_unique_id = f"{coordinator.device_id}_humidity"
-        self._attr_native_unit_of_measurement = "%"
+        self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_device_class = SensorDeviceClass.HUMIDITY
 
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        return self.coordinator.data['main'].get('indoor_humidity')
+        try:
+            return self.coordinator.data['main'].get('indoor_humidity')
+        except Exception as e:
+            _LOGGER.error(f"Error getting humidity value: {e}")
+            return None

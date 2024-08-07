@@ -52,11 +52,19 @@
       }
     },
     "sensor": {
-      "actronair_temperature": {
-        "name": "ActronAir Temperature"
+      "actronair_indoor_temperature": {
+        "name": "ActronAir Indoor Temperature"
       },
-      "actronair_humidity": {
-        "name": "ActronAir Humidity"
+      "actronair_indoor_humidity": {
+        "name": "ActronAir Indoor Humidity"
+      },
+      "actronair_outdoor_temperature": {
+        "name": "ActronAir Outdoor Temperature"
+      }
+    },
+    "switch": {
+      "actronair_zone": {
+        "name": "ActronAir Zone {zone_name}"
       }
     }
   },

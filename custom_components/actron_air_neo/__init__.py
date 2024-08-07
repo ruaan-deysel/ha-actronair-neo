@@ -1,16 +1,23 @@
 """The Actron Air Neo integration."""
 import logging
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.exceptions import ConfigEntryNotReady
-from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD, CONF_REFRESH_INTERVAL, CONF_SERIAL_NUMBER
+from .const import (
+    DOMAIN,
+    CONF_USERNAME,
+    CONF_PASSWORD,
+    CONF_REFRESH_INTERVAL,
+    CONF_SERIAL_NUMBER,
+    SERVICE_FORCE_UPDATE
+)
 from .coordinator import ActronDataCoordinator
 from .api import ActronApi, AuthenticationError, ApiError
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["climate", "sensor"]
+PLATFORMS = ["climate", "sensor", "switch"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Actron Air Neo from a config entry."""
@@ -48,6 +55,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    async def force_update(call: ServiceCall) -> None:
+        """Force an update of the data."""
+        _LOGGER.debug("Forcing an update for Actron Air Neo")
+        await coordinator.async_refresh()
+
+    hass.services.async_register(DOMAIN, SERVICE_FORCE_UPDATE, force_update)
+
     entry.async_on_unload(entry.add_update_listener(update_listener))
 
     return True
@@ -57,6 +71,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
+        hass.services.async_remove(DOMAIN, SERVICE_FORCE_UPDATE)
     return unload_ok
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

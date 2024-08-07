@@ -1,6 +1,6 @@
 from datetime import timedelta
 from typing import Any, Dict
-import asyncio
+import logging
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -9,8 +9,6 @@ from homeassistant.components.climate.const import HVACMode
 
 from .api import ActronApi, AuthenticationError, ApiError
 from .const import DOMAIN
-
-import logging
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,31 +41,37 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Parse the data from the API into a format suitable for the climate entity."""
         try:
-            user_settings = data.get("UserAirconSettings", {})
-            master_info = data.get("MasterInfo", {})
+            last_known_state = data.get("lastKnownState", {})
+            user_aircon_settings = last_known_state.get("UserAirconSettings", {})
+            master_info = last_known_state.get("MasterInfo", {})
+            live_aircon = last_known_state.get("LiveAircon", {})
 
             parsed_data = {
                 "main": {
-                    "is_on": user_settings.get("isOn", False),
-                    "mode": user_settings.get("Mode", "OFF"),
-                    "fan_mode": user_settings.get("FanMode", "AUTO"),
-                    "temp_setpoint_cool": user_settings.get("TemperatureSetpoint_Cool_oC"),
-                    "temp_setpoint_heat": user_settings.get("TemperatureSetpoint_Heat_oC"),
+                    "is_on": user_aircon_settings.get("isOn", False),
+                    "mode": user_aircon_settings.get("Mode", "OFF"),
+                    "fan_mode": user_aircon_settings.get("FanMode", "AUTO"),
+                    "temp_setpoint_cool": user_aircon_settings.get("TemperatureSetpoint_Cool_oC"),
+                    "temp_setpoint_heat": user_aircon_settings.get("TemperatureSetpoint_Heat_oC"),
                     "indoor_temp": master_info.get("LiveTemp_oC"),
                     "indoor_humidity": master_info.get("LiveHumidity_pc"),
+                    "outdoor_temp": master_info.get("LiveOutdoorTemp_oC"),
+                    "compressor_state": live_aircon.get("CompressorMode", "OFF"),
                 }
             }
 
-            # Parse zone data if available
+            # Parse zone data
             parsed_data["zones"] = {}
-            for i, zone in enumerate(data.get("RemoteZoneInfo", [])):
+            for i, zone in enumerate(last_known_state.get("RemoteZoneInfo", [])):
                 if zone.get("NV_Exists", False):
                     zone_id = f"zone_{i+1}"
                     parsed_data["zones"][zone_id] = {
                         "name": zone.get("NV_Title", f"Zone {i+1}"),
                         "temp": zone.get("LiveTemp_oC"),
                         "humidity": zone.get("LiveHumidity_pc"),
-                        "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
+                        "is_enabled": user_aircon_settings.get("EnabledZones", [])[i] if i < len(user_aircon_settings.get("EnabledZones", [])) else False,
+                        "temp_setpoint_cool": zone.get("TemperatureSetpoint_Cool_oC"),
+                        "temp_setpoint_heat": zone.get("TemperatureSetpoint_Heat_oC"),
                     }
 
             _LOGGER.debug(f"Parsed {len(parsed_data['zones'])} zones")
@@ -122,7 +126,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Set zone state."""
         _LOGGER.info(f"Setting zone {zone_index} state to {'on' if is_on else 'off'} for device {self.device_id}")
         try:
-            await self.api.send_command(self.device_id, {f"UserAirconSettings.EnabledZones[{zone_index}]": is_on})
+            current_zones = self.data['main'].get('enabled_zones', [])
+            current_zones[zone_index] = is_on
+            await self.api.send_command(self.device_id, {"UserAirconSettings.EnabledZones": current_zones})
         except Exception as err:
             _LOGGER.error(f"Failed to set zone {zone_index} state to {'on' if is_on else 'off'} for device {self.device_id}: {err}")
             raise

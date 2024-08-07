@@ -1,3 +1,4 @@
+"""Config flow for Actron Air Neo integration."""
 import logging
 import voluptuous as vol
 from typing import Any, Dict, Optional
@@ -44,11 +45,13 @@ class ActronOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
 class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Actron Air Neo."""
+
     VERSION = 1
     CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Handle a flow initiated by the user."""
+        """Handle the initial step."""
         errors: Dict[str, str] = {}
         
         if user_input is not None:

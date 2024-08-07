@@ -4,6 +4,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 
 from .const import DOMAIN
 from .coordinator import ActronDataCoordinator
@@ -16,7 +17,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     """Set up Actron Neo zones from a config entry."""
     coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
     zones = coordinator.data.get('zones', {})
-    async_add_entities([ActronZone(coordinator, zone_id) for zone_id in zones])
+    _LOGGER.debug(f"Setting up {len(zones)} zones")
+    entities = []
+    for zone_id, zone_data in zones.items():
+        entities.append(ActronZone(coordinator, zone_id))
+    async_add_entities(entities)
 
 class ActronZone(CoordinatorEntity, SwitchEntity):
     """Representation of an Actron Neo Zone."""
@@ -42,7 +47,7 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
         """Turn the zone on."""
         _LOGGER.info("Turning on zone %s", self.name)
         try:
-            await self.coordinator.set_zone_state(self.zone_id, True)
+            await self.coordinator.set_zone_state(int(self.zone_id.split('_')[1]) - 1, True)
         except Exception as e:
             _LOGGER.error("Failed to turn on zone %s: %s", self.name, str(e))
         await self.coordinator.async_request_refresh()
@@ -51,7 +56,7 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
         """Turn the zone off."""
         _LOGGER.info("Turning off zone %s", self.name)
         try:
-            await self.coordinator.set_zone_state(self.zone_id, False)
+            await self.coordinator.set_zone_state(int(self.zone_id.split('_')[1]) - 1, False)
         except Exception as e:
             _LOGGER.error("Failed to turn off zone %s: %s", self.name, str(e))
         await self.coordinator.async_request_refresh()
@@ -59,21 +64,42 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        return {
-            "temperature": self.coordinator.data['zones'][self.zone_id].get('temp'),
-            "humidity": self.coordinator.data['zones'][self.zone_id].get('humidity'),
+        zone_data = self.coordinator.data['zones'][self.zone_id]
+        attributes = {
+            "temperature": zone_data.get('temp'),
+            "humidity": zone_data.get('humidity'),
+            ATTR_TEMPERATURE: zone_data.get('temp_setpoint_cool'),  # Use cooling setpoint as default
         }
-
-    async def async_added_to_hass(self):
-        """When entity is added to hass."""
-        await super().async_added_to_hass()
-        self._handle_coordinator_update()
+        if 'temp_setpoint_heat' in zone_data:
+            attributes['temperature_setpoint_heat'] = zone_data['temp_setpoint_heat']
+        if 'temp_setpoint_cool' in zone_data:
+            attributes['temperature_setpoint_cool'] = zone_data['temp_setpoint_cool']
+        return attributes
 
     @property
-    def should_poll(self) -> bool:
-        """No need to poll. Coordinator notifies entity of updates."""
-        return False
+    def current_temperature(self):
+        """Return the current temperature."""
+        return self.coordinator.data['zones'][self.zone_id].get('temp')
 
-    def _handle_coordinator_update(self):
-        """Handle updated data from the coordinator."""
-        self.async_write_ha_state()
+    @property
+    def current_humidity(self):
+        """Return the current humidity."""
+        return self.coordinator.data['zones'][self.zone_id].get('humidity')
+
+    @property
+    def target_temperature(self):
+        """Return the temperature we try to reach."""
+        zone_data = self.coordinator.data['zones'][self.zone_id]
+        main_mode = self.coordinator.data['main'].get('mode', '').upper()
+        if main_mode == 'COOL':
+            return zone_data.get('temp_setpoint_cool')
+        elif main_mode == 'HEAT':
+            return zone_data.get('temp_setpoint_heat')
+        elif main_mode == 'AUTO':
+            return zone_data.get('temp_setpoint_cool')  # Default to cooling setpoint in AUTO mode
+        return None
+
+    @property
+    def temperature_unit(self) -> str:
+        """Return the unit of measurement."""
+        return UnitOfTemperature.CELSIUS

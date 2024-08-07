@@ -38,6 +38,7 @@ ATTR_INDOOR_HUMIDITY = "indoor_humidity"
 ATTR_OUTDOOR_TEMPERATURE = "outdoor_temperature"
 ATTR_SETPOINT_COOL = "setpoint_cool"
 ATTR_SETPOINT_HEAT = "setpoint_heat"
+ATTR_COMPRESSOR_STATE = "compressor_state"
 
 # Error messages
 ERROR_AUTH = "invalid_auth"
@@ -53,3 +54,24 @@ SERVICE_FORCE_UPDATE = "force_update"
 
 # Coordinator update interval
 UPDATE_INTERVAL = 60  # seconds
+
+# Zone related constants
+MAX_ZONES = 8
+ATTR_ZONE_TEMP = "zone_temperature"
+ATTR_ZONE_HUMIDITY = "zone_humidity"
+ATTR_ZONE_TARGET_TEMP = "zone_target_temperature"
+
+# System modes
+MODE_COOL = "COOL"
+MODE_HEAT = "HEAT"
+MODE_AUTO = "AUTO"
+MODE_FAN = "FAN"
+MODE_DRY = "DRY"
+
+# System states
+STATE_ON = "ON"
+STATE_OFF = "OFF"
+
+# Other constants
+QUIET_MODE = "quiet_mode"
+AWAY_MODE = "away_mode"

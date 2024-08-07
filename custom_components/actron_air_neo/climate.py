@@ -72,21 +72,13 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
     def hvac_action(self) -> HVACAction | None:
         if not self.coordinator.data['main'].get('is_on'):
             return HVACAction.OFF
-        if self.hvac_mode == HVACMode.COOL:
+        compressor_state = self.coordinator.data['main'].get('compressor_state', 'OFF')
+        if compressor_state == 'COOL':
             return HVACAction.COOLING
-        elif self.hvac_mode == HVACMode.HEAT:
+        elif compressor_state == 'HEAT':
             return HVACAction.HEATING
         elif self.hvac_mode == HVACMode.FAN_ONLY:
             return HVACAction.FAN
-        elif self.hvac_mode == HVACMode.AUTO:
-            current_temp = self.current_temperature
-            target_temp = self.target_temperature
-            if current_temp is not None and target_temp is not None:
-                if current_temp < target_temp:
-                    return HVACAction.HEATING
-                elif current_temp > target_temp:
-                    return HVACAction.COOLING
-            return HVACAction.IDLE
         return HVACAction.IDLE
 
     @property
@@ -98,11 +90,17 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         humidity = self.coordinator.data['main'].get('indoor_humidity')
         return round(humidity) if humidity is not None else None
 
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        return {
+            "outdoor_temperature": self.coordinator.data['main'].get('outdoor_temp'),
+        }
+
     async def async_set_temperature(self, **kwargs) -> None:
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
-        temperature = min(max(temperature, MIN_TEMP), MAX_TEMP)
         is_cooling = self.hvac_mode in [HVACMode.COOL, HVACMode.AUTO]
         await self.coordinator.set_temperature(temperature, is_cooling)
 

@@ -24,7 +24,7 @@ class ActronApi:
         self.token = None
         self.rate_limit = asyncio.Semaphore(5)  # Limit to 5 concurrent requests
         self.request_times = []
-        self.max_requests_per_minute = 20  # Reduced from 30 to 20
+        self.max_requests_per_minute = 20
 
     async def authenticate(self):
         """Authenticate and get the token."""
@@ -37,7 +37,7 @@ class ActronApi:
                 "password": self.password,
                 "client_id": "app"
             }
-            _LOGGER.debug(f"Authenticating with Actron Air Neo API")
+            _LOGGER.debug("Authenticating with Actron Air Neo API")
             response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
             self.token = response.get("access_token")
             if not self.token:
@@ -71,13 +71,7 @@ class ActronApi:
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
         data = {"command": command}
         _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
-        try:
-            response = await self._make_request(url, "POST", json=data)
-            _LOGGER.debug(f"Command response: {response}")
-            return response
-        except ApiError as e:
-            _LOGGER.error(f"Failed to send command: {e}")
-            return {"error": str(e)}
+        return await self._make_request(url, "POST", json=data)
 
     async def _make_request(self, url: str, method: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
         await self._wait_for_rate_limit()
@@ -104,13 +98,6 @@ class ActronApi:
                         continue
                     elif response.status == 429:
                         raise RateLimitError("Rate limit exceeded")
-                    elif response.status == 500:
-                        text = await response.text()
-                        _LOGGER.error(f"Server error (500) on attempt {attempt + 1}: {text}")
-                        if attempt == retries - 1:
-                            raise ApiError(f"Persistent server error after {retries} attempts: {text}")
-                        await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
-                        continue
                     else:
                         text = await response.text()
                         raise ApiError(f"API request failed: {response.status}, {text}")
@@ -126,6 +113,8 @@ class ActronApi:
                 if attempt == retries - 1:
                     raise ApiError(f"Timeout error after {retries} attempts")
                 await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
+
+        raise ApiError(f"Failed to make request after {retries} attempts")
 
     async def _wait_for_rate_limit(self):
         now = datetime.now()

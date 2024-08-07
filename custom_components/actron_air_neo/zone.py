@@ -1,3 +1,4 @@
+"""Support for Actron Air Neo zones."""
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
@@ -25,6 +26,7 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
         self.zone_id = zone_id
         self._attr_name = f"ActronAir Zone {coordinator.data['zones'][zone_id]['name']}"
         self._attr_unique_id = f"{coordinator.device_id}_zone_{zone_id}"
+        self._attr_device_class = "switch"
 
     @property
     def is_on(self) -> bool:
@@ -61,3 +63,17 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
             "temperature": self.coordinator.data['zones'][self.zone_id].get('temp'),
             "humidity": self.coordinator.data['zones'][self.zone_id].get('humidity'),
         }
+
+    async def async_added_to_hass(self):
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        self._handle_coordinator_update()
+
+    @property
+    def should_poll(self) -> bool:
+        """No need to poll. Coordinator notifies entity of updates."""
+        return False
+
+    def _handle_coordinator_update(self):
+        """Handle updated data from the coordinator."""
+        self.async_write_ha_state()

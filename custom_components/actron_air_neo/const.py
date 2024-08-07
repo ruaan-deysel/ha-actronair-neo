@@ -26,6 +26,11 @@ HVAC_MODE_AUTO = "AUTO"
 FAN_LOW = "LOW"
 FAN_MEDIUM = "MEDIUM"
 FAN_HIGH = "HIGH"
+FAN_AUTO = "AUTO"
+
+# Temperature limits
+MIN_TEMP = 16
+MAX_TEMP = 32
 
 # Device attributes
 ATTR_INDOOR_TEMPERATURE = "indoor_temperature"
@@ -42,3 +47,9 @@ ERROR_UNKNOWN = "unknown"
 # Device identifiers
 DEVICE_MANUFACTURER = "ActronAir"
 DEVICE_MODEL = "Neo"
+
+# Service names
+SERVICE_FORCE_UPDATE = "force_update"
+
+# Coordinator update interval
+UPDATE_INTERVAL = 60  # seconds

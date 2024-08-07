@@ -1,4 +1,8 @@
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
+)
 from homeassistant.const import UnitOfTemperature, PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -29,6 +33,7 @@ class ActronTemperatureSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.device_id}_temperature"
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self):
@@ -39,6 +44,14 @@ class ActronTemperatureSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.error(f"Error getting temperature value: {e}")
             return None
 
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        return {
+            "last_update": self.coordinator.last_update_success_time,
+            "device_id": self.coordinator.device_id,
+        }
+
 class ActronHumiditySensor(CoordinatorEntity, SensorEntity):
     """Representation of an Actron Neo Humidity Sensor."""
 
@@ -48,6 +61,7 @@ class ActronHumiditySensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.device_id}_humidity"
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_device_class = SensorDeviceClass.HUMIDITY
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self):
@@ -57,3 +71,11 @@ class ActronHumiditySensor(CoordinatorEntity, SensorEntity):
         except Exception as e:
             _LOGGER.error(f"Error getting humidity value: {e}")
             return None
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        return {
+            "last_update": self.coordinator.last_update_success_time,
+            "device_id": self.coordinator.device_id,
+        }

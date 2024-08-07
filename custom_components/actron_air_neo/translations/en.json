@@ -14,6 +14,7 @@
     "error": {
       "invalid_auth": "Invalid authentication",
       "cannot_connect": "Failed to connect",
+      "no_devices": "No devices found on account",
       "unknown": "Unexpected error"
     },
     "abort": {
@@ -37,7 +38,15 @@
           "fan_mode": {
             "low": "Low",
             "medium": "Medium",
-            "high": "High"
+            "high": "High",
+            "auto": "Auto"
+          },
+          "hvac_mode": {
+            "off": "Off",
+            "heat": "Heat",
+            "cool": "Cool",
+            "auto": "Auto",
+            "fan_only": "Fan Only"
           }
         }
       }
@@ -49,6 +58,12 @@
       "actronair_humidity": {
         "name": "ActronAir Humidity"
       }
+    }
+  },
+  "services": {
+    "force_update": {
+      "name": "Force Update",
+      "description": "Force an immediate update of the ActronAir Neo data."
     }
   }
 }

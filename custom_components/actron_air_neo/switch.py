@@ -65,16 +65,12 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
     def extra_state_attributes(self):
         """Return the state attributes."""
         zone_data = self.coordinator.data['zones'][self.zone_id]
-        attributes = {
+        return {
             "temperature": zone_data.get('temp'),
             "humidity": zone_data.get('humidity'),
-            ATTR_TEMPERATURE: zone_data.get('temp_setpoint_cool'),  # Use cooling setpoint as default
+            "temperature_setpoint_cool": zone_data.get('temp_setpoint_cool'),
+            "temperature_setpoint_heat": zone_data.get('temp_setpoint_heat'),
         }
-        if 'temp_setpoint_heat' in zone_data:
-            attributes['temperature_setpoint_heat'] = zone_data['temp_setpoint_heat']
-        if 'temp_setpoint_cool' in zone_data:
-            attributes['temperature_setpoint_cool'] = zone_data['temp_setpoint_cool']
-        return attributes
 
     @property
     def current_temperature(self):

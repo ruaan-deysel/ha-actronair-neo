@@ -1,6 +1,7 @@
 import aiohttp
 import asyncio
 import logging
+import json
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from .const import API_URL, API_TIMEOUT
@@ -39,6 +40,7 @@ class ActronApi:
             }
             _LOGGER.debug("Authenticating with Actron Air Neo API")
             response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+            _LOGGER.debug(f"Authentication response: {json.dumps(response, indent=2)}")
             self.token = response.get("access_token")
             if not self.token:
                 raise AuthenticationError("No token received in the response")
@@ -51,6 +53,7 @@ class ActronApi:
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
         _LOGGER.debug(f"Fetching devices from: {url}")
         response = await self._make_request(url, "GET")
+        _LOGGER.debug(f"Get devices response: {json.dumps(response, indent=2)}")
         devices = []
         if '_embedded' in response and 'ac-system' in response['_embedded']:
             for system in response['_embedded']['ac-system']:
@@ -65,13 +68,17 @@ class ActronApi:
     async def get_ac_status(self, serial: str) -> Dict[str, Any]:
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
         _LOGGER.debug(f"Fetching AC status from: {url}")
-        return await self._make_request(url, "GET")
+        response = await self._make_request(url, "GET")
+        _LOGGER.debug(f"AC status response: {json.dumps(response, indent=2)}")
+        return response
 
     async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
         data = {"command": command}
         _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
-        return await self._make_request(url, "POST", json=data)
+        response = await self._make_request(url, "POST", json=data)
+        _LOGGER.debug(f"Command response: {json.dumps(response, indent=2)}")
+        return response
 
     async def _make_request(self, url: str, method: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
         await self._wait_for_rate_limit()
@@ -100,6 +107,7 @@ class ActronApi:
                         raise RateLimitError("Rate limit exceeded")
                     else:
                         text = await response.text()
+                        _LOGGER.error(f"API request failed: {response.status}, {text}")
                         raise ApiError(f"API request failed: {response.status}, {text}")
 
             except aiohttp.ClientError as err:

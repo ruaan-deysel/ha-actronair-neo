@@ -70,11 +70,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                         "is_enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
                     }
 
+            _LOGGER.debug(f"Parsed {len(parsed_data['zones'])} zones")
             return parsed_data
 
-        except KeyError as e:
+        except Exception as e:
             _LOGGER.error(f"Failed to parse API response: {e}")
-            raise UpdateFailed(f"Failed to parse API response: {e}") from e
+            return {"main": {}, "zones": {}}
 
     async def set_hvac_mode(self, hvac_mode: str) -> None:
         """Set HVAC mode."""

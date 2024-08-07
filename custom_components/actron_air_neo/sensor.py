@@ -39,7 +39,8 @@ class ActronTemperatureSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         """Return the state of the sensor."""
         try:
-            return self.coordinator.data['main'].get('indoor_temp')
+            value = self.coordinator.data['main'].get('indoor_temp')
+            return round(float(value), 1) if value is not None else None
         except Exception as e:
             _LOGGER.error(f"Error getting temperature value: {e}")
             return None
@@ -48,7 +49,7 @@ class ActronTemperatureSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         """Return the state attributes."""
         return {
-            "last_update": self.coordinator.last_update_success_time,
+            "last_update": self.coordinator.last_update_success,
             "device_id": self.coordinator.device_id,
         }
 
@@ -67,7 +68,8 @@ class ActronHumiditySensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         """Return the state of the sensor."""
         try:
-            return self.coordinator.data['main'].get('indoor_humidity')
+            value = self.coordinator.data['main'].get('indoor_humidity')
+            return round(float(value), 1) if value is not None else None
         except Exception as e:
             _LOGGER.error(f"Error getting humidity value: {e}")
             return None
@@ -76,6 +78,6 @@ class ActronHumiditySensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         """Return the state attributes."""
         return {
-            "last_update": self.coordinator.last_update_success_time,
+            "last_update": self.coordinator.last_update_success,
             "device_id": self.coordinator.device_id,
         }

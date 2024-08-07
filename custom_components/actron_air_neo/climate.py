@@ -6,7 +6,6 @@ from homeassistant.components.climate.const import (
     FAN_MEDIUM,
     FAN_HIGH,
     FAN_AUTO,
-    PRESET_NONE,
 )
 from homeassistant.const import (
     ATTR_TEMPERATURE,
@@ -17,7 +16,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, MIN_TEMP, MAX_TEMP
 from .coordinator import ActronDataCoordinator
 
 import logging
@@ -26,9 +25,6 @@ _LOGGER = logging.getLogger(__name__)
 
 HVAC_MODES = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.FAN_ONLY, HVACMode.AUTO]
 FAN_MODES = [FAN_LOW, FAN_MEDIUM, FAN_HIGH, FAN_AUTO]
-
-MIN_TEMP = 16
-MAX_TEMP = 32
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator = hass.data[DOMAIN][entry.entry_id]
@@ -99,7 +95,8 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_humidity(self) -> int | None:
-        return self.coordinator.data['main'].get('indoor_humidity')
+        humidity = self.coordinator.data['main'].get('indoor_humidity')
+        return round(humidity) if humidity is not None else None
 
     async def async_set_temperature(self, **kwargs) -> None:
         temperature = kwargs.get(ATTR_TEMPERATURE)

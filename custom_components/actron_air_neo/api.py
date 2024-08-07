@@ -3,7 +3,7 @@ import asyncio
 import logging
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
-from .const import API_URL, API_TIMEOUT
+from .const import API_URL, API_TIMEOUT, HVAC_MODE_OFF, HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_FAN, HVAC_MODE_AUTO
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -144,3 +144,49 @@ class ActronApi:
             sleep_time = 60 - (now - self.request_times[0]).total_seconds()
             _LOGGER.warning(f"Rate limit approaching, waiting for {sleep_time:.2f} seconds")
             await asyncio.sleep(sleep_time)
+
+    async def set_power_state(self, serial: str, state: bool) -> Dict[str, Any]:
+        command = {
+            "UserAirconSettings.isOn": state,
+            "type": "set-settings"
+        }
+        return await self.send_command(serial, command)
+
+    async def set_hvac_mode(self, serial: str, mode: str) -> Dict[str, Any]:
+        hvac_mode_map = {
+            HVAC_MODE_OFF: "OFF",
+            HVAC_MODE_COOL: "COOL",
+            HVAC_MODE_HEAT: "HEAT",
+            HVAC_MODE_FAN: "FAN",
+            HVAC_MODE_AUTO: "AUTO"
+        }
+        command = {
+            "UserAirconSettings.Mode": hvac_mode_map.get(mode, "AUTO"),
+            "type": "set-settings"
+        }
+        return await self.send_command(serial, command)
+
+    async def set_temperature(self, serial: str, temperature: float, is_cooling: bool) -> Dict[str, Any]:
+        setting = "Cool" if is_cooling else "Heat"
+        command = {
+            f"UserAirconSettings.TemperatureSetpoint_{setting}_oC": temperature,
+            "type": "set-settings"
+        }
+        return await self.send_command(serial, command)
+
+    async def set_fan_mode(self, serial: str, fan_mode: str) -> Dict[str, Any]:
+        command = {
+            "UserAirconSettings.FanMode": fan_mode.upper(),
+            "type": "set-settings"
+        }
+        return await self.send_command(serial, command)
+
+    async def set_zone_state(self, serial: str, zone_index: int, is_on: bool) -> Dict[str, Any]:
+        current_status = await self.get_ac_status(serial)
+        enabled_zones = current_status['lastKnownState']['UserAirconSettings']['EnabledZones']
+        enabled_zones[zone_index] = is_on
+        command = {
+            "UserAirconSettings.EnabledZones": enabled_zones,
+            "type": "set-settings"
+        }
+        return await self.send_command(serial, command)

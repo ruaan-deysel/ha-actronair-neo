@@ -27,7 +27,7 @@ HVAC_MODES = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.FAN_ONLY, HVA
 FAN_MODES = [FAN_LOW, FAN_MEDIUM, FAN_HIGH, FAN_AUTO]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([ActronClimate(coordinator)], True)
 
 class ActronClimate(CoordinatorEntity, ClimateEntity):
@@ -90,32 +90,40 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         humidity = self.coordinator.data['main'].get('indoor_humidity')
         return round(humidity) if humidity is not None else None
 
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes."""
-        return {
-            "outdoor_temperature": self.coordinator.data['main'].get('outdoor_temp'),
-        }
-
     async def async_set_temperature(self, **kwargs) -> None:
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
         is_cooling = self.hvac_mode in [HVACMode.COOL, HVACMode.AUTO]
-        await self.coordinator.set_temperature(temperature, is_cooling)
+        try:
+            await self.coordinator.set_temperature(temperature, is_cooling)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set temperature: {e}")
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         actron_mode = self._ha_to_actron_hvac_mode(hvac_mode)
-        await self.coordinator.set_hvac_mode(actron_mode)
+        try:
+            await self.coordinator.set_hvac_mode(actron_mode)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set HVAC mode: {e}")
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        await self.coordinator.set_fan_mode(fan_mode)
+        try:
+            await self.coordinator.set_fan_mode(fan_mode)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set fan mode: {e}")
 
     async def async_turn_on(self) -> None:
-        await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.AUTO))
+        try:
+            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.AUTO))
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn on: {e}")
 
     async def async_turn_off(self) -> None:
-        await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.OFF))
+        try:
+            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.OFF))
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn off: {e}")
 
     def _actron_to_ha_hvac_mode(self, mode: str | None) -> HVACMode:
         if mode is None:

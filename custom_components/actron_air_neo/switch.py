@@ -4,7 +4,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE
 
 from .const import DOMAIN
 from .coordinator import ActronDataCoordinator
@@ -36,7 +36,9 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return true if the zone is enabled."""
-        return self.coordinator.data['zones'][self.zone_id]['is_enabled']
+        enabled_zones = self.coordinator.data['main'].get('EnabledZones', [])
+        zone_index = int(self.zone_id.split('_')[1]) - 1
+        return enabled_zones[zone_index] if zone_index < len(enabled_zones) else False
 
     @property
     def available(self) -> bool:
@@ -68,8 +70,9 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
         return {
             "temperature": zone_data.get('temp'),
             "humidity": zone_data.get('humidity'),
-            "temperature_setpoint_cool": zone_data.get('temp_setpoint_cool'),
+            ATTR_TEMPERATURE: zone_data.get('temp_setpoint_cool'),  # Use cooling setpoint as default
             "temperature_setpoint_heat": zone_data.get('temp_setpoint_heat'),
+            "temperature_setpoint_cool": zone_data.get('temp_setpoint_cool'),
         }
 
     @property
@@ -81,21 +84,3 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
     def current_humidity(self):
         """Return the current humidity."""
         return self.coordinator.data['zones'][self.zone_id].get('humidity')
-
-    @property
-    def target_temperature(self):
-        """Return the temperature we try to reach."""
-        zone_data = self.coordinator.data['zones'][self.zone_id]
-        main_mode = self.coordinator.data['main'].get('mode', '').upper()
-        if main_mode == 'COOL':
-            return zone_data.get('temp_setpoint_cool')
-        elif main_mode == 'HEAT':
-            return zone_data.get('temp_setpoint_heat')
-        elif main_mode == 'AUTO':
-            return zone_data.get('temp_setpoint_cool')  # Default to cooling setpoint in AUTO mode
-        return None
-
-    @property
-    def temperature_unit(self) -> str:
-        """Return the unit of measurement."""
-        return UnitOfTemperature.CELSIUS

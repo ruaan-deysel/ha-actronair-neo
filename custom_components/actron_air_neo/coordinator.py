@@ -57,6 +57,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     "indoor_humidity": master_info.get("LiveHumidity_pc"),
                     "outdoor_temp": master_info.get("LiveOutdoorTemp_oC"),
                     "compressor_state": live_aircon.get("CompressorMode", "OFF"),
+                    "EnabledZones": user_aircon_settings.get("EnabledZones", []),
                 }
             }
 
@@ -69,7 +70,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                         "name": zone.get("NV_Title", f"Zone {i+1}"),
                         "temp": zone.get("LiveTemp_oC"),
                         "humidity": zone.get("LiveHumidity_pc"),
-                        "is_enabled": user_aircon_settings.get("EnabledZones", [])[i] if i < len(user_aircon_settings.get("EnabledZones", [])) else False,
+                        "is_enabled": parsed_data["main"]["EnabledZones"][i] if i < len(parsed_data["main"]["EnabledZones"]) else False,
                         "temp_setpoint_cool": zone.get("TemperatureSetpoint_Cool_oC"),
                         "temp_setpoint_heat": zone.get("TemperatureSetpoint_Heat_oC"),
                     }
@@ -126,9 +127,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Set zone state."""
         _LOGGER.info(f"Setting zone {zone_index} state to {'on' if is_on else 'off'} for device {self.device_id}")
         try:
-            current_zones = self.data['main'].get('enabled_zones', [])
-            current_zones[zone_index] = is_on
-            await self.api.send_command(self.device_id, {"UserAirconSettings.EnabledZones": current_zones})
+            current_zones = self.data['main'].get('EnabledZones', [])
+            if zone_index < len(current_zones):
+                current_zones[zone_index] = is_on
+                await self.api.send_command(self.device_id, {"UserAirconSettings.EnabledZones": current_zones})
+            else:
+                _LOGGER.error(f"Zone index {zone_index} is out of range")
         except Exception as err:
             _LOGGER.error(f"Failed to set zone {zone_index} state to {'on' if is_on else 'off'} for device {self.device_id}: {err}")
             raise

@@ -1,3 +1,4 @@
+"""Support for Actron Air Neo sensors."""
 from homeassistant.components.sensor import (
     SensorEntity,
     SensorDeviceClass,

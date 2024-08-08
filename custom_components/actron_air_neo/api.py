@@ -29,8 +29,8 @@ class ActronApi:
         self.request_times = []
         self.actron_serial = ''
         self.actron_system_id = ''
-        self.api_error_count = 0
-        self.last_api_error_time = None
+        self.error_count = 0
+        self.last_successful_request = None
 
     async def authenticate(self):
         """Authenticate and get the token."""
@@ -93,8 +93,8 @@ class ActronApi:
                     self.request_times.append(datetime.now())
                     
                     if response.status == 200:
-                        self.api_error_count = 0
-                        self.last_api_error_time = None
+                        self.error_count = 0
+                        self.last_successful_request = datetime.now()
                         return await response.json()
                     elif response.status == 401 and auth_required:
                         _LOGGER.warning("Token expired, re-authenticating...")
@@ -105,18 +105,19 @@ class ActronApi:
                     else:
                         text = await response.text()
                         _LOGGER.error(f"API request failed: {response.status}, {text}")
-                        self.api_error_count += 1
-                        self.last_api_error_time = datetime.now()
+                        self.error_count += 1
                         raise ApiError(f"API request failed: {response.status}, {text}")
 
             except aiohttp.ClientError as err:
                 _LOGGER.error(f"Network error on attempt {attempt + 1}: {err}")
+                self.error_count += 1
                 if attempt == retries - 1:
                     raise ApiError(f"Network error after {retries} attempts: {err}")
                 await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
 
             except asyncio.TimeoutError:
                 _LOGGER.error(f"Timeout error on attempt {attempt + 1}")
+                self.error_count += 1
                 if attempt == retries - 1:
                     raise ApiError(f"Timeout error after {retries} attempts")
                 await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
@@ -132,10 +133,8 @@ class ActronApi:
             await asyncio.sleep(sleep_time)
 
     def is_api_healthy(self) -> bool:
-        """Check if the API is currently experiencing issues."""
-        if self.api_error_count > 5 and self.last_api_error_time:
-            time_since_last_error = datetime.now() - self.last_api_error_time
-            if time_since_last_error < timedelta(minutes=15):
+        if self.error_count > 5:
+            if self.last_successful_request and (datetime.now() - self.last_successful_request) < timedelta(minutes=15):
                 return False
         return True
 
@@ -192,5 +191,3 @@ class ActronApi:
             _LOGGER.info(f"Located serial number {self.actron_serial} with ID of {self.actron_system_id}")
         else:
             _LOGGER.error("Could not identify target device from list of returned systems")
-
-    # You can add more methods here for specific commands if needed

@@ -47,12 +47,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Using cached data due to API error")
                 return self.last_data
             raise UpdateFailed(f"Error communicating with API: {err}") from err
-        except Exception as err:
-            _LOGGER.error(f"Unexpected error occurred: {err}")
-            if self.last_data:
-                _LOGGER.warning("Using cached data due to unexpected error")
-                return self.last_data
-            raise UpdateFailed(f"Unexpected error: {err}") from err
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Parse the data from the API into a format suitable for the climate entity."""

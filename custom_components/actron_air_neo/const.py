@@ -14,6 +14,8 @@ DEFAULT_REFRESH_INTERVAL = 60  # seconds
 # API related constants
 API_URL = "https://nimbus.actronair.com.au"
 API_TIMEOUT = 10  # seconds
+MAX_RETRIES = 3
+MAX_REQUESTS_PER_MINUTE = 20
 
 # HVAC modes
 HVAC_MODE_OFF = "OFF"

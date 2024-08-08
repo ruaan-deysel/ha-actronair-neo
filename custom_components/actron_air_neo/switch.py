@@ -36,9 +36,7 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return true if the zone is enabled."""
-        enabled_zones = self.coordinator.data['main'].get('EnabledZones', [])
-        zone_index = int(self.zone_id.split('_')[1]) - 1
-        return enabled_zones[zone_index] if zone_index < len(enabled_zones) else False
+        return self.coordinator.data['zones'][self.zone_id].get('is_enabled', False)
 
     @property
     def available(self) -> bool:

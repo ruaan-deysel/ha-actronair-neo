@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import logging
 
 from homeassistant.core import HomeAssistant
@@ -14,6 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 
 class ActronDataCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, api: ActronApi, device_id: str, update_interval: int):
+        """Initialize the data coordinator."""
         super().__init__(
             hass,
             _LOGGER,

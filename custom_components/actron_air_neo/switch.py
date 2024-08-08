@@ -45,20 +45,20 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn the zone on."""
-        _LOGGER.info("Turning on zone %s", self.name)
+        _LOGGER.info(f"Turning on zone {self.name}")
         try:
             await self.coordinator.set_zone_state(int(self.zone_id.split('_')[1]) - 1, True)
         except Exception as e:
-            _LOGGER.error("Failed to turn on zone %s: %s", self.name, str(e))
+            _LOGGER.error(f"Failed to turn on zone {self.name}: {str(e)}")
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs):
         """Turn the zone off."""
-        _LOGGER.info("Turning off zone %s", self.name)
+        _LOGGER.info(f"Turning off zone {self.name}")
         try:
             await self.coordinator.set_zone_state(int(self.zone_id.split('_')[1]) - 1, False)
         except Exception as e:
-            _LOGGER.error("Failed to turn off zone %s: %s", self.name, str(e))
+            _LOGGER.error(f"Failed to turn off zone {self.name}: {str(e)}")
         await self.coordinator.async_request_refresh()
 
     @property

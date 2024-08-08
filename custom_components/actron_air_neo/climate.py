@@ -126,9 +126,8 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
-        actron_mode = self._ha_to_actron_hvac_mode(hvac_mode)
         try:
-            await self.coordinator.set_hvac_mode(actron_mode)
+            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(hvac_mode))
         except Exception as e:
             _LOGGER.error(f"Failed to set HVAC mode: {e}")
 

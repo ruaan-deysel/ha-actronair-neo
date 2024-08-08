@@ -1,8 +1,9 @@
 import aiohttp
 import asyncio
+import json
 import logging
-from typing import Dict, Any, List
 from datetime import datetime, timedelta
+from typing import Dict, Any, List
 
 from .const import API_URL, API_TIMEOUT, MAX_RETRIES, MAX_REQUESTS_PER_MINUTE
 
@@ -18,12 +19,13 @@ class RateLimitError(Exception):
     """Raised when rate limit is exceeded."""
 
 class ActronApi:
-    def __init__(self, username: str, password: str, session: aiohttp.ClientSession):
+    def __init__(self, username: str, password: str, session: aiohttp.ClientSession, storage_path: str):
         self.username = username
         self.password = password
         self.session = session
-        self.access_token = None
+        self.storage_path = storage_path
         self.refresh_token = None
+        self.access_token = None
         self.token_expires_at = None
         self.rate_limit = asyncio.Semaphore(5)  # Limit to 5 concurrent requests
         self.request_times = []
@@ -31,10 +33,31 @@ class ActronApi:
         self.actron_system_id = ''
         self.error_count = 0
         self.last_successful_request = None
+        self.cached_status = None
+        self.load_tokens()
+
+    def load_tokens(self):
+        try:
+            with open(f"{self.storage_path}/tokens.json", "r") as f:
+                data = json.load(f)
+                self.refresh_token = data.get("refresh_token")
+                self.access_token = data.get("access_token")
+                self.token_expires_at = datetime.fromisoformat(data.get("expires_at", "2000-01-01"))
+        except FileNotFoundError:
+            pass
+
+    def save_tokens(self):
+        with open(f"{self.storage_path}/tokens.json", "w") as f:
+            json.dump({
+                "refresh_token": self.refresh_token,
+                "access_token": self.access_token,
+                "expires_at": self.token_expires_at.isoformat() if self.token_expires_at else None
+            }, f)
 
     async def authenticate(self):
         """Authenticate and get the token."""
-        await self._get_refresh_token()
+        if not self.refresh_token:
+            await self._get_refresh_token()
         await self._get_access_token()
 
     async def _get_refresh_token(self):
@@ -49,10 +72,11 @@ class ActronApi:
             "deviceUniqueIdentifier": "HA-ActronNeo"
         }
         try:
-            response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+            response = await self._make_request("POST", url, headers=headers, data=data, auth_required=False)
             self.refresh_token = response.get("pairingToken")
             if not self.refresh_token:
                 raise AuthenticationError("No refresh token received")
+            self.save_tokens()
         except Exception as e:
             raise AuthenticationError(f"Failed to get refresh token: {str(e)}")
 
@@ -66,16 +90,17 @@ class ActronApi:
             "client_id": "app"
         }
         try:
-            response = await self._make_request(url, "POST", headers=headers, data=data, auth_required=False)
+            response = await self._make_request("POST", url, headers=headers, data=data, auth_required=False)
             self.access_token = response.get("access_token")
             expires_in = response.get("expires_in", 3600)
             self.token_expires_at = datetime.now() + timedelta(seconds=expires_in - 300)  # Refresh 5 minutes early
             if not self.access_token:
                 raise AuthenticationError("No access token received")
+            self.save_tokens()
         except Exception as e:
             raise AuthenticationError(f"Failed to get access token: {str(e)}")
 
-    async def _make_request(self, url: str, method: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
+    async def _make_request(self, method: str, url: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
         await self._wait_for_rate_limit()
 
         retries = MAX_RETRIES
@@ -141,7 +166,7 @@ class ActronApi:
     async def get_devices(self) -> List[Dict[str, str]]:
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
         _LOGGER.debug(f"Fetching devices from: {url}")
-        response = await self._make_request(url, "GET")
+        response = await self._make_request("GET", url)
         _LOGGER.debug(f"Get devices response: {response}")
         devices = []
         if '_embedded' in response and 'ac-system' in response['_embedded']:
@@ -155,10 +180,15 @@ class ActronApi:
         return devices
 
     async def get_ac_status(self, serial: str) -> Dict[str, Any]:
+        if not self.is_api_healthy():
+            _LOGGER.warning("API is not healthy, using cached status")
+            return self.cached_status if self.cached_status else {}
+
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
         _LOGGER.debug(f"Fetching AC status from: {url}")
-        response = await self._make_request(url, "GET")
+        response = await self._make_request("GET", url)
         _LOGGER.debug(f"AC status response: {response}")
+        self.cached_status = response
         return response
 
     async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
@@ -169,7 +199,7 @@ class ActronApi:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response = await self._make_request(url, "POST", json=data)
+                response = await self._make_request("POST", url, json=data)
                 _LOGGER.debug(f"Command response: {response}")
                 return response
             except ApiError as e:
@@ -191,3 +221,29 @@ class ActronApi:
             _LOGGER.info(f"Located serial number {self.actron_serial} with ID of {self.actron_system_id}")
         else:
             _LOGGER.error("Could not identify target device from list of returned systems")
+
+    def create_command(self, command_type: str, **params) -> Dict[str, Any]:
+        commands = {
+            "ON": lambda: {"UserAirconSettings.isOn": True, "type": "set-settings"},
+            "OFF": lambda: {"UserAirconSettings.isOn": False, "type": "set-settings"},
+            "CLIMATE_MODE": lambda mode: {"UserAirconSettings.Mode": mode, "type": "set-settings"},
+            "FAN_MODE": lambda mode: {"UserAirconSettings.FanMode": mode, "type": "set-settings"},
+            "SET_TEMP": lambda temp, is_cool: {
+                f"UserAirconSettings.TemperatureSetpoint_{'Cool' if is_cool else 'Heat'}_oC": temp,
+                "type": "set-settings"
+            },
+            "ZONE_ENABLE": lambda zone_index, zones: {
+                "UserAirconSettings.EnabledZones": self._modify_zone_status(True, zone_index, zones),
+                "type": "set-settings"
+            },
+            "ZONE_DISABLE": lambda zone_index, zones: {
+                "UserAirconSettings.EnabledZones": self._modify_zone_status(False, zone_index, zones),
+                "type": "set-settings"
+            },
+        }
+        return {"command": commands[command_type](**params)}
+
+    def _modify_zone_status(self, status: bool, zone_index: int, current_zones: List[bool]) -> List[bool]:
+        modified_zones = current_zones.copy()
+        modified_zones[zone_index] = status
+        return modified_zones

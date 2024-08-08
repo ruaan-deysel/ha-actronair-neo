@@ -36,12 +36,12 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return true if the zone is enabled."""
-        return self.coordinator.data['zones'][self.zone_id].get('is_enabled', False)
+        return self.coordinator.data['zones'].get(self.zone_id, {}).get('is_enabled', False)
 
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self.coordinator.last_update_success
+        return self.coordinator.last_update_success and self.coordinator.data is not None
 
     async def async_turn_on(self, **kwargs):
         """Turn the zone on."""
@@ -64,6 +64,8 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
+        if not self.coordinator.data or self.zone_id not in self.coordinator.data.get('zones', {}):
+            return {}
         zone_data = self.coordinator.data['zones'][self.zone_id]
         return {
             "temperature": zone_data.get('temp'),
@@ -76,9 +78,22 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
     @property
     def current_temperature(self):
         """Return the current temperature."""
-        return self.coordinator.data['zones'][self.zone_id].get('temp')
+        return self.coordinator.data['zones'].get(self.zone_id, {}).get('temp')
 
     @property
     def current_humidity(self):
         """Return the current humidity."""
-        return self.coordinator.data['zones'][self.zone_id].get('humidity')
+        return self.coordinator.data['zones'].get(self.zone_id, {}).get('humidity')
+
+    async def async_added_to_hass(self):
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        self._handle_coordinator_update()
+
+    async def async_update(self):
+        """Update the entity."""
+        await self.coordinator.async_request_refresh()
+
+    def _handle_coordinator_update(self):
+        """Handle updated data from the coordinator."""
+        self.async_write_ha_state()

@@ -23,13 +23,19 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         )
         self.api = api
         self.device_id = device_id
+        self.last_data = None
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from API endpoint."""
         try:
+            if not self.api.is_api_healthy():
+                _LOGGER.warning("API is not healthy, using cached data")
+                return self.last_data if self.last_data else {}
+
             _LOGGER.debug(f"Fetching data for device {self.device_id}")
             status = await self.api.get_ac_status(self.device_id)
             parsed_data = self._parse_data(status)
+            self.last_data = parsed_data
             _LOGGER.debug(f"Parsed data: {parsed_data}")
             return parsed_data
         except AuthenticationError as err:
@@ -37,7 +43,16 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise ConfigEntryAuthFailed from err
         except ApiError as err:
             _LOGGER.error(f"Error communicating with API: {err}")
+            if self.last_data:
+                _LOGGER.warning("Using cached data due to API error")
+                return self.last_data
             raise UpdateFailed(f"Error communicating with API: {err}") from err
+        except Exception as err:
+            _LOGGER.error(f"Unexpected error occurred: {err}")
+            if self.last_data:
+                _LOGGER.warning("Using cached data due to unexpected error")
+                return self.last_data
+            raise UpdateFailed(f"Unexpected error: {err}") from err
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Parse the data from the API into a format suitable for the climate entity."""
@@ -91,10 +106,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 "UserAirconSettings.isOn": is_on,
                 "UserAirconSettings.Mode": mode
             })
+            await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error(f"Failed to set HVAC mode to {hvac_mode}: {err}")
             raise
-        await self.async_request_refresh()
 
     async def set_temperature(self, temperature: float, is_cooling: bool) -> None:
         """Set temperature."""
@@ -103,19 +118,19 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.api.send_command(self.device_id, {
                 f"UserAirconSettings.TemperatureSetpoint_{setting}_oC": temperature
             })
+            await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error(f"Failed to set {setting} temperature to {temperature}: {err}")
             raise
-        await self.async_request_refresh()
 
     async def set_fan_mode(self, fan_mode: str) -> None:
         """Set fan mode."""
         try:
             await self.api.send_command(self.device_id, {"UserAirconSettings.FanMode": fan_mode})
+            await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error(f"Failed to set fan mode to {fan_mode}: {err}")
             raise
-        await self.async_request_refresh()
 
     async def set_zone_state(self, zone_index: int, is_on: bool) -> None:
         """Set zone state."""
@@ -124,9 +139,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             if zone_index < len(current_zones):
                 current_zones[zone_index] = is_on
                 await self.api.send_command(self.device_id, {"UserAirconSettings.EnabledZones": current_zones})
+                await self.async_request_refresh()
             else:
                 _LOGGER.error(f"Zone index {zone_index} is out of range")
         except Exception as err:
             _LOGGER.error(f"Failed to set zone {zone_index} state to {'on' if is_on else 'off'}: {err}")
             raise
-        await self.async_request_refresh()
+
+    async def force_update(self) -> None:
+        """Force an immediate update of the device data."""
+        await self.async_refresh()

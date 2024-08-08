@@ -1,3 +1,4 @@
+"""Support for Actron Air Neo climate."""
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature
 from homeassistant.components.climate.const import (
     HVACMode,
@@ -27,11 +28,15 @@ HVAC_MODES = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.FAN_ONLY, HVA
 FAN_MODES = [FAN_LOW, FAN_MEDIUM, FAN_HIGH, FAN_AUTO]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
+    """Set up Actron Neo climate from a config entry."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([ActronClimate(coordinator)], True)
 
 class ActronClimate(CoordinatorEntity, ClimateEntity):
+    """Representation of an Actron Neo Climate device."""
+
     def __init__(self, coordinator: ActronDataCoordinator):
+        """Initialize the climate device."""
         super().__init__(coordinator)
         self._attr_name = "ActronAir Neo"
         self._attr_unique_id = f"{coordinator.device_id}_climate"
@@ -48,11 +53,18 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         self._attr_max_temp = MAX_TEMP
 
     @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self.coordinator.last_update_success and self.coordinator.data is not None
+
+    @property
     def current_temperature(self) -> float | None:
+        """Return the current temperature."""
         return self.coordinator.data['main'].get('indoor_temp')
 
     @property
     def target_temperature(self) -> float | None:
+        """Return the temperature we try to reach."""
         if self.hvac_mode == HVACMode.COOL:
             return self.coordinator.data['main'].get('temp_setpoint_cool')
         elif self.hvac_mode == HVACMode.HEAT:
@@ -63,6 +75,7 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode:
+        """Return hvac operation ie. heat, cool mode."""
         if not self.coordinator.data['main'].get('is_on'):
             return HVACMode.OFF
         mode = self.coordinator.data['main'].get('mode')
@@ -70,6 +83,7 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_action(self) -> HVACAction | None:
+        """Return the current running hvac operation."""
         if not self.coordinator.data['main'].get('is_on'):
             return HVACAction.OFF
         compressor_state = self.coordinator.data['main'].get('compressor_state', 'OFF')
@@ -83,10 +97,12 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def fan_mode(self) -> str | None:
+        """Return the fan setting."""
         return self.coordinator.data['main'].get('fan_mode')
 
     @property
     def current_humidity(self) -> int | None:
+        """Return the current humidity."""
         humidity = self.coordinator.data['main'].get('indoor_humidity')
         return round(humidity) if humidity is not None else None
 
@@ -98,26 +114,47 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         }
 
     async def async_set_temperature(self, **kwargs) -> None:
+        """Set new target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
         is_cooling = self.hvac_mode in [HVACMode.COOL, HVACMode.AUTO]
-        await self.coordinator.set_temperature(temperature, is_cooling)
+        try:
+            await self.coordinator.set_temperature(temperature, is_cooling)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set temperature: {e}")
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Set new target hvac mode."""
         actron_mode = self._ha_to_actron_hvac_mode(hvac_mode)
-        await self.coordinator.set_hvac_mode(actron_mode)
+        try:
+            await self.coordinator.set_hvac_mode(actron_mode)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set HVAC mode: {e}")
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        await self.coordinator.set_fan_mode(fan_mode)
+        """Set new target fan mode."""
+        try:
+            await self.coordinator.set_fan_mode(fan_mode)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set fan mode: {e}")
 
     async def async_turn_on(self) -> None:
-        await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.AUTO))
+        """Turn the entity on."""
+        try:
+            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.AUTO))
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn on: {e}")
 
     async def async_turn_off(self) -> None:
-        await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.OFF))
+        """Turn the entity off."""
+        try:
+            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.OFF))
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn off: {e}")
 
     def _actron_to_ha_hvac_mode(self, mode: str | None) -> HVACMode:
+        """Convert Actron HVAC mode to HA HVAC mode."""
         if mode is None:
             return HVACMode.OFF
         mode_map = {
@@ -130,6 +167,7 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         return mode_map.get(mode.upper(), HVACMode.OFF)
 
     def _ha_to_actron_hvac_mode(self, mode: HVACMode) -> str:
+        """Convert HA HVAC mode to Actron HVAC mode."""
         mode_map = {
             HVACMode.AUTO: "AUTO",
             HVACMode.HEAT: "HEAT",
@@ -138,3 +176,16 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
             HVACMode.OFF: "OFF",
         }
         return mode_map.get(mode, "OFF")
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        self._handle_coordinator_update()
+
+    async def async_update(self) -> None:
+        """Update the entity."""
+        await self.coordinator.async_request_refresh()
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.async_write_ha_state()

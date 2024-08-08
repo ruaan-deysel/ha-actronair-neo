@@ -29,6 +29,8 @@ class ActronApi:
         self.request_times = []
         self.actron_serial = ''
         self.actron_system_id = ''
+        self.api_error_count = 0
+        self.last_api_error_time = None
 
     async def authenticate(self):
         """Authenticate and get the token."""
@@ -91,6 +93,8 @@ class ActronApi:
                     self.request_times.append(datetime.now())
                     
                     if response.status == 200:
+                        self.api_error_count = 0
+                        self.last_api_error_time = None
                         return await response.json()
                     elif response.status == 401 and auth_required:
                         _LOGGER.warning("Token expired, re-authenticating...")
@@ -101,6 +105,8 @@ class ActronApi:
                     else:
                         text = await response.text()
                         _LOGGER.error(f"API request failed: {response.status}, {text}")
+                        self.api_error_count += 1
+                        self.last_api_error_time = datetime.now()
                         raise ApiError(f"API request failed: {response.status}, {text}")
 
             except aiohttp.ClientError as err:
@@ -124,6 +130,14 @@ class ActronApi:
             sleep_time = 60 - (now - self.request_times[0]).total_seconds()
             _LOGGER.warning(f"Rate limit approaching, waiting for {sleep_time:.2f} seconds")
             await asyncio.sleep(sleep_time)
+
+    def is_api_healthy(self) -> bool:
+        """Check if the API is currently experiencing issues."""
+        if self.api_error_count > 5 and self.last_api_error_time:
+            time_since_last_error = datetime.now() - self.last_api_error_time
+            if time_since_last_error < timedelta(minutes=15):
+                return False
+        return True
 
     async def get_devices(self) -> List[Dict[str, str]]:
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"

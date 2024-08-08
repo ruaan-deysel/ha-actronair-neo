@@ -31,8 +31,8 @@ FAN_HIGH = "HIGH"
 FAN_AUTO = "AUTO"
 
 # Temperature limits
-MIN_TEMP = 16
-MAX_TEMP = 32
+MIN_TEMP = 10
+MAX_TEMP = 30
 
 # Device attributes
 ATTR_INDOOR_TEMPERATURE = "indoor_temperature"

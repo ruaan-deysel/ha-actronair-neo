@@ -43,22 +43,34 @@ class ActronApi:
                 self.refresh_token = data.get("refresh_token")
                 self.access_token = data.get("access_token")
                 self.token_expires_at = datetime.fromisoformat(data.get("expires_at", "2000-01-01"))
+            _LOGGER.debug("Tokens loaded successfully")
         except FileNotFoundError:
-            pass
+            _LOGGER.debug("No token file found, will authenticate from scratch")
+        except json.JSONDecodeError:
+            _LOGGER.warning("Token file is corrupted, will authenticate from scratch")
+        except Exception as e:
+            _LOGGER.error(f"Error loading tokens: {e}")
 
     async def save_tokens(self):
-        async with aiofiles.open(f"{self.storage_path}/tokens.json", mode='w') as f:
-            await f.write(json.dumps({
-                "refresh_token": self.refresh_token,
-                "access_token": self.access_token,
-                "expires_at": self.token_expires_at.isoformat() if self.token_expires_at else None
-            }))
+        try:
+            async with aiofiles.open(f"{self.storage_path}/tokens.json", mode='w') as f:
+                await f.write(json.dumps({
+                    "refresh_token": self.refresh_token,
+                    "access_token": self.access_token,
+                    "expires_at": self.token_expires_at.isoformat() if self.token_expires_at else None
+                }))
+            _LOGGER.debug("Tokens saved successfully")
+        except Exception as e:
+            _LOGGER.error(f"Error saving tokens: {e}")
 
     async def authenticate(self):
         """Authenticate and get the token."""
+        _LOGGER.debug("Starting authentication process")
         if not self.refresh_token:
+            _LOGGER.debug("No refresh token, getting a new one")
             await self._get_refresh_token()
         await self._get_access_token()
+        _LOGGER.debug("Authentication process completed")
 
     async def _get_refresh_token(self):
         """Get the refresh token."""
@@ -72,12 +84,15 @@ class ActronApi:
             "deviceUniqueIdentifier": "HA-ActronNeo"
         }
         try:
+            _LOGGER.debug("Requesting refresh token")
             response = await self._make_request("POST", url, headers=headers, data=data, auth_required=False)
             self.refresh_token = response.get("pairingToken")
             if not self.refresh_token:
                 raise AuthenticationError("No refresh token received")
             await self.save_tokens()
+            _LOGGER.debug("Refresh token obtained and saved")
         except Exception as e:
+            _LOGGER.error(f"Failed to get refresh token: {str(e)}")
             raise AuthenticationError(f"Failed to get refresh token: {str(e)}")
 
     async def _get_access_token(self):
@@ -90,6 +105,7 @@ class ActronApi:
             "client_id": "app"
         }
         try:
+            _LOGGER.debug("Requesting access token")
             response = await self._make_request("POST", url, headers=headers, data=data, auth_required=False)
             self.access_token = response.get("access_token")
             expires_in = response.get("expires_in", 3600)
@@ -97,7 +113,9 @@ class ActronApi:
             if not self.access_token:
                 raise AuthenticationError("No access token received")
             await self.save_tokens()
+            _LOGGER.debug("Access token obtained and saved")
         except Exception as e:
+            _LOGGER.error(f"Failed to get access token: {str(e)}")
             raise AuthenticationError(f"Failed to get access token: {str(e)}")
 
     async def _make_request(self, method: str, url: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
@@ -211,9 +229,20 @@ class ActronApi:
                     raise
 
     async def initializer(self):
+        _LOGGER.debug("Initializing ActronApi")
         await self.load_tokens()
-        await self.authenticate()
+        if not self.access_token or not self.refresh_token:
+            _LOGGER.debug("No valid tokens found, authenticating from scratch")
+            await self.authenticate()
+        else:
+            _LOGGER.debug("Tokens found, validating")
+            try:
+                await self.get_devices()  # This will trigger re-authentication if tokens are invalid
+            except AuthenticationError:
+                _LOGGER.warning("Stored tokens are invalid, re-authenticating")
+                await self.authenticate()
         await self.get_ac_systems()
+        _LOGGER.debug("ActronApi initialization completed")
 
     async def get_ac_systems(self):
         devices = await self.get_devices()

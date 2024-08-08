@@ -5,14 +5,7 @@ import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.const import (
-    ATTR_TEMPERATURE,
-    HVAC_MODE_OFF,
-    HVAC_MODE_HEAT,
-    HVAC_MODE_COOL,
-    HVAC_MODE_AUTO,
-    HVAC_MODE_FAN_ONLY,
-)
+from homeassistant.components.climate.const import HVACMode
 
 from .api import ActronApi, AuthenticationError, ApiError
 from .const import DOMAIN
@@ -21,7 +14,6 @@ _LOGGER = logging.getLogger(__name__)
 
 class ActronDataCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, api: ActronApi, device_id: str, update_interval: int):
-        """Initialize the Actron data coordinator."""
         super().__init__(
             hass,
             _LOGGER,
@@ -94,47 +86,55 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Set HVAC mode."""
         _LOGGER.info(f"Setting HVAC mode to {hvac_mode} for device {self.device_id}")
         try:
-            await self.api.set_hvac_mode(self.device_id, hvac_mode)
-        except ApiError as err:
-            _LOGGER.error(f"Failed to set HVAC mode to {hvac_mode}: {err}")
+            is_on = hvac_mode != HVACMode.OFF
+            mode = hvac_mode if hvac_mode != HVACMode.OFF else None
+            await self.api.send_command(self.device_id, {
+                "UserAirconSettings.isOn": is_on,
+                "UserAirconSettings.Mode": mode
+            })
+        except Exception as err:
+            _LOGGER.error(f"Failed to set HVAC mode to {hvac_mode} for device {self.device_id}: {err}")
             raise
-        await self.async_request_refresh()
+        finally:
+            await self.async_request_refresh()
 
     async def set_temperature(self, temperature: float, is_cooling: bool) -> None:
         """Set temperature."""
         setting = "Cool" if is_cooling else "Heat"
         _LOGGER.info(f"Setting {setting} temperature to {temperature} for device {self.device_id}")
         try:
-            await self.api.set_temperature(self.device_id, temperature, is_cooling)
-        except ApiError as err:
-            _LOGGER.error(f"Failed to set {setting} temperature to {temperature}: {err}")
+            await self.api.send_command(self.device_id, {
+                f"UserAirconSettings.TemperatureSetpoint_{setting}_oC": temperature
+            })
+        except Exception as err:
+            _LOGGER.error(f"Failed to set {setting} temperature to {temperature} for device {self.device_id}: {err}")
             raise
-        await self.async_request_refresh()
+        finally:
+            await self.async_request_refresh()
 
     async def set_fan_mode(self, fan_mode: str) -> None:
         """Set fan mode."""
         _LOGGER.info(f"Setting fan mode to {fan_mode} for device {self.device_id}")
         try:
-            await self.api.set_fan_mode(self.device_id, fan_mode)
-        except ApiError as err:
-            _LOGGER.error(f"Failed to set fan mode to {fan_mode}: {err}")
+            await self.api.send_command(self.device_id, {"UserAirconSettings.FanMode": fan_mode})
+        except Exception as err:
+            _LOGGER.error(f"Failed to set fan mode to {fan_mode} for device {self.device_id}: {err}")
             raise
-        await self.async_request_refresh()
+        finally:
+            await self.async_request_refresh()
 
     async def set_zone_state(self, zone_index: int, is_on: bool) -> None:
         """Set zone state."""
         _LOGGER.info(f"Setting zone {zone_index} state to {'on' if is_on else 'off'} for device {self.device_id}")
         try:
-            await self.api.set_zone_state(self.device_id, zone_index, is_on)
-        except ApiError as err:
-            _LOGGER.error(f"Failed to set zone {zone_index} state to {'on' if is_on else 'off'}: {err}")
+            current_zones = self.data['main'].get('EnabledZones', [])
+            if zone_index < len(current_zones):
+                current_zones[zone_index] = is_on
+                await self.api.send_command(self.device_id, {"UserAirconSettings.EnabledZones": current_zones})
+            else:
+                _LOGGER.error(f"Zone index {zone_index} is out of range")
+        except Exception as err:
+            _LOGGER.error(f"Failed to set zone {zone_index} state to {'on' if is_on else 'off'} for device {self.device_id}: {err}")
             raise
-        await self.async_request_refresh()
-
-    def get_zone_status(self, zone_id: str) -> Dict[str, Any]:
-        """Get the status of a specific zone."""
-        return self.data["zones"].get(zone_id, {})
-
-    def get_main_status(self) -> Dict[str, Any]:
-        """Get the main status of the AC unit."""
-        return self.data.get("main", {})
+        finally:
+            await self.async_request_refresh()

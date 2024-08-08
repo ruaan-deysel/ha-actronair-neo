@@ -7,8 +7,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.components.climate.const import HVACMode
 
-from .api import ActronApi, AuthenticationError, ApiError
-from .const import DOMAIN
+from .api import ActronApi, AuthenticationError, ApiError, RateLimitError
+from .const import DOMAIN, MAX_RETRIES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,18 +26,30 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from API endpoint."""
-        try:
-            _LOGGER.debug(f"Fetching data for device {self.device_id}")
-            status = await self.api.get_ac_status(self.device_id)
-            parsed_data = self._parse_data(status)
-            _LOGGER.debug(f"Parsed data: {parsed_data}")
-            return parsed_data
-        except AuthenticationError as err:
-            _LOGGER.error(f"Authentication error: {err}")
-            raise ConfigEntryAuthFailed from err
-        except ApiError as err:
-            _LOGGER.error(f"Error communicating with API: {err}")
-            raise UpdateFailed(f"Error communicating with API: {err}") from err
+        retries = MAX_RETRIES
+        for attempt in range(retries):
+            try:
+                _LOGGER.debug(f"Fetching data for device {self.device_id}")
+                status = await self.api.get_ac_status(self.device_id)
+                parsed_data = self._parse_data(status)
+                _LOGGER.debug(f"Parsed data: {parsed_data}")
+                return parsed_data
+            except AuthenticationError as err:
+                _LOGGER.error(f"Authentication error: {err}")
+                raise ConfigEntryAuthFailed from err
+            except RateLimitError as err:
+                _LOGGER.warning(f"Rate limit exceeded: {err}, waiting before retrying...")
+                await asyncio.sleep(60)  # Wait for 1 minute before retrying
+            except ApiError as err:
+                _LOGGER.error(f"Error communicating with API: {err}")
+                if attempt < retries - 1:
+                    _LOGGER.warning(f"Retrying (attempt {attempt + 1}/{retries})...")
+                    await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
+                else:
+                    raise UpdateFailed(f"Error communicating with API: {err}") from err
+            except Exception as err:
+                _LOGGER.error(f"Unexpected error: {err}")
+                raise UpdateFailed(f"Unexpected error: {err}") from err
 
     def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Parse the data from the API into a format suitable for the climate entity."""

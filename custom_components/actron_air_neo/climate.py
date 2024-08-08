@@ -1,12 +1,5 @@
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature
-from homeassistant.components.climate.const import (
-    HVACMode,
-    HVACAction,
-    FAN_LOW,
-    FAN_MEDIUM,
-    FAN_HIGH,
-    FAN_AUTO,
-)
+from homeassistant.components.climate.const import HVACAction
 from homeassistant.const import (
     ATTR_TEMPERATURE,
     UnitOfTemperature,
@@ -16,18 +9,22 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MIN_TEMP, MAX_TEMP
+from .const import (
+    DOMAIN, MIN_TEMP, MAX_TEMP,
+    HVAC_MODE_OFF, HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_FAN, HVAC_MODE_AUTO,
+    FAN_LOW, FAN_MEDIUM, FAN_HIGH, FAN_AUTO
+)
 from .coordinator import ActronDataCoordinator
 
 import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-HVAC_MODES = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.FAN_ONLY, HVACMode.AUTO]
+HVAC_MODES = [HVAC_MODE_OFF, HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_FAN, HVAC_MODE_AUTO]
 FAN_MODES = [FAN_LOW, FAN_MEDIUM, FAN_HIGH, FAN_AUTO]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([ActronClimate(coordinator)], True)
 
 class ActronClimate(CoordinatorEntity, ClimateEntity):
@@ -53,18 +50,18 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def target_temperature(self) -> float | None:
-        if self.hvac_mode == HVACMode.COOL:
+        if self.hvac_mode == HVAC_MODE_COOL:
             return self.coordinator.data['main'].get('temp_setpoint_cool')
-        elif self.hvac_mode == HVACMode.HEAT:
+        elif self.hvac_mode == HVAC_MODE_HEAT:
             return self.coordinator.data['main'].get('temp_setpoint_heat')
-        elif self.hvac_mode == HVACMode.AUTO:
+        elif self.hvac_mode == HVAC_MODE_AUTO:
             return self.coordinator.data['main'].get('temp_setpoint_cool')  # Default to cooling setpoint in AUTO mode
         return None
 
     @property
-    def hvac_mode(self) -> HVACMode:
+    def hvac_mode(self) -> str:
         if not self.coordinator.data['main'].get('is_on'):
-            return HVACMode.OFF
+            return HVAC_MODE_OFF
         mode = self.coordinator.data['main'].get('mode')
         return self._actron_to_ha_hvac_mode(mode)
 
@@ -77,7 +74,7 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
             return HVACAction.COOLING
         elif compressor_state == 'HEAT':
             return HVACAction.HEATING
-        elif self.hvac_mode == HVACMode.FAN_ONLY:
+        elif self.hvac_mode == HVAC_MODE_FAN:
             return HVACAction.FAN
         return HVACAction.IDLE
 
@@ -94,13 +91,13 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
-        is_cooling = self.hvac_mode in [HVACMode.COOL, HVACMode.AUTO]
+        is_cooling = self.hvac_mode in [HVAC_MODE_COOL, HVAC_MODE_AUTO]
         try:
             await self.coordinator.set_temperature(temperature, is_cooling)
         except Exception as e:
             _LOGGER.error(f"Failed to set temperature: {e}")
 
-    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+    async def async_set_hvac_mode(self, hvac_mode: str) -> None:
         actron_mode = self._ha_to_actron_hvac_mode(hvac_mode)
         try:
             await self.coordinator.set_hvac_mode(actron_mode)
@@ -115,34 +112,34 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
 
     async def async_turn_on(self) -> None:
         try:
-            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.AUTO))
+            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVAC_MODE_AUTO))
         except Exception as e:
             _LOGGER.error(f"Failed to turn on: {e}")
 
     async def async_turn_off(self) -> None:
         try:
-            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.OFF))
+            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVAC_MODE_OFF))
         except Exception as e:
             _LOGGER.error(f"Failed to turn off: {e}")
 
-    def _actron_to_ha_hvac_mode(self, mode: str | None) -> HVACMode:
+    def _actron_to_ha_hvac_mode(self, mode: str | None) -> str:
         if mode is None:
-            return HVACMode.OFF
+            return HVAC_MODE_OFF
         mode_map = {
-            "AUTO": HVACMode.AUTO,
-            "HEAT": HVACMode.HEAT,
-            "COOL": HVACMode.COOL,
-            "FAN": HVACMode.FAN_ONLY,
-            "OFF": HVACMode.OFF,
+            "AUTO": HVAC_MODE_AUTO,
+            "HEAT": HVAC_MODE_HEAT,
+            "COOL": HVAC_MODE_COOL,
+            "FAN": HVAC_MODE_FAN,
+            "OFF": HVAC_MODE_OFF,
         }
-        return mode_map.get(mode.upper(), HVACMode.OFF)
+        return mode_map.get(mode.upper(), HVAC_MODE_OFF)
 
-    def _ha_to_actron_hvac_mode(self, mode: HVACMode) -> str:
+    def _ha_to_actron_hvac_mode(self, mode: str) -> str:
         mode_map = {
-            HVACMode.AUTO: "AUTO",
-            HVACMode.HEAT: "HEAT",
-            HVACMode.COOL: "COOL",
-            HVACMode.FAN_ONLY: "FAN",
-            HVACMode.OFF: "OFF",
+            HVAC_MODE_AUTO: "AUTO",
+            HVAC_MODE_HEAT: "HEAT",
+            HVAC_MODE_COOL: "COOL",
+            HVAC_MODE_FAN: "FAN",
+            HVAC_MODE_OFF: "OFF",
         }
         return mode_map.get(mode, "OFF")

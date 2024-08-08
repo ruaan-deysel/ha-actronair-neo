@@ -16,11 +16,11 @@ API_URL = "https://nimbus.actronair.com.au"
 API_TIMEOUT = 10  # seconds
 
 # HVAC modes
-HVAC_MODE_OFF = "OFF"
-HVAC_MODE_COOL = "COOL"
-HVAC_MODE_HEAT = "HEAT"
-HVAC_MODE_FAN = "FAN"
-HVAC_MODE_AUTO = "AUTO"
+HVAC_MODE_OFF = "off"
+HVAC_MODE_COOL = "cool"
+HVAC_MODE_HEAT = "heat"
+HVAC_MODE_FAN = "fan_only"
+HVAC_MODE_AUTO = "auto"
 
 # Fan modes
 FAN_LOW = "LOW"

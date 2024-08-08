@@ -3,6 +3,7 @@ import aiofiles
 import asyncio
 import json
 import logging
+import os
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 
@@ -37,8 +38,9 @@ class ActronApi:
         self.cached_status = None
 
     async def load_tokens(self):
+        token_file = os.path.join(self.storage_path, "tokens.json")
         try:
-            async with aiofiles.open(f"{self.storage_path}/tokens.json", mode='r') as f:
+            async with aiofiles.open(token_file, mode='r') as f:
                 data = json.loads(await f.read())
                 self.refresh_token = data.get("refresh_token")
                 self.access_token = data.get("access_token")
@@ -52,14 +54,20 @@ class ActronApi:
             _LOGGER.error(f"Error loading tokens: {e}")
 
     async def save_tokens(self):
+        token_file = os.path.join(self.storage_path, "tokens.json")
         try:
-            async with aiofiles.open(f"{self.storage_path}/tokens.json", mode='w') as f:
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(token_file), exist_ok=True)
+            
+            async with aiofiles.open(token_file, mode='w') as f:
                 await f.write(json.dumps({
                     "refresh_token": self.refresh_token,
                     "access_token": self.access_token,
                     "expires_at": self.token_expires_at.isoformat() if self.token_expires_at else None
                 }))
             _LOGGER.debug("Tokens saved successfully")
+        except PermissionError:
+            _LOGGER.error(f"Permission denied when trying to save tokens to {token_file}")
         except Exception as e:
             _LOGGER.error(f"Error saving tokens: {e}")
 

@@ -19,7 +19,7 @@ API_TIMEOUT = 10  # seconds
 HVAC_MODE_OFF = "off"
 HVAC_MODE_COOL = "cool"
 HVAC_MODE_HEAT = "heat"
-HVAC_MODE_FAN = "fan_only"
+HVAC_MODE_FAN_ONLY = "fan_only"
 HVAC_MODE_AUTO = "auto"
 
 # Fan modes

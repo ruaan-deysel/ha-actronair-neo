@@ -1,3 +1,4 @@
+"""Data coordinator for the Actron Air Neo integration."""
 from datetime import timedelta
 from typing import Any, Dict, Optional
 import logging
@@ -13,6 +14,8 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 class ActronDataCoordinator(DataUpdateCoordinator):
+    """Class to manage fetching Actron Air Neo data."""
+
     def __init__(self, hass: HomeAssistant, api: ActronApi, device_id: str, update_interval: int):
         """Initialize the data coordinator."""
         super().__init__(

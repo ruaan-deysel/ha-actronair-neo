@@ -33,7 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         api = ActronApi(username, password, session, hass.config.path("actron_neo_tokens"))
 
         try:
-            await api.authenticate()
+            await api.initializer()
         except AuthenticationError as auth_err:
             _LOGGER.error("Failed to authenticate: %s", auth_err)
             raise ConfigEntryNotReady from auth_err

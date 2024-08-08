@@ -54,6 +54,9 @@ DEVICE_MODEL = "Neo"
 # Service names
 SERVICE_FORCE_UPDATE = "force_update"
 
+# Coordinator update interval
+UPDATE_INTERVAL = 60  # seconds
+
 # Zone related constants
 MAX_ZONES = 8
 ATTR_ZONE_TEMP = "zone_temperature"

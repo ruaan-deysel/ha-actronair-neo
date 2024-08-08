@@ -61,7 +61,7 @@ class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 session = aiohttp_client.async_get_clientsession(self.hass)
                 api = ActronApi(username, password, session, self.hass.config.path("actron_neo_tokens"))
-                await api.authenticate()
+                await api.initializer()
 
                 devices = await api.get_devices()
                 if not devices:

@@ -16,6 +16,9 @@ class AuthenticationError(Exception):
 
 class ApiError(Exception):
     """Raised when an API call fails."""
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
 
 class RateLimitError(Exception):
     """Raised when rate limit is exceeded."""
@@ -130,9 +133,9 @@ class ActronApi:
             _LOGGER.error(f"Failed to get access token: {str(e)}")
             raise AuthenticationError(f"Failed to get access token: {str(e)}")
 
-    async def _make_request(self, method: str, url: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
-        async with self.rate_limit:
-            await self._wait_for_rate_limit()
+        async def _make_request(self, method: str, url: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
+            async with self.rate_limit:
+                await self._wait_for_rate_limit()
 
             retries = MAX_RETRIES
             for attempt in range(retries):
@@ -162,7 +165,7 @@ class ActronApi:
                             text = await response.text()
                             _LOGGER.error(f"API request failed: {response.status}, {text}")
                             self.error_count += 1
-                            raise ApiError(f"API request failed: {response.status}, {text}")
+                            raise ApiError(f"API request failed: {response.status}, {text}", status_code=response.status)
 
                 except aiohttp.ClientError as err:
                     _LOGGER.error(f"Network error on attempt {attempt + 1}: {err}")
@@ -233,11 +236,13 @@ class ActronApi:
                 _LOGGER.debug(f"Command response: {response}")
                 return response
             except ApiError as e:
-                if "500" in str(e) and attempt < max_retries - 1:
-                    _LOGGER.warning(f"Received 500 error, retrying (attempt {attempt + 1}/{max_retries})")
+                if (attempt < max_retries - 1) and (e.status_code in [500, 502, 503, 504]):
+                    _LOGGER.warning(f"Received {e.status_code} error, retrying (attempt {attempt + 1}/{max_retries})")
                     await asyncio.sleep(2 ** attempt)  # Exponential backoff
                 else:
                     raise
+
+        raise ApiError(f"Failed to send command after {max_retries} attempts")
 
     async def initializer(self):
         _LOGGER.debug("Initializing ActronApi")
@@ -297,13 +302,13 @@ class ActronApi:
                     "type": "set-settings"
                 }
             },
-            "ZONE_ENABLE": lambda zone_index, zones: {
+            "ZONE_ENABLE": lambda zone_index: {
                 "command": {
                     f"UserAirconSettings.EnabledZones[{zone_index}]": True,
                     "type": "set-settings"
                 }
             },
-            "ZONE_DISABLE": lambda zone_index, zones: {
+            "ZONE_DISABLE": lambda zone_index: {
                 "command": {
                     f"UserAirconSettings.EnabledZones[{zone_index}]": False,
                     "type": "set-settings"

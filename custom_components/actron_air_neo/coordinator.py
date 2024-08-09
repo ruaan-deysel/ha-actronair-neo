@@ -1,3 +1,5 @@
+# coordinator.py
+
 from datetime import timedelta
 from typing import Any, Dict, Optional
 import logging
@@ -134,7 +136,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_zone_state(self, zone_index: int, is_on: bool) -> None:
         """Set zone state."""
         try:
-            command = self.api.create_command("ZONE_ENABLE" if is_on else "ZONE_DISABLE", zone_index=zone_index, zones=[])
+            command = self.api.create_command("ZONE_ENABLE" if is_on else "ZONE_DISABLE", zone_index=zone_index)
             await self.api.send_command(self.device_id, command)
             await self.async_request_refresh()
         except Exception as err:

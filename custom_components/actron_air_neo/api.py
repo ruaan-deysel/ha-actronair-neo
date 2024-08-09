@@ -314,5 +314,23 @@ class ActronApi:
                     "type": "set-settings"
                 }
             },
+            "AWAY_MODE": lambda state: {
+                "command": {
+                    "UserAirconSettings.AwayMode": state,
+                    "type": "set-settings"
+                }
+            },
+            "QUIET_MODE": lambda state: {
+                "command": {
+                    "UserAirconSettings.QuietMode": state,
+                    "type": "set-settings"
+                }
+            },
+            "CONTINUOUS_FAN": lambda state: {
+                "command": {
+                    "UserAirconSettings.ContinuousFan": state,
+                    "type": "set-settings"
+                }
+            },
         }
         return commands[command_type](**params)

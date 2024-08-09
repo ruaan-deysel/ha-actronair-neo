@@ -1,11 +1,11 @@
+"""Support for Actron Air Neo switches."""
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.const import ATTR_TEMPERATURE
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, DEVICE_MANUFACTURER, DEVICE_MODEL
 from .coordinator import ActronDataCoordinator
 
 import logging
@@ -13,98 +13,129 @@ import logging
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
-    """Set up Actron Neo zones from a config entry."""
+    """Set up Actron Neo switches from a config entry."""
     coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
-    zones = coordinator.data.get('zones', {})
-    _LOGGER.debug(f"Setting up {len(zones)} zones")
-    entities = []
-    for zone_id, zone_data in zones.items():
-        entities.append(ActronZone(coordinator, zone_id))
+    entities = [
+        ActronAwayModeSwitch(coordinator),
+        ActronQuietModeSwitch(coordinator),
+        ActronContinuousFanSwitch(coordinator),
+    ]
+
+    # Add zone switches
+    for zone_id, zone_data in coordinator.data['zones'].items():
+        entities.append(ActronZoneSwitch(coordinator, zone_id))
+
     async_add_entities(entities)
 
-class ActronZone(CoordinatorEntity, SwitchEntity):
-    """Representation of an Actron Neo Zone."""
+class ActronBaseSwitch(CoordinatorEntity, SwitchEntity):
+    """Base class for Actron Neo switches."""
+
+    def __init__(self, coordinator: ActronDataCoordinator, switch_type: str):
+        super().__init__(coordinator)
+        self.switch_type = switch_type
+        self._attr_name = f"ActronAir {switch_type.replace('_', ' ').title()}"
+        self._attr_unique_id = f"{coordinator.device_id}_{switch_type}"
+
+    @property
+    def is_on(self):
+        """Return true if the switch is on."""
+        return self.coordinator.data['main'].get(self.switch_type, False)
+
+    @property
+    def device_info(self):
+        """Return device information about this entity."""
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.device_id)},
+            "name": "ActronAir Neo",
+            "manufacturer": DEVICE_MANUFACTURER,
+            "model": DEVICE_MODEL,
+            "sw_version": self.coordinator.data['main'].get('firmware_version'),
+        }
+
+class ActronAwayModeSwitch(ActronBaseSwitch):
+    """Representation of an Actron Neo Away Mode switch."""
+
+    def __init__(self, coordinator: ActronDataCoordinator):
+        super().__init__(coordinator, "away_mode")
+
+    async def async_turn_on(self, **kwargs):
+        """Turn the switch on."""
+        await self.coordinator.set_away_mode(True)
+
+    async def async_turn_off(self, **kwargs):
+        """Turn the switch off."""
+        await self.coordinator.set_away_mode(False)
+
+class ActronQuietModeSwitch(ActronBaseSwitch):
+    """Representation of an Actron Neo Quiet Mode switch."""
+
+    def __init__(self, coordinator: ActronDataCoordinator):
+        super().__init__(coordinator, "quiet_mode")
+
+    async def async_turn_on(self, **kwargs):
+        """Turn the switch on."""
+        await self.coordinator.set_quiet_mode(True)
+
+    async def async_turn_off(self, **kwargs):
+        """Turn the switch off."""
+        await self.coordinator.set_quiet_mode(False)
+
+class ActronContinuousFanSwitch(ActronBaseSwitch):
+    """Representation of an Actron Neo Continuous Fan switch."""
+
+    def __init__(self, coordinator: ActronDataCoordinator):
+        super().__init__(coordinator, "continuous_fan")
+
+    async def async_turn_on(self, **kwargs):
+        """Turn the switch on."""
+        await self.coordinator.set_continuous_fan(True)
+
+    async def async_turn_off(self, **kwargs):
+        """Turn the switch off."""
+        await self.coordinator.set_continuous_fan(False)
+
+class ActronZoneSwitch(CoordinatorEntity, SwitchEntity):
+    """Representation of an Actron Neo Zone switch."""
 
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str):
         super().__init__(coordinator)
         self.zone_id = zone_id
         self._attr_name = f"ActronAir Zone {coordinator.data['zones'][zone_id]['name']}"
         self._attr_unique_id = f"{coordinator.device_id}_zone_{zone_id}"
-        self._attr_device_class = "switch"
 
     @property
-    def is_on(self) -> bool:
+    def is_on(self):
         """Return true if the zone is enabled."""
-        return self.coordinator.data['zones'].get(self.zone_id, {}).get('is_enabled', False)
-
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return self.coordinator.data['zones'][self.zone_id]['is_enabled']
 
     async def async_turn_on(self, **kwargs):
         """Turn the zone on."""
-        _LOGGER.info(f"Turning on zone {self.name}")
-        try:
-            current_zones = self.coordinator.data['main'].get('EnabledZones', [])
-            command = self.coordinator.api.create_command(
-                "ZONE_ENABLE", 
-                zone_index=int(self.zone_id.split('_')[1]) - 1, 
-                zones=current_zones
-            )
-            await self.coordinator.api.send_command(self.coordinator.device_id, command)
-            await self.coordinator.async_request_refresh()
-        except Exception as e:
-            _LOGGER.error(f"Failed to turn on zone {self.name}: {str(e)}")
+        zone_index = int(self.zone_id.split('_')[1]) - 1
+        await self.coordinator.set_zone_state(zone_index, True)
 
     async def async_turn_off(self, **kwargs):
         """Turn the zone off."""
-        _LOGGER.info(f"Turning off zone {self.name}")
-        try:
-            current_zones = self.coordinator.data['main'].get('EnabledZones', [])
-            command = self.coordinator.api.create_command(
-                "ZONE_DISABLE", 
-                zone_index=int(self.zone_id.split('_')[1]) - 1, 
-                zones=current_zones
-            )
-            await self.coordinator.api.send_command(self.coordinator.device_id, command)
-            await self.coordinator.async_request_refresh()
-        except Exception as e:
-            _LOGGER.error(f"Failed to turn off zone {self.name}: {str(e)}")
+        zone_index = int(self.zone_id.split('_')[1]) - 1
+        await self.coordinator.set_zone_state(zone_index, False)
+
+    @property
+    def device_info(self):
+        """Return device information about this entity."""
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.device_id)},
+            "name": "ActronAir Neo",
+            "manufacturer": DEVICE_MANUFACTURER,
+            "model": DEVICE_MODEL,
+            "sw_version": self.coordinator.data['main'].get('firmware_version'),
+        }
 
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        if not self.coordinator.data or self.zone_id not in self.coordinator.data.get('zones', {}):
-            return {}
         zone_data = self.coordinator.data['zones'][self.zone_id]
         return {
             "temperature": zone_data.get('temp'),
             "humidity": zone_data.get('humidity'),
-            ATTR_TEMPERATURE: zone_data.get('temp_setpoint_cool'),  # Use cooling setpoint as default
-            "temperature_setpoint_heat": zone_data.get('temp_setpoint_heat'),
             "temperature_setpoint_cool": zone_data.get('temp_setpoint_cool'),
+            "temperature_setpoint_heat": zone_data.get('temp_setpoint_heat'),
         }
-
-    @property
-    def current_temperature(self):
-        """Return the current temperature."""
-        return self.coordinator.data['zones'].get(self.zone_id, {}).get('temp')
-
-    @property
-    def current_humidity(self):
-        """Return the current humidity."""
-        return self.coordinator.data['zones'].get(self.zone_id, {}).get('humidity')
-
-    async def async_added_to_hass(self):
-        """When entity is added to hass."""
-        await super().async_added_to_hass()
-        self._handle_coordinator_update()
-
-    async def async_update(self):
-        """Update the entity."""
-        await self.coordinator.async_request_refresh()
-
-    def _handle_coordinator_update(self):
-        """Handle updated data from the coordinator."""
-        self.async_write_ha_state()

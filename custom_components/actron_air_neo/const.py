@@ -28,7 +28,6 @@ HVAC_MODE_AUTO = "AUTO"
 FAN_LOW = "LOW"
 FAN_MEDIUM = "MEDIUM"
 FAN_HIGH = "HIGH"
-FAN_AUTO = "AUTO"
 
 # Temperature limits
 MIN_TEMP = 10
@@ -37,9 +36,16 @@ MAX_TEMP = 30
 # Device attributes
 ATTR_INDOOR_TEMPERATURE = "indoor_temperature"
 ATTR_INDOOR_HUMIDITY = "indoor_humidity"
+ATTR_WALL_TEMPERATURE = "wall_temperature"
 ATTR_SETPOINT_COOL = "setpoint_cool"
 ATTR_SETPOINT_HEAT = "setpoint_heat"
 ATTR_COMPRESSOR_STATE = "compressor_state"
+ATTR_AWAY_MODE = "away_mode"
+ATTR_QUIET_MODE = "quiet_mode"
+ATTR_CONTINUOUS_FAN = "continuous_fan"
+ATTR_MODEL = "model"
+ATTR_SERIAL_NUMBER = "serial_number"
+ATTR_FIRMWARE_VERSION = "firmware_version"
 
 # Error messages
 ERROR_AUTH = "invalid_auth"
@@ -67,12 +73,7 @@ MODE_COOL = "COOL"
 MODE_HEAT = "HEAT"
 MODE_AUTO = "AUTO"
 MODE_FAN = "FAN"
-MODE_DRY = "DRY"
 
 # System states
 STATE_ON = "ON"
 STATE_OFF = "OFF"
-
-# Other constants
-QUIET_MODE = "quiet_mode"
-AWAY_MODE = "away_mode"

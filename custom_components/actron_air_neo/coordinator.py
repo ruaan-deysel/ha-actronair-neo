@@ -65,18 +65,26 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             user_aircon_settings = last_known_state.get("UserAirconSettings", {})
             master_info = last_known_state.get("MasterInfo", {})
             live_aircon = last_known_state.get("LiveAircon", {})
+            system_info = data.get("systemInfo", {})
 
             parsed_data = {
                 "main": {
                     "is_on": user_aircon_settings.get("isOn", False),
                     "mode": user_aircon_settings.get("Mode", "OFF"),
-                    "fan_mode": user_aircon_settings.get("FanMode", "AUTO"),
+                    "fan_mode": user_aircon_settings.get("FanMode", "LOW"),
                     "temp_setpoint_cool": user_aircon_settings.get("TemperatureSetpoint_Cool_oC"),
                     "temp_setpoint_heat": user_aircon_settings.get("TemperatureSetpoint_Heat_oC"),
                     "indoor_temp": master_info.get("LiveTemp_oC"),
                     "indoor_humidity": master_info.get("LiveHumidity_pc"),
+                    "wall_temp": master_info.get("LiveWallTemp_oC"),
                     "compressor_state": live_aircon.get("CompressorMode", "OFF"),
                     "EnabledZones": user_aircon_settings.get("EnabledZones", []),
+                    "away_mode": user_aircon_settings.get("AwayMode", False),
+                    "quiet_mode": user_aircon_settings.get("QuietMode", False),
+                    "continuous_fan": user_aircon_settings.get("ContinuousFan", False),
+                    "model": system_info.get("model"),
+                    "serial_number": system_info.get("serial"),
+                    "firmware_version": system_info.get("firmwareVersion"),
                 },
                 "zones": {}
             }
@@ -141,6 +149,36 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error(f"Failed to set zone {zone_index} state to {'on' if is_on else 'off'}: {err}")
+            raise
+
+    async def set_away_mode(self, state: bool) -> None:
+        """Set away mode."""
+        try:
+            command = self.api.create_command("AWAY_MODE", state=state)
+            await self.api.send_command(self.device_id, command)
+            await self.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error(f"Failed to set away mode to {state}: {err}")
+            raise
+
+    async def set_quiet_mode(self, state: bool) -> None:
+        """Set quiet mode."""
+        try:
+            command = self.api.create_command("QUIET_MODE", state=state)
+            await self.api.send_command(self.device_id, command)
+            await self.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error(f"Failed to set quiet mode to {state}: {err}")
+            raise
+
+    async def set_continuous_fan(self, state: bool) -> None:
+        """Set continuous fan."""
+        try:
+            command = self.api.create_command("CONTINUOUS_FAN", state=state)
+            await self.api.send_command(self.device_id, command)
+            await self.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error(f"Failed to set continuous fan to {state}: {err}")
             raise
 
     async def force_update(self) -> None:

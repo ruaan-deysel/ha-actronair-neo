@@ -1,3 +1,5 @@
+# __init__.py
+
 """The Actron Air Neo integration."""
 import logging
 from homeassistant.config_entries import ConfigEntry

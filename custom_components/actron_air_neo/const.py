@@ -37,7 +37,6 @@ MAX_TEMP = 30
 # Device attributes
 ATTR_INDOOR_TEMPERATURE = "indoor_temperature"
 ATTR_INDOOR_HUMIDITY = "indoor_humidity"
-ATTR_OUTDOOR_TEMPERATURE = "outdoor_temperature"
 ATTR_SETPOINT_COOL = "setpoint_cool"
 ATTR_SETPOINT_HEAT = "setpoint_heat"
 ATTR_COMPRESSOR_STATE = "compressor_state"

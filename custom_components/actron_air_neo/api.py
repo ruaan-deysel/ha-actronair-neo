@@ -56,7 +56,6 @@ class ActronApi:
     async def save_tokens(self):
         token_file = os.path.join(self.storage_path, "tokens.json")
         try:
-            # Ensure the directory exists
             os.makedirs(os.path.dirname(token_file), exist_ok=True)
             
             async with aiofiles.open(token_file, mode='w') as f:
@@ -74,10 +73,15 @@ class ActronApi:
     async def authenticate(self):
         """Authenticate and get the token."""
         _LOGGER.debug("Starting authentication process")
-        if not self.refresh_token:
-            _LOGGER.debug("No refresh token, getting a new one")
+        try:
+            if not self.refresh_token:
+                _LOGGER.debug("No refresh token, getting a new one")
+                await self._get_refresh_token()
+            await self._get_access_token()
+        except AuthenticationError:
+            _LOGGER.warning("Failed to authenticate with refresh token, trying to get a new one")
             await self._get_refresh_token()
-        await self._get_access_token()
+            await self._get_access_token()
         _LOGGER.debug("Authentication process completed")
 
     async def _get_refresh_token(self):
@@ -220,13 +224,12 @@ class ActronApi:
 
     async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
-        data = {"command": command}
-        _LOGGER.debug(f"Sending command to: {url}, Command: {data}")
+        _LOGGER.debug(f"Sending command to: {url}, Command: {command}")
         
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response = await self._make_request("POST", url, json=data)
+                response = await self._make_request("POST", url, json=command)
                 _LOGGER.debug(f"Command response: {response}")
                 return response
             except ApiError as e:
@@ -263,26 +266,48 @@ class ActronApi:
 
     def create_command(self, command_type: str, **params) -> Dict[str, Any]:
         commands = {
-            "ON": lambda: {"UserAirconSettings.isOn": True, "type": "set-settings"},
-            "OFF": lambda: {"UserAirconSettings.isOn": False, "type": "set-settings"},
-            "CLIMATE_MODE": lambda mode: {"UserAirconSettings.Mode": mode, "type": "set-settings"},
-            "FAN_MODE": lambda mode: {"UserAirconSettings.FanMode": mode, "type": "set-settings"},
+            "ON": lambda: {
+                "command": {
+                    "UserAirconSettings.isOn": True,
+                    "type": "set-settings"
+                }
+            },
+            "OFF": lambda: {
+                "command": {
+                    "UserAirconSettings.isOn": False,
+                    "type": "set-settings"
+                }
+            },
+            "CLIMATE_MODE": lambda mode: {
+                "command": {
+                    "UserAirconSettings.isOn": True,
+                    "UserAirconSettings.Mode": mode,
+                    "type": "set-settings"
+                }
+            },
+            "FAN_MODE": lambda mode: {
+                "command": {
+                    "UserAirconSettings.FanMode": mode,
+                    "type": "set-settings"
+                }
+            },
             "SET_TEMP": lambda temp, is_cool: {
-                f"UserAirconSettings.TemperatureSetpoint_{'Cool' if is_cool else 'Heat'}_oC": temp,
-                "type": "set-settings"
+                "command": {
+                    f"UserAirconSettings.TemperatureSetpoint_{'Cool' if is_cool else 'Heat'}_oC": temp,
+                    "type": "set-settings"
+                }
             },
             "ZONE_ENABLE": lambda zone_index, zones: {
-                "UserAirconSettings.EnabledZones": self._modify_zone_status(True, zone_index, zones),
-                "type": "set-settings"
+                "command": {
+                    f"UserAirconSettings.EnabledZones[{zone_index}]": True,
+                    "type": "set-settings"
+                }
             },
             "ZONE_DISABLE": lambda zone_index, zones: {
-                "UserAirconSettings.EnabledZones": self._modify_zone_status(False, zone_index, zones),
-                "type": "set-settings"
+                "command": {
+                    f"UserAirconSettings.EnabledZones[{zone_index}]": False,
+                    "type": "set-settings"
+                }
             },
         }
-        return {"command": commands[command_type](**params)}
-
-    def _modify_zone_status(self, status: bool, zone_index: int, current_zones: List[bool]) -> List[bool]:
-        modified_zones = current_zones.copy()
-        modified_zones[zone_index] = status
-        return modified_zones
+        return commands[command_type](**params)

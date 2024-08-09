@@ -1,4 +1,3 @@
-"""Support for Actron Air Neo climate."""
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature
 from homeassistant.components.climate.const import (
     HVACMode,
@@ -120,35 +119,50 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
             return
         is_cooling = self.hvac_mode in [HVACMode.COOL, HVACMode.AUTO]
         try:
-            await self.coordinator.set_temperature(temperature, is_cooling)
+            command = self.coordinator.api.create_command("SET_TEMP", temp=temperature, is_cool=is_cooling)
+            await self.coordinator.api.send_command(self.coordinator.device_id, command)
+            await self.coordinator.async_request_refresh()
         except Exception as e:
             _LOGGER.error(f"Failed to set temperature: {e}")
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
         try:
-            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(hvac_mode))
+            if hvac_mode == HVACMode.OFF:
+                command = self.coordinator.api.create_command("OFF")
+            else:
+                command = self.coordinator.api.create_command("ON")
+                await self.coordinator.api.send_command(self.coordinator.device_id, command)
+                command = self.coordinator.api.create_command("CLIMATE_MODE", mode=self._ha_to_actron_hvac_mode(hvac_mode))
+            await self.coordinator.api.send_command(self.coordinator.device_id, command)
+            await self.coordinator.async_request_refresh()
         except Exception as e:
             _LOGGER.error(f"Failed to set HVAC mode: {e}")
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
         try:
-            await self.coordinator.set_fan_mode(fan_mode)
+            command = self.coordinator.api.create_command("FAN_MODE", mode=fan_mode)
+            await self.coordinator.api.send_command(self.coordinator.device_id, command)
+            await self.coordinator.async_request_refresh()
         except Exception as e:
             _LOGGER.error(f"Failed to set fan mode: {e}")
 
     async def async_turn_on(self) -> None:
         """Turn the entity on."""
         try:
-            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.AUTO))
+            command = self.coordinator.api.create_command("ON")
+            await self.coordinator.api.send_command(self.coordinator.device_id, command)
+            await self.coordinator.async_request_refresh()
         except Exception as e:
             _LOGGER.error(f"Failed to turn on: {e}")
 
     async def async_turn_off(self) -> None:
         """Turn the entity off."""
         try:
-            await self.coordinator.set_hvac_mode(self._ha_to_actron_hvac_mode(HVACMode.OFF))
+            command = self.coordinator.api.create_command("OFF")
+            await self.coordinator.api.send_command(self.coordinator.device_id, command)
+            await self.coordinator.async_request_refresh()
         except Exception as e:
             _LOGGER.error(f"Failed to turn off: {e}")
 

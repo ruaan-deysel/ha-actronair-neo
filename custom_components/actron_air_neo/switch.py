@@ -1,4 +1,3 @@
-"""Support for Actron Air Neo zones."""
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
@@ -47,19 +46,31 @@ class ActronZone(CoordinatorEntity, SwitchEntity):
         """Turn the zone on."""
         _LOGGER.info(f"Turning on zone {self.name}")
         try:
-            await self.coordinator.set_zone_state(int(self.zone_id.split('_')[1]) - 1, True)
+            current_zones = self.coordinator.data['main'].get('EnabledZones', [])
+            command = self.coordinator.api.create_command(
+                "ZONE_ENABLE", 
+                zone_index=int(self.zone_id.split('_')[1]) - 1, 
+                zones=current_zones
+            )
+            await self.coordinator.api.send_command(self.coordinator.device_id, command)
+            await self.coordinator.async_request_refresh()
         except Exception as e:
             _LOGGER.error(f"Failed to turn on zone {self.name}: {str(e)}")
-        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs):
         """Turn the zone off."""
         _LOGGER.info(f"Turning off zone {self.name}")
         try:
-            await self.coordinator.set_zone_state(int(self.zone_id.split('_')[1]) - 1, False)
+            current_zones = self.coordinator.data['main'].get('EnabledZones', [])
+            command = self.coordinator.api.create_command(
+                "ZONE_DISABLE", 
+                zone_index=int(self.zone_id.split('_')[1]) - 1, 
+                zones=current_zones
+            )
+            await self.coordinator.api.send_command(self.coordinator.device_id, command)
+            await self.coordinator.async_request_refresh()
         except Exception as e:
             _LOGGER.error(f"Failed to turn off zone {self.name}: {str(e)}")
-        await self.coordinator.async_request_refresh()
 
     @property
     def extra_state_attributes(self):

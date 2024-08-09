@@ -1,4 +1,3 @@
-"""Data coordinator for the Actron Air Neo integration."""
 from datetime import timedelta
 from typing import Any, Dict, Optional
 import logging
@@ -74,7 +73,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     "temp_setpoint_heat": user_aircon_settings.get("TemperatureSetpoint_Heat_oC"),
                     "indoor_temp": master_info.get("LiveTemp_oC"),
                     "indoor_humidity": master_info.get("LiveHumidity_pc"),
-                    "outdoor_temp": master_info.get("LiveOutdoorTemp_oC"),
                     "compressor_state": live_aircon.get("CompressorMode", "OFF"),
                     "EnabledZones": user_aircon_settings.get("EnabledZones", []),
                 },
@@ -103,12 +101,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_hvac_mode(self, hvac_mode: str) -> None:
         """Set HVAC mode."""
         try:
-            is_on = hvac_mode != HVACMode.OFF
-            mode = hvac_mode if hvac_mode != HVACMode.OFF else None
-            command = self.api.create_command("ON" if is_on else "OFF")
+            command = self.api.create_command("ON" if hvac_mode != HVACMode.OFF else "OFF")
             await self.api.send_command(self.device_id, command)
-            if is_on:
-                command = self.api.create_command("CLIMATE_MODE", mode=mode)
+            if hvac_mode != HVACMode.OFF:
+                command = self.api.create_command("CLIMATE_MODE", mode=hvac_mode)
                 await self.api.send_command(self.device_id, command)
             await self.async_request_refresh()
         except Exception as err:
@@ -138,13 +134,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_zone_state(self, zone_index: int, is_on: bool) -> None:
         """Set zone state."""
         try:
-            current_zones = self.data['main'].get('EnabledZones', [])
-            if zone_index < len(current_zones):
-                command = self.api.create_command("ZONE_ENABLE" if is_on else "ZONE_DISABLE", zone_index=zone_index, zones=current_zones)
-                await self.api.send_command(self.device_id, command)
-                await self.async_request_refresh()
-            else:
-                _LOGGER.error(f"Zone index {zone_index} is out of range")
+            command = self.api.create_command("ZONE_ENABLE" if is_on else "ZONE_DISABLE", zone_index=zone_index, zones=[])
+            await self.api.send_command(self.device_id, command)
+            await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error(f"Failed to set zone {zone_index} state to {'on' if is_on else 'off'}: {err}")
             raise

@@ -110,12 +110,12 @@ class ActronZoneSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn the zone on."""
-        zone_index = int(self.zone_id.split('_')[1]) - 1
+        zone_index = int(self.zone_id.split('_')[1]) - 1  # Subtract 1 to match API indexing
         await self.coordinator.set_zone_state(zone_index, True)
 
     async def async_turn_off(self, **kwargs):
         """Turn the zone off."""
-        zone_index = int(self.zone_id.split('_')[1]) - 1
+        zone_index = int(self.zone_id.split('_')[1]) - 1  # Subtract 1 to match API indexing
         await self.coordinator.set_zone_state(zone_index, False)
 
     @property

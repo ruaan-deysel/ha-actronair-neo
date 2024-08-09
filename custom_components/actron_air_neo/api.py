@@ -1,3 +1,5 @@
+# api.py
+
 import aiohttp
 import aiofiles
 import asyncio
@@ -326,9 +328,9 @@ class ActronApi:
                     "type": "set-settings"
                 }
             },
-            "CONTINUOUS_FAN": lambda state: {
+            "CONTINUOUS_FAN": lambda state, current_mode: {
                 "command": {
-                    "UserAirconSettings.ContinuousFan": state,
+                    "UserAirconSettings.FanMode": f"{current_mode}-CONT" if state else current_mode,
                     "type": "set-settings"
                 }
             },

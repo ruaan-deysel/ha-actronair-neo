@@ -65,7 +65,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             user_aircon_settings = last_known_state.get("UserAirconSettings", {})
             master_info = last_known_state.get("MasterInfo", {})
             live_aircon = last_known_state.get("LiveAircon", {})
-            system_info = data.get("systemInfo", {})
+            aircon_system = last_known_state.get("AirconSystem", {})
 
             parsed_data = {
                 "main": {
@@ -81,10 +81,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     "EnabledZones": user_aircon_settings.get("EnabledZones", []),
                     "away_mode": user_aircon_settings.get("AwayMode", False),
                     "quiet_mode": user_aircon_settings.get("QuietMode", False),
-                    "continuous_fan": user_aircon_settings.get("ContinuousFan", False),
-                    "model": system_info.get("model"),
-                    "serial_number": system_info.get("serial"),
-                    "firmware_version": system_info.get("firmwareVersion"),
+                    "continuous_fan": user_aircon_settings.get("FanMode", "").endswith("-CONT"),
+                    "model": aircon_system.get("MasterWCModel"),
+                    "serial_number": aircon_system.get("MasterSerial"),
+                    "firmware_version": aircon_system.get("MasterWCFirmwareVersion"),
                 },
                 "zones": {}
             }
@@ -174,7 +174,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_continuous_fan(self, state: bool) -> None:
         """Set continuous fan."""
         try:
-            command = self.api.create_command("CONTINUOUS_FAN", state=state)
+            current_mode = self.last_data['main']['fan_mode'].split('-')[0] if self.last_data else 'LOW'
+            command = self.api.create_command("CONTINUOUS_FAN", state=state, current_mode=current_mode)
             await self.api.send_command(self.device_id, command)
             await self.async_request_refresh()
         except Exception as err:

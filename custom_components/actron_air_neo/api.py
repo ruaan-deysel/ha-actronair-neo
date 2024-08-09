@@ -133,55 +133,55 @@ class ActronApi:
             _LOGGER.error(f"Failed to get access token: {str(e)}")
             raise AuthenticationError(f"Failed to get access token: {str(e)}")
 
-        async def _make_request(self, method: str, url: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
-            async with self.rate_limit:
-                await self._wait_for_rate_limit()
+    async def _make_request(self, method: str, url: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
+        async with self.rate_limit:
+            await self._wait_for_rate_limit()
 
-            retries = MAX_RETRIES
-            for attempt in range(retries):
-                try:
-                    headers = kwargs.get('headers', {})
-                    if auth_required:
-                        if not self.access_token or datetime.now() >= self.token_expires_at:
-                            await self._get_access_token()
-                        headers['Authorization'] = f'Bearer {self.access_token}'
-                    kwargs['headers'] = headers
+        retries = MAX_RETRIES
+        for attempt in range(retries):
+            try:
+                headers = kwargs.get('headers', {})
+                if auth_required:
+                    if not self.access_token or datetime.now() >= self.token_expires_at:
+                        await self._get_access_token()
+                    headers['Authorization'] = f'Bearer {self.access_token}'
+                kwargs['headers'] = headers
 
-                    _LOGGER.debug(f"Making {method} request to: {url}")
-                    async with self.session.request(method, url, timeout=API_TIMEOUT, **kwargs) as response:
-                        self.request_times.append(datetime.now())
-                        
-                        if response.status == 200:
-                            self.error_count = 0
-                            self.last_successful_request = datetime.now()
-                            return await response.json()
-                        elif response.status == 401 and auth_required:
-                            _LOGGER.warning("Token expired, re-authenticating...")
-                            await self.authenticate()
-                            continue
-                        elif response.status == 429:
-                            raise RateLimitError("Rate limit exceeded")
-                        else:
-                            text = await response.text()
-                            _LOGGER.error(f"API request failed: {response.status}, {text}")
-                            self.error_count += 1
-                            raise ApiError(f"API request failed: {response.status}, {text}", status_code=response.status)
+                _LOGGER.debug(f"Making {method} request to: {url}")
+                async with self.session.request(method, url, timeout=API_TIMEOUT, **kwargs) as response:
+                    self.request_times.append(datetime.now())
+                    
+                    if response.status == 200:
+                        self.error_count = 0
+                        self.last_successful_request = datetime.now()
+                        return await response.json()
+                    elif response.status == 401 and auth_required:
+                        _LOGGER.warning("Token expired, re-authenticating...")
+                        await self.authenticate()
+                        continue
+                    elif response.status == 429:
+                        raise RateLimitError("Rate limit exceeded")
+                    else:
+                        text = await response.text()
+                        _LOGGER.error(f"API request failed: {response.status}, {text}")
+                        self.error_count += 1
+                        raise ApiError(f"API request failed: {response.status}, {text}", status_code=response.status)
 
-                except aiohttp.ClientError as err:
-                    _LOGGER.error(f"Network error on attempt {attempt + 1}: {err}")
-                    self.error_count += 1
-                    if attempt == retries - 1:
-                        raise ApiError(f"Network error after {retries} attempts: {err}")
-                    await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
+            except aiohttp.ClientError as err:
+                _LOGGER.error(f"Network error on attempt {attempt + 1}: {err}")
+                self.error_count += 1
+                if attempt == retries - 1:
+                    raise ApiError(f"Network error after {retries} attempts: {err}")
+                await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
 
-                except asyncio.TimeoutError:
-                    _LOGGER.error(f"Timeout error on attempt {attempt + 1}")
-                    self.error_count += 1
-                    if attempt == retries - 1:
-                        raise ApiError(f"Timeout error after {retries} attempts")
-                    await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
+            except asyncio.TimeoutError:
+                _LOGGER.error(f"Timeout error on attempt {attempt + 1}")
+                self.error_count += 1
+                if attempt == retries - 1:
+                    raise ApiError(f"Timeout error after {retries} attempts")
+                await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
 
-            raise ApiError(f"Failed to make request after {retries} attempts")
+        raise ApiError(f"Failed to make request after {retries} attempts")
 
     async def _wait_for_rate_limit(self):
         now = datetime.now()

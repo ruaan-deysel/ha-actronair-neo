@@ -231,45 +231,29 @@ class ActronApi:
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
         _LOGGER.debug(f"Sending command to: {url}, Command: {command}")
         
-        max_retries = 3
-        for attempt in range(max_retries):
+        for attempt in range(MAX_RETRIES):
             try:
                 response = await self._make_request("POST", url, json=command)
-                _LOGGER.debug(f"Command response: {response}")
-                return response
+                if response.status == 200:
+                    _LOGGER.debug(f"Command response: {response}")
+                    return response
+                elif response.status == 504:
+                    _LOGGER.warning(f"Timeout error, retrying (attempt {attempt + 1}/{MAX_RETRIES})")
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                else:
+                    raise ApiError(f"API request failed: {response.status}", status_code=response.status)
             except ApiError as e:
-                if (attempt < max_retries - 1) and (e.status_code in [500, 502, 503, 504]):
-                    _LOGGER.warning(f"Received {e.status_code} error, retrying (attempt {attempt + 1}/{max_retries})")
+                if (attempt < MAX_RETRIES - 1) and (e.status_code in [500, 502, 503, 504]):
+                    _LOGGER.warning(f"Received {e.status_code} error, retrying (attempt {attempt + 1}/{MAX_RETRIES})")
                     await asyncio.sleep(2 ** attempt)  # Exponential backoff
                 else:
                     raise
+            except Exception as err:
+                _LOGGER.error(f"Unexpected error in send_command: {err}")
+                if attempt == MAX_RETRIES - 1:
+                    raise
 
-        raise ApiError(f"Failed to send command after {max_retries} attempts")
-
-    async def initializer(self):
-        _LOGGER.debug("Initializing ActronApi")
-        await self.load_tokens()
-        if not self.access_token or not self.refresh_token:
-            _LOGGER.debug("No valid tokens found, authenticating from scratch")
-            await self.authenticate()
-        else:
-            _LOGGER.debug("Tokens found, validating")
-            try:
-                await self.get_devices()  # This will trigger re-authentication if tokens are invalid
-            except AuthenticationError:
-                _LOGGER.warning("Stored tokens are invalid, re-authenticating")
-                await self.authenticate()
-        await self.get_ac_systems()
-        _LOGGER.debug("ActronApi initialization completed")
-
-    async def get_ac_systems(self):
-        devices = await self.get_devices()
-        if devices:
-            self.actron_serial = devices[0]['serial']
-            self.actron_system_id = devices[0].get('id', '')
-            _LOGGER.info(f"Located serial number {self.actron_serial} with ID of {self.actron_system_id}")
-        else:
-            _LOGGER.error("Could not identify target device from list of returned systems")
+        raise ApiError(f"Failed to send command after {MAX_RETRIES} attempts")
 
     def create_command(self, command_type: str, **params) -> Dict[str, Any]:
         commands = {

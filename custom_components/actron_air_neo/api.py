@@ -234,14 +234,8 @@ class ActronApi:
         for attempt in range(MAX_RETRIES):
             try:
                 response = await self._make_request("POST", url, json=command)
-                if response.status == 200:
-                    _LOGGER.debug(f"Command response: {response}")
-                    return response
-                elif response.status == 504:
-                    _LOGGER.warning(f"Timeout error, retrying (attempt {attempt + 1}/{MAX_RETRIES})")
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                else:
-                    raise ApiError(f"API request failed: {response.status}", status_code=response.status)
+                _LOGGER.debug(f"Command response: {response}")
+                return response
             except ApiError as e:
                 if (attempt < MAX_RETRIES - 1) and (e.status_code in [500, 502, 503, 504]):
                     _LOGGER.warning(f"Received {e.status_code} error, retrying (attempt {attempt + 1}/{MAX_RETRIES})")

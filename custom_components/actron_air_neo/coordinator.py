@@ -144,12 +144,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_zone_state(self, zone_index: int, enable: bool) -> None:
         """Set zone state."""
         try:
-            command = {
-                "command": {
-                    "UserAirconSettings.EnabledZones": self._modified_zone_statuses(enable, zone_index, self.data["main"]["EnabledZones"]),
-                    "type": "set-settings"
-                }
-            }
+            command = self.api.create_command("ZONE_ENABLE" if enable else "ZONE_DISABLE", zone_index=zone_index)
             await self.api.send_command(self.device_id, command)
             await self.async_request_refresh()
         except Exception as err:

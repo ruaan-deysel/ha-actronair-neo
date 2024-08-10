@@ -255,6 +255,31 @@ class ActronApi:
 
         raise ApiError(f"Failed to send command after {MAX_RETRIES} attempts")
 
+    async def initializer(self):
+        _LOGGER.debug("Initializing ActronApi")
+        await self.load_tokens()
+        if not self.access_token or not self.refresh_token:
+            _LOGGER.debug("No valid tokens found, authenticating from scratch")
+            await self.authenticate()
+        else:
+            _LOGGER.debug("Tokens found, validating")
+            try:
+                await self.get_devices()  # This will trigger re-authentication if tokens are invalid
+            except AuthenticationError:
+                _LOGGER.warning("Stored tokens are invalid, re-authenticating")
+                await self.authenticate()
+        await self.get_ac_systems()
+        _LOGGER.debug("ActronApi initialization completed")
+
+    async def get_ac_systems(self):
+        devices = await self.get_devices()
+        if devices:
+            self.actron_serial = devices[0]['serial']
+            self.actron_system_id = devices[0].get('id', '')
+            _LOGGER.info(f"Located serial number {self.actron_serial} with ID of {self.actron_system_id}")
+        else:
+            _LOGGER.error("Could not identify target device from list of returned systems")
+
     def create_command(self, command_type: str, **params) -> Dict[str, Any]:
         commands = {
             "ON": lambda: {

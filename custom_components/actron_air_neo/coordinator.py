@@ -1,4 +1,4 @@
-# coordinator.py
+# ActronAir Neo Coordinator
 
 from datetime import timedelta
 from typing import Any, Dict, Optional, List

@@ -1,4 +1,4 @@
-# climate.py
+# ActronAir Neo Climate
 
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature
 from homeassistant.components.climate.const import (

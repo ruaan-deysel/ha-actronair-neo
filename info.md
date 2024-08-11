@@ -1,3 +1,4 @@
+
 # ActronAir Neo Integration for Home Assistant
 
 > **IMPORTANT NOTICE:** This integration is currently under active development. It may contain bugs or incomplete features. Use at your own risk and please report any issues you encounter.
@@ -15,9 +16,10 @@ This integration is in active development. Here are a few things to keep in mind
 
 ## Features
 
-- Control your ActronAir Neo system (on/off, mode, temperature, fan speed)
-- Monitor current temperature and humidity
-- Automatic updates of system status
+- **Comprehensive Control**: Easily switch between modes (heat, cool, fan, auto), set temperatures, and adjust fan speeds.
+- **Real-time Monitoring**: Keep track of your home's temperature and humidity levels with up-to-date readings.
+- **Automation Friendly**: Integrate ActronAir Neo into your Home Assistant automations to maintain optimal comfort with minimal effort.
+- **Periodic Updates**: The system state is automatically refreshed based on your configured interval, ensuring your data is always current.
 
 ## Installation
 
@@ -47,14 +49,16 @@ After setup, your ActronAir Neo system will appear as a climate entity in Home A
 
 ## Entities
 
-- Climate: Main control for your ActronAir Neo system.
-- Sensor: Temperature and humidity readings.
+- **Climate**: Main control for your ActronAir Neo system.
+- **Sensor**: Temperature and humidity readings.
+
+The entities will update based on the refresh interval you have configured, providing you with the most recent data.
 
 ## Options
 
 You can adjust the following options in the integration settings:
 
-- Refresh Interval: How often the integration should fetch updates from the ActronAir Neo API.
+- **Refresh Interval**: How often the integration should fetch updates from the ActronAir Neo API.
 
 ## Troubleshooting
 
@@ -63,11 +67,11 @@ If you encounter any issues:
 1. Check that your credentials are correct.
 2. Ensure your ActronAir Neo system is online and accessible.
 3. Check the Home Assistant logs for any error messages.
-4. If you encounter a bug, please report it on our GitHub issues page.
+4. If you encounter a bug, please report it on our [GitHub issues page](https://github.com/domalab/ha-actronair-neo/issues).
 
 ## Contributing
 
-Contributions to this integration are welcome. Please fork the repository and submit a pull request with your changes.
+Contributions to this integration are welcome. Please fork the repository and submit a pull request with your changes. Make sure to follow the contribution guidelines.
 
 ## License
 
@@ -75,4 +79,4 @@ This integration is released under the MIT License.
 
 ## Disclaimer
 
-This integration is not officially associated with or endorsed by ActronAir.
+This integration is not officially associated with or endorsed by ActronAir. ActronAir trademarks belong to ActronAir, and this integration is independently developed.

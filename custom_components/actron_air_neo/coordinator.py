@@ -10,7 +10,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.components.climate.const import HVACMode
 
 from .api import ActronApi, AuthenticationError, ApiError
-from .const import DOMAIN
+from .const import DOMAIN, MAX_ZONES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,8 +90,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             }
 
             # Parse zone data
-            for i, zone in enumerate(last_known_state.get("RemoteZoneInfo", [])):
-                if zone.get("NV_Exists", False):
+            remote_zone_info = last_known_state.get("RemoteZoneInfo", [])
+            for i, zone in enumerate(remote_zone_info):
+                if i < MAX_ZONES and zone.get("NV_Exists", False):
                     zone_id = f"zone_{i+1}"
                     parsed_data["zones"][zone_id] = {
                         "name": zone.get("NV_Title", f"Zone {i+1}"),
@@ -144,8 +145,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_zone_state(self, zone_index: int, enable: bool) -> None:
         """Set zone state."""
         try:
+            current_zone_status = self.last_data['main']['EnabledZones']
+            modified_statuses = self._modified_zone_statuses(enable, zone_index, current_zone_status)
             command = self.api.create_command("ZONE_ENABLE" if enable else "ZONE_DISABLE", zone_index=zone_index)
             await self.api.send_command(self.device_id, command)
+            self.last_data['main']['EnabledZones'] = modified_statuses
+            self.last_data['zones'][f'zone_{zone_index+1}']['is_enabled'] = enable
             await self.async_request_refresh()
         except Exception as err:
             _LOGGER.error(f"Failed to set zone {zone_index + 1} state to {'on' if enable else 'off'}: {err}")
@@ -179,7 +184,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_continuous_fan(self, state: bool) -> None:
         """Set continuous fan."""
         try:
-            current_mode = self.data['main']['fan_mode'].split('-')[0] if self.data else 'LOW'
+            current_mode = self.last_data['main']['fan_mode'].split('-')[0] if self.last_data else 'LOW'
             command = self.api.create_command("CONTINUOUS_FAN", state=state, current_mode=current_mode)
             await self.api.send_command(self.device_id, command)
             await self.async_request_refresh()

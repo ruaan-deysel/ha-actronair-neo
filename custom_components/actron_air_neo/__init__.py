@@ -10,14 +10,17 @@ from .const import (
     CONF_PASSWORD,
     CONF_REFRESH_INTERVAL,
     CONF_SERIAL_NUMBER,
-    SERVICE_FORCE_UPDATE
+    SERVICE_FORCE_UPDATE,
+    PLATFORM_CLIMATE,
+    PLATFORM_SENSOR,
+    PLATFORM_SWITCH
 )
 from .coordinator import ActronDataCoordinator
 from .api import ActronApi, AuthenticationError, ApiError
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["climate", "sensor", "switch"]
+PLATFORMS = [PLATFORM_CLIMATE, PLATFORM_SENSOR, PLATFORM_SWITCH]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Actron Air Neo from a config entry."""
@@ -81,3 +84,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update listener."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Migrate old entry."""
+    _LOGGER.debug("Migrating from version %s", config_entry.version)
+
+    if config_entry.version == 1:
+        new = {**config_entry.data}
+        # TODO: modify this part as needed for actual migration steps
+
+        config_entry.version = 2
+        hass.config_entries.async_update_entry(config_entry, data=new)
+
+    _LOGGER.info("Migration to version %s successful", config_entry.version)
+
+    return True

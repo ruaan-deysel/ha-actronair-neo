@@ -1,5 +1,3 @@
-# switch.py
-
 """Support for Actron Air Neo switches."""
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
@@ -7,7 +5,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, DEVICE_MANUFACTURER, DEVICE_MODEL
+from .const import (
+    DOMAIN,
+    DEVICE_MANUFACTURER,
+    DEVICE_MODEL,
+    ATTR_ZONE_NAME,
+    ATTR_ZONE_ENABLED,
+    ICON_ZONE,
+    MAX_ZONES,
+)
 from .coordinator import ActronDataCoordinator
 
 import logging
@@ -102,8 +108,10 @@ class ActronZoneSwitch(CoordinatorEntity, SwitchEntity):
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str):
         super().__init__(coordinator)
         self.zone_id = zone_id
+        self.zone_index = int(zone_id.split('_')[1]) - 1
         self._attr_name = f"ActronAir Zone {coordinator.data['zones'][zone_id]['name']}"
         self._attr_unique_id = f"{coordinator.device_id}_zone_{zone_id}"
+        self._attr_icon = ICON_ZONE
 
     @property
     def is_on(self):
@@ -112,13 +120,17 @@ class ActronZoneSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn the zone on."""
-        zone_index = int(self.zone_id.split('_')[1]) - 1  # Subtract 1 to match API indexing
-        await self.coordinator.set_zone_state(zone_index, True)
+        try:
+            await self.coordinator.set_zone_state(self.zone_index, True)
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn on zone {self.zone_id}: {e}")
 
     async def async_turn_off(self, **kwargs):
         """Turn the zone off."""
-        zone_index = int(self.zone_id.split('_')[1]) - 1  # Subtract 1 to match API indexing
-        await self.coordinator.set_zone_state(zone_index, False)
+        try:
+            await self.coordinator.set_zone_state(self.zone_index, False)
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn off zone {self.zone_id}: {e}")
 
     @property
     def device_info(self):
@@ -136,6 +148,8 @@ class ActronZoneSwitch(CoordinatorEntity, SwitchEntity):
         """Return the state attributes."""
         zone_data = self.coordinator.data['zones'][self.zone_id]
         return {
+            ATTR_ZONE_NAME: zone_data['name'],
+            ATTR_ZONE_ENABLED: zone_data['is_enabled'],
             "temperature": zone_data.get('temp'),
             "humidity": zone_data.get('humidity'),
             "temperature_setpoint_cool": zone_data.get('temp_setpoint_cool'),

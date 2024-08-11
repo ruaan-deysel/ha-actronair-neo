@@ -26,8 +26,9 @@ HVAC_MODE_AUTO = "AUTO"
 
 # Fan modes
 FAN_LOW = "LOW"
-FAN_MEDIUM = "MEDIUM"
+FAN_MEDIUM = "MED"
 FAN_HIGH = "HIGH"
+FAN_AUTO = "AUTO"
 
 # Temperature limits
 MIN_TEMP = 10
@@ -77,3 +78,34 @@ MODE_FAN = "FAN"
 # System states
 STATE_ON = "ON"
 STATE_OFF = "OFF"
+
+# Fan modes with continuous option
+FAN_LOW_CONT = "LOW-CONT"
+FAN_MEDIUM_CONT = "MED-CONT"
+FAN_HIGH_CONT = "HIGH-CONT"
+FAN_AUTO_CONT = "AUTO-CONT"
+
+# Additional attributes
+ATTR_ENABLED_ZONES = "enabled_zones"
+ATTR_ZONE_NAME = "zone_name"
+ATTR_ZONE_ENABLED = "zone_enabled"
+
+# Config flow steps
+STEP_USER = "user"
+STEP_VALIDATE = "validate"
+
+# Platforms
+PLATFORM_CLIMATE = "climate"
+PLATFORM_SENSOR = "sensor"
+PLATFORM_SWITCH = "switch"
+
+# Entity categories
+ENTITY_CATEGORY_CONFIG = "config"
+ENTITY_CATEGORY_DIAGNOSTIC = "diagnostic"
+
+# Icon
+ICON_HVAC = "mdi:hvac"
+ICON_THERMOMETER = "mdi:thermometer"
+ICON_HUMIDITY = "mdi:water-percent"
+ICON_FAN = "mdi:fan"
+ICON_ZONE = "mdi:view-dashboard-variant"

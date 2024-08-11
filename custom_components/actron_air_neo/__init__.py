@@ -20,7 +20,7 @@ from .api import ActronApi, AuthenticationError, ApiError
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [PLATFORM_CLIMATE, PLATFORM_SENSOR, PLATFORM_SWITCH]
+PLATFORMS: list[str] = [PLATFORM_CLIMATE, PLATFORM_SENSOR, PLATFORM_SWITCH]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Actron Air Neo from a config entry."""
@@ -95,6 +95,9 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
         config_entry.version = 2
         hass.config_entries.async_update_entry(config_entry, data=new)
+    elif config_entry.version > 2:
+        _LOGGER.info("No migration needed")
+        return True
 
     _LOGGER.info("Migration to version %s successful", config_entry.version)
 

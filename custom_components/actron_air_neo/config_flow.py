@@ -1,33 +1,97 @@
-"""Config flow for Actron Air Neo integration."""
+"""Config flow for ActronAir Neo integration."""
+from __future__ import annotations
+
 import logging
+from typing import Any
+
 import voluptuous as vol
-from typing import Any, Dict, Optional
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import aiohttp_client
 
-from .const import (
-    DOMAIN,
-    CONF_USERNAME,
-    CONF_PASSWORD,
-    CONF_REFRESH_INTERVAL,
-    CONF_SERIAL_NUMBER,
-    DEFAULT_REFRESH_INTERVAL,
-)
 from .api import ActronApi, AuthenticationError, ApiError
+from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD, CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
-class ActronOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle Actron Air Neo options."""
+STEP_USER_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_USERNAME): str,
+        vol.Required(CONF_PASSWORD): str,
+        vol.Optional(CONF_REFRESH_INTERVAL, default=DEFAULT_REFRESH_INTERVAL): int,
+    }
+)
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
+    """Validate the user input allows us to connect."""
+    session = aiohttp_client.async_get_clientsession(hass)
+    api = ActronApi(data[CONF_USERNAME], data[CONF_PASSWORD], session, hass.config.path("actron_neo_tokens"))
+
+    try:
+        await api.initializer()
+        devices = await api.get_devices()
+        if not devices:
+            raise CannotConnect("No devices found")
+        
+        # For simplicity, we're selecting the first device found
+        return {"title": f"ActronAir Neo ({devices[0]['name']})", "serial_number": devices[0]['serial']}
+    except AuthenticationError as err:
+        raise InvalidAuth from err
+    except ApiError as err:
+        raise CannotConnect from err
+
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for ActronAir Neo."""
+
+    VERSION = 1
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the initial step."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                info = await validate_input(self.hass, user_input)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                return self.async_create_entry(
+                    title=info["title"], 
+                    data={
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                        CONF_REFRESH_INTERVAL: user_input[CONF_REFRESH_INTERVAL],
+                        "serial_number": info["serial_number"],
+                    }
+                )
+
+        return self.async_show_form(
+            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+        )
+
+    @staticmethod
+    @config_entries.callback
+    def async_get_options_flow(config_entry):
+        """Get the options flow for this handler."""
+        return OptionsFlowHandler(config_entry)
+
+class OptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle options."""
+
+    def __init__(self, config_entry):
         """Initialize options flow."""
         self.config_entry = config_entry
 
-    async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_init(self, user_input=None):
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
@@ -38,69 +102,16 @@ class ActronOptionsFlowHandler(config_entries.OptionsFlow):
                 {
                     vol.Optional(
                         CONF_REFRESH_INTERVAL,
-                        default=self.config_entry.options.get(CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=10, max=300)),
+                        default=self.config_entry.options.get(
+                            CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL
+                        ),
+                    ): int,
                 }
             ),
         )
 
-class ActronConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Actron Air Neo."""
+class CannotConnect(HomeAssistantError):
+    """Error to indicate we cannot connect."""
 
-    VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
-
-    async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Handle the initial step."""
-        errors: Dict[str, str] = {}
-        
-        if user_input is not None:
-            username = user_input[CONF_USERNAME]
-            password = user_input[CONF_PASSWORD]
-
-            try:
-                session = aiohttp_client.async_get_clientsession(self.hass)
-                api = ActronApi(username, password, session, self.hass.config.path("actron_neo_tokens"))
-                await api.initializer()
-
-                devices = await api.get_devices()
-                if not devices:
-                    errors["base"] = "no_devices"
-                else:
-                    # For simplicity, we're selecting the first device found
-                    serial_number = devices[0]['serial']
-                    return self.async_create_entry(
-                        title=f"ActronAir Neo ({devices[0]['name']})",
-                        data={
-                            CONF_USERNAME: username,
-                            CONF_PASSWORD: password,
-                            CONF_REFRESH_INTERVAL: user_input.get(CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL),
-                            CONF_SERIAL_NUMBER: serial_number
-                        },
-                    )
-            except AuthenticationError:
-                errors["base"] = "invalid_auth"
-            except ApiError:
-                errors["base"] = "cannot_connect"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_USERNAME): str,
-                    vol.Required(CONF_PASSWORD): str,
-                    vol.Optional(CONF_REFRESH_INTERVAL, default=DEFAULT_REFRESH_INTERVAL): vol.All(
-                        vol.Coerce(int), vol.Range(min=10, max=300)
-                    ),
-                }
-            ),
-            errors=errors,
-        )
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> ActronOptionsFlowHandler:
-        return ActronOptionsFlowHandler(config_entry)
+class InvalidAuth(HomeAssistantError):
+    """Error to indicate there is invalid auth."""

@@ -1,80 +1,61 @@
-"""Support for Actron Air Neo sensors."""
+"""Support for ActronAir Neo sensors."""
+from __future__ import annotations
+
 from homeassistant.components.sensor import (
-    SensorEntity,
     SensorDeviceClass,
+    SensorEntity,
     SensorStateClass,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature, PERCENTAGE
 from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, DEVICE_MANUFACTURER, DEVICE_MODEL
+from .const import DOMAIN
 from .coordinator import ActronDataCoordinator
 
-import logging
-
-_LOGGER = logging.getLogger(__name__)
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
-    """Set up Actron Neo sensors from a config entry."""
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up ActronAir Neo sensors from a config entry."""
     coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([
+    
+    entities = [
         ActronTemperatureSensor(coordinator, "indoor"),
-        ActronTemperatureSensor(coordinator, "wall"),
-        ActronHumiditySensor(coordinator),
-        ActronInfoSensor(coordinator, "model"),
-        ActronInfoSensor(coordinator, "serial_number"),
-        ActronInfoSensor(coordinator, "firmware_version"),
-    ])
+        ActronHumiditySensor(coordinator, "indoor"),
+    ]
 
-class ActronTemperatureSensor(CoordinatorEntity, SensorEntity):
-    """Representation of an Actron Neo Temperature Sensor."""
+    # Add zone sensors
+    for zone_id, zone_data in coordinator.data['zones'].items():
+        entities.extend([
+            ActronZoneTemperatureSensor(coordinator, zone_id),
+            ActronZoneHumiditySensor(coordinator, zone_id),
+        ])
 
-    def __init__(self, coordinator: ActronDataCoordinator, sensor_type: str):
+    async_add_entities(entities)
+
+class ActronSensorBase(CoordinatorEntity, SensorEntity):
+    """Base class for ActronAir Neo sensors."""
+
+    def __init__(
+        self, 
+        coordinator: ActronDataCoordinator, 
+        sensor_type: str,
+        device_class: SensorDeviceClass,
+        name: str,
+        unit_of_measurement: str,
+    ) -> None:
+        """Initialize the sensor."""
         super().__init__(coordinator)
-        self.sensor_type = sensor_type
-        self._attr_name = f"ActronAir {sensor_type.capitalize()} Temperature"
-        self._attr_unique_id = f"{coordinator.device_id}_{sensor_type}_temperature"
-        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._sensor_type = sensor_type
+        self._attr_device_class = device_class
+        self._attr_name = f"ActronAir Neo {name}"
+        self._attr_unique_id = f"{coordinator.device_id}_{sensor_type}"
+        self._attr_native_unit_of_measurement = unit_of_measurement
         self._attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def native_value(self):
-        """Return the state of the sensor."""
-        return self.coordinator.data['main'].get(f'{self.sensor_type}_temp')
-
-class ActronHumiditySensor(CoordinatorEntity, SensorEntity):
-    """Representation of an Actron Neo Humidity Sensor."""
-
-    def __init__(self, coordinator: ActronDataCoordinator):
-        super().__init__(coordinator)
-        self._attr_name = "ActronAir Indoor Humidity"
-        self._attr_unique_id = f"{coordinator.device_id}_indoor_humidity"
-        self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_device_class = SensorDeviceClass.HUMIDITY
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def native_value(self):
-        """Return the state of the sensor."""
-        return self.coordinator.data['main'].get('indoor_humidity')
-
-class ActronInfoSensor(CoordinatorEntity, SensorEntity):
-    """Representation of an Actron Neo Info Sensor."""
-
-    def __init__(self, coordinator: ActronDataCoordinator, info_type: str):
-        super().__init__(coordinator)
-        self.info_type = info_type
-        self._attr_name = f"ActronAir {info_type.replace('_', ' ').title()}"
-        self._attr_unique_id = f"{coordinator.device_id}_{info_type}"
-
-    @property
-    def native_value(self):
-        """Return the state of the sensor."""
-        return self.coordinator.data['main'].get(self.info_type)
 
     @property
     def device_info(self):
@@ -82,7 +63,85 @@ class ActronInfoSensor(CoordinatorEntity, SensorEntity):
         return {
             "identifiers": {(DOMAIN, self.coordinator.device_id)},
             "name": "ActronAir Neo",
-            "manufacturer": DEVICE_MANUFACTURER,
-            "model": DEVICE_MODEL,
-            "sw_version": self.coordinator.data['main'].get('firmware_version'),
+            "manufacturer": "ActronAir",
+            "model": self.coordinator.data["main"]["model"],
+            "sw_version": self.coordinator.data["main"]["firmware_version"],
         }
+
+class ActronTemperatureSensor(ActronSensorBase):
+    """Representation of an ActronAir Neo Temperature Sensor."""
+
+    def __init__(self, coordinator: ActronDataCoordinator, location: str) -> None:
+        """Initialize the temperature sensor."""
+        super().__init__(
+            coordinator,
+            f"{location}_temperature",
+            SensorDeviceClass.TEMPERATURE,
+            f"{location.capitalize()} Temperature",
+            UnitOfTemperature.CELSIUS,
+        )
+        self._location = location
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data["main"]["indoor_temp"]
+
+class ActronHumiditySensor(ActronSensorBase):
+    """Representation of an ActronAir Neo Humidity Sensor."""
+
+    def __init__(self, coordinator: ActronDataCoordinator, location: str) -> None:
+        """Initialize the humidity sensor."""
+        super().__init__(
+            coordinator,
+            f"{location}_humidity",
+            SensorDeviceClass.HUMIDITY,
+            f"{location.capitalize()} Humidity",
+            PERCENTAGE,
+        )
+        self._location = location
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data["main"]["indoor_humidity"]
+
+class ActronZoneTemperatureSensor(ActronSensorBase):
+    """Representation of an ActronAir Neo Zone Temperature Sensor."""
+
+    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
+        """Initialize the zone temperature sensor."""
+        zone_name = coordinator.data['zones'][zone_id]['name']
+        super().__init__(
+            coordinator,
+            f"{zone_id}_temperature",
+            SensorDeviceClass.TEMPERATURE,
+            f"Zone {zone_name} Temperature",
+            UnitOfTemperature.CELSIUS,
+        )
+        self._zone_id = zone_id
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data['zones'][self._zone_id]['temp']
+
+class ActronZoneHumiditySensor(ActronSensorBase):
+    """Representation of an ActronAir Neo Zone Humidity Sensor."""
+
+    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
+        """Initialize the zone humidity sensor."""
+        zone_name = coordinator.data['zones'][zone_id]['name']
+        super().__init__(
+            coordinator,
+            f"{zone_id}_humidity",
+            SensorDeviceClass.HUMIDITY,
+            f"Zone {zone_name} Humidity",
+            PERCENTAGE,
+        )
+        self._zone_id = zone_id
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data['zones'][self._zone_id]['humidity']

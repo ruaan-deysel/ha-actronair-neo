@@ -162,8 +162,7 @@ class ActronApi:
     async def _make_request(self, method: str, url: str, auth_required: bool = True, **kwargs) -> Dict[str, Any]:
         """Make an API request with rate limiting and error handling."""
         async with self.rate_limiter:
-            retries = MAX_RETRIES
-            for attempt in range(retries):
+            for attempt in range(MAX_RETRIES):
                 try:
                     headers = kwargs.get('headers', {})
                     if auth_required:
@@ -173,6 +172,7 @@ class ActronApi:
                     kwargs['headers'] = headers
 
                     _LOGGER.debug(f"Making {method} request to: {url}")
+                    _LOGGER.debug(f"Request payload: {kwargs.get('json')}")  # Log the payload
                     async with self.session.request(method, url, timeout=API_TIMEOUT, **kwargs) as response:
                         if response.status == 200:
                             self.error_count = 0
@@ -193,18 +193,18 @@ class ActronApi:
                 except aiohttp.ClientError as err:
                     _LOGGER.error(f"Network error on attempt {attempt + 1}: {err}")
                     self.error_count += 1
-                    if attempt == retries - 1:
-                        raise ApiError(f"Network error after {retries} attempts: {err}")
+                    if attempt == MAX_RETRIES - 1:
+                        raise ApiError(f"Network error after {MAX_RETRIES} attempts: {err}")
                     await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
 
                 except asyncio.TimeoutError:
                     _LOGGER.error(f"Timeout error on attempt {attempt + 1}")
                     self.error_count += 1
-                    if attempt == retries - 1:
-                        raise ApiError(f"Timeout error after {retries} attempts")
+                    if attempt == MAX_RETRIES - 1:
+                        raise ApiError(f"Timeout error after {MAX_RETRIES} attempts")
                     await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
 
-        raise ApiError(f"Failed to make request after {retries} attempts")
+        raise ApiError(f"Failed to make request after {MAX_RETRIES} attempts")
 
     def is_api_healthy(self) -> bool:
         """Check if the API is healthy based on recent errors and successful requests."""
@@ -255,8 +255,9 @@ class ActronApi:
                 return response
             except ApiError as e:
                 if (attempt < MAX_RETRIES - 1) and (e.status_code in [500, 502, 503, 504]):
-                    _LOGGER.warning(f"Received {e.status_code} error, retrying (attempt {attempt + 1}/{MAX_RETRIES})")
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    wait_time = 2 ** attempt  # exponential backoff
+                    _LOGGER.warning(f"Received {e.status_code} error, retrying in {wait_time} seconds (attempt {attempt + 1}/{MAX_RETRIES})")
+                    await asyncio.sleep(wait_time)
                 else:
                     raise
             except Exception as err:
@@ -266,22 +267,23 @@ class ActronApi:
 
         raise ApiError(f"Failed to send command after {MAX_RETRIES} attempts")
 
+    async def get_zone_statuses(self) -> List[bool]:
+        """Get the current status of all zones."""
+        status = await self.get_ac_status(self.actron_serial)
+        return status['lastKnownState']['UserAirconSettings']['EnabledZones']
+
     async def set_zone_state(self, zone_index: int, enable: bool) -> None:
         """Set the state of a specific zone."""
-        current_zone_status = self.cached_status['main'].get('EnabledZones', [])
+        current_zone_status = await self.get_zone_statuses()
+        modified_statuses = current_zone_status.copy()
+        modified_statuses[zone_index] = enable
         command = {
-            'command': {
-                'UserAirconSettings.EnabledZones': self._modified_zone_statuses(enable, zone_index, current_zone_status),
-                'type': 'set-settings'
+            "command": {
+                "UserAirconSettings.EnabledZones": modified_statuses,
+                "type": "set-settings"
             }
         }
         await self.send_command(self.actron_serial, command)
-
-    def _modified_zone_statuses(self, status: bool, zone_index: int, current_zone_status: List[bool]) -> List[bool]:
-        """Modify the zone statuses list for a specific zone."""
-        modified_statuses = current_zone_status[:]
-        modified_statuses[zone_index] = status
-        return modified_statuses
 
     async def initializer(self):
         """Initialize the ActronApi by loading tokens and authenticating."""
@@ -344,18 +346,6 @@ class ActronApi:
                     "type": "set-settings"
                 }
             },
-            "ZONE_ENABLE": lambda zone_index: {
-                "command": {
-                    f"UserAirconSettings.EnabledZones[{zone_index}]": True,
-                    "type": "set-settings"
-                }
-            },
-            "ZONE_DISABLE": lambda zone_index: {
-                "command": {
-                    f"UserAirconSettings.EnabledZones[{zone_index}]": False,
-                    "type": "set-settings"
-                }
-            },
             "AWAY_MODE": lambda state: {
                 "command": {
                     "UserAirconSettings.AwayMode": state,
@@ -368,12 +358,6 @@ class ActronApi:
                     "type": "set-settings"
                 }
             },
-            "CONTINUOUS_FAN": lambda state, current_mode: {
-                "command": {
-                    "UserAirconSettings.FanMode": f"{current_mode}-CONT" if state else current_mode,
-                    "type": "set-settings"
-                }
-            },
         }
         return commands[command_type](**params)
 
@@ -382,8 +366,10 @@ class ActronApi:
         command = self.create_command("CLIMATE_MODE", mode=mode)
         await self.send_command(self.actron_serial, command)
 
-    async def set_fan_mode(self, mode: str) -> None:
+    async def set_fan_mode(self, mode: str, continuous: bool = False) -> None:
         """Set the fan mode."""
+        if continuous:
+            mode += "-CONT"
         command = self.create_command("FAN_MODE", mode=mode)
         await self.send_command(self.actron_serial, command)
 
@@ -400,9 +386,4 @@ class ActronApi:
     async def set_quiet_mode(self, state: bool) -> None:
         """Set quiet mode."""
         command = self.create_command("QUIET_MODE", state=state)
-        await self.send_command(self.actron_serial, command)
-
-    async def set_continuous_fan(self, state: bool, current_mode: str) -> None:
-        """Set continuous fan mode."""
-        command = self.create_command("CONTINUOUS_FAN", state=state, current_mode=current_mode)
         await self.send_command(self.actron_serial, command)

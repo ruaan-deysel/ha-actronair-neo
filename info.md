@@ -29,7 +29,7 @@ This integration is in active development. Here are a few things to keep in mind
 
 ### Manual
 
-1. Copy the `actron_air_neo` folder into your `custom_components` directory.
+1. Copy the `actronair_neo` folder into your `custom_components` directory.
 2. Restart Home Assistant.
 
 ## Configuration

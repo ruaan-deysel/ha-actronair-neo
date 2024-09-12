@@ -30,48 +30,5 @@
         }
       }
     }
-  },
-  "entity": {
-    "climate": {
-      "actron_air_neo": {
-        "state_attributes": {
-          "fan_mode": {
-            "low": "Low",
-            "medium": "Medium",
-            "high": "High",
-            "auto": "Auto"
-          },
-          "hvac_mode": {
-            "off": "Off",
-            "heat": "Heat",
-            "cool": "Cool",
-            "auto": "Auto",
-            "fan_only": "Fan Only"
-          }
-        }
-      }
-    },
-    "sensor": {
-      "actronair_indoor_temperature": {
-        "name": "ActronAir Indoor Temperature"
-      },
-      "actronair_indoor_humidity": {
-        "name": "ActronAir Indoor Humidity"
-      },
-      "actronair_outdoor_temperature": {
-        "name": "ActronAir Outdoor Temperature"
-      }
-    },
-    "switch": {
-      "actronair_zone": {
-        "name": "ActronAir Zone {zone_name}"
-      }
-    }
-  },
-  "services": {
-    "force_update": {
-      "name": "Force Update",
-      "description": "Force an immediate update of the ActronAir Neo data."
-    }
   }
 }

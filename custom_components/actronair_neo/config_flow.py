@@ -28,7 +28,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
     session = aiohttp_client.async_get_clientsession(hass)
-    api = ActronApi(data[CONF_USERNAME], data[CONF_PASSWORD], session, hass.config.path("actron_neo_tokens"))
+    api = ActronApi(data[CONF_USERNAME], data[CONF_PASSWORD], session, hass.config.path())
 
     try:
         await api.initializer()
@@ -43,7 +43,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     except ApiError as err:
         raise CannotConnect from err
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for ActronAir Neo."""
 
     VERSION = 1

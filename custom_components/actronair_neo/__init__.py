@@ -33,7 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     serial_number = entry.data[CONF_SERIAL_NUMBER]
 
     session = async_get_clientsession(hass)
-    api = ActronApi(username, password, session, hass.config.path("actron_neo_tokens"))
+    api = ActronApi(username, password, session, hass.config.path())
 
     try:
         await api.initializer()

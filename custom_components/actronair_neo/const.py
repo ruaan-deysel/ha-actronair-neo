@@ -1,6 +1,6 @@
 """Constants for the ActronAir Neo integration."""
 
-DOMAIN = "actron_air_neo"
+DOMAIN = "actronair_neo"
 
 # Configuration constants
 CONF_USERNAME = "username"

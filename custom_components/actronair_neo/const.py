@@ -7,6 +7,7 @@ CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_REFRESH_INTERVAL = "refresh_interval"
 CONF_SERIAL_NUMBER = "serial_number"
+CONF_ENABLE_ZONE_CONTROL = "enable_zone_control"
 
 # Default values
 DEFAULT_REFRESH_INTERVAL = 60  # seconds
@@ -83,6 +84,9 @@ FAN_MEDIUM_CONT = "MED-CONT"
 FAN_HIGH_CONT = "HIGH-CONT"
 FAN_AUTO_CONT = "AUTO-CONT"
 
+# Fan mode constants
+ATTR_CONTINUOUS_FAN = "continuous_fan"
+
 # Additional attributes
 ATTR_ENABLED_ZONES = "enabled_zones"
 
@@ -94,9 +98,10 @@ STEP_VALIDATE = "validate"
 PLATFORM_CLIMATE = "climate"
 PLATFORM_SENSOR = "sensor"
 PLATFORM_SWITCH = "switch"
+PLATFORM_BINARY_SENSOR = "binary_sensor"
 
 # List of all supported platforms
-PLATFORMS = [PLATFORM_CLIMATE, PLATFORM_SENSOR, PLATFORM_SWITCH]
+PLATFORMS = [PLATFORM_CLIMATE, PLATFORM_SENSOR, PLATFORM_SWITCH, PLATFORM_BINARY_SENSOR]
 
 # Entity categories
 ENTITY_CATEGORY_CONFIG = "config"
@@ -108,3 +113,34 @@ ICON_THERMOMETER = "mdi:thermometer"
 ICON_HUMIDITY = "mdi:water-percent"
 ICON_FAN = "mdi:fan"
 ICON_ZONE = "mdi:view-dashboard-variant"
+
+# Diagnostic Attributes
+ATTR_BATTERY_LEVEL = "battery_level"
+ATTR_FILTER_STATUS = "filter_status"
+ATTR_DEFROST_STATUS = "defrost_status"
+ATTR_ZONE_STATUS = "zone_status"
+ATTR_COMPRESSOR_STATUS = "compressor_status"
+ATTR_ZONE_NAME = "zone_name"
+ATTR_ZONE_TYPE = "zone_type"
+ATTR_SIGNAL_STRENGTH = "signal_strength"
+ATTR_LAST_UPDATED = "last_updated"
+
+# Sensor related constants
+SENSOR_TEMPERATURE = "temperature"
+SENSOR_HUMIDITY = "humidity"
+SENSOR_BATTERY = "battery"
+SENSOR_SIGNAL = "signal_strength"
+
+# Device state attributes
+ATTR_PERIPHERAL_TYPE = "peripheral_type"
+ATTR_FIRMWARE = "firmware_version"
+ATTR_CONNECTION_STATE = "connection_state"
+ATTR_LAST_CONNECTION = "last_connection"
+ATTR_INDOOR_TEMP = "indoor_temperature"
+ATTR_PERIPHERAL_INFO = "peripheral_info"
+
+# Diagnostic categories 
+DIAG_SYSTEM = "system_status"
+DIAG_ENVIRONMENTAL = "environmental"
+DIAG_ZONES = "zones"
+DIAG_INFO = "info"

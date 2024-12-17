@@ -69,6 +69,33 @@ class ActronApi:
         self.error_count = 0
         self.last_successful_request = None
         self.cached_status = None
+        self._last_fan_mode_change = None
+        self._fan_mode_change_lock = asyncio.Lock()
+        self._min_fan_mode_interval = 5  # Minimum seconds between fan mode changes
+
+
+    def validate_fan_mode(self, mode: str, continuous: bool = False) -> str:
+        """Validate and format fan mode.
+        
+        Args:
+            mode: The fan mode to validate (LOW, MED, HIGH, AUTO)
+            continuous: Whether to add -CONT suffix
+            
+        Returns:
+            Validated and formatted fan mode string
+        """
+        # First strip any existing continuous suffix
+        base_mode = mode.split('-')[0] if '-' in mode else mode
+        base_mode = base_mode.split('+')[0] if '+' in mode else base_mode
+        
+        valid_modes = ["LOW", "MED", "HIGH", "AUTO"]
+        base_mode = base_mode.upper()
+        
+        if base_mode not in valid_modes:
+            _LOGGER.warning(f"Invalid fan mode {mode}, defaulting to LOW")
+            base_mode = "LOW"
+            
+        return f"{base_mode}-CONT" if continuous else base_mode
 
     async def load_tokens(self):
         """Load authentication tokens from storage."""
@@ -302,12 +329,12 @@ class ActronApi:
         current_zone_status = await self.get_zone_statuses()
         modified_statuses = current_zone_status.copy()
         modified_statuses[zone_index] = enable
-        command = {
-            "command": {
-                "UserAirconSettings.EnabledZones": modified_statuses,
-                "type": "set-settings"
-            }
-        }
+        command = self.create_command("SET_ZONE_STATE", zones=modified_statuses)
+        await self.send_command(self.actron_serial, command)
+
+    async def set_zone_temperature(self, zone_index: int, temperature: float, is_cooling: bool) -> None:
+        """Set the temperature for a specific zone."""
+        command = self.create_command("SET_ZONE_TEMP", zone=zone_index, temp=temperature, is_cool=is_cooling)
         await self.send_command(self.actron_serial, command)
 
     async def initializer(self):
@@ -383,7 +410,19 @@ class ActronApi:
                     "type": "set-settings"
                 }
             },
-        }
+            "SET_ZONE_TEMP": lambda zone, temp, temp_key: {
+                "command": {
+                    f"RemoteZoneInfo[{zone}].{temp_key}": temp,
+                    "type": "set-settings"
+                }
+            },
+            "SET_ZONE_STATE": lambda zones: {
+                "command": {
+                    "UserAirconSettings.EnabledZones": zones,
+                    "type": "set-settings"
+                }
+            },
+        }    
         return commands[command_type](**params)
 
     async def set_climate_mode(self, mode: str) -> None:
@@ -392,11 +431,30 @@ class ActronApi:
         await self.send_command(self.actron_serial, command)
 
     async def set_fan_mode(self, mode: str, continuous: bool = False) -> None:
-        """Set the fan mode."""
-        if continuous:
-            mode += "-CONT"
-        command = self.create_command("FAN_MODE", mode=mode)
-        await self.send_command(self.actron_serial, command)
+        """Set fan mode with rate limiting and state transition management."""
+        try:
+            async with self._fan_mode_change_lock:
+                # Check if enough time has passed since last fan mode change
+                now = datetime.now()
+                if self._last_fan_mode_change:
+                    time_since_last = (now - self._last_fan_mode_change).total_seconds()
+                    if time_since_last < self._min_fan_mode_interval:
+                        await asyncio.sleep(self._min_fan_mode_interval - time_since_last)
+
+                # Validate and send command
+                validated_mode = self.validate_fan_mode(mode, continuous)
+                command = self.create_command("FAN_MODE", mode=validated_mode)
+                await self.send_command(self.actron_serial, command)
+
+                # Update last change time
+                self._last_fan_mode_change = datetime.now()
+
+                # Add small delay after command
+                await asyncio.sleep(1)
+
+        except Exception as err:
+            _LOGGER.error(f"Failed to set fan mode {mode} (continuous={continuous}): {err}")
+            raise
 
     async def set_temperature(self, temperature: float, is_cooling: bool) -> None:
         """Set the temperature."""

@@ -7,7 +7,8 @@
         "data": {
           "username": "Username",
           "password": "Password",
-          "refresh_interval": "Refresh Interval (seconds)"
+          "refresh_interval": "Refresh Interval (seconds)",
+          "enable_zone_control": "Enable Individual Zone Control"
         }
       }
     },
@@ -26,7 +27,8 @@
       "init": {
         "title": "ActronAir Neo Options",
         "data": {
-          "refresh_interval": "Refresh Interval (seconds)"
+          "refresh_interval": "Refresh Interval (seconds)",
+          "enable_zone_control": "Enable Individual Zone Control"
         }
       }
     }

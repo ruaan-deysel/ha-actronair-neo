@@ -1,27 +1,35 @@
 """The ActronAir Neo integration."""
-import asyncio
 import logging
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers import service
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import entity_registry as er
 from .const import (
     DOMAIN,
     CONF_USERNAME,
     CONF_PASSWORD,
     CONF_REFRESH_INTERVAL,
     CONF_SERIAL_NUMBER,
+    CONF_ENABLE_ZONE_CONTROL,
     SERVICE_FORCE_UPDATE,
     PLATFORM_CLIMATE,
     PLATFORM_SENSOR,
-    PLATFORM_SWITCH
+    PLATFORM_SWITCH,
+    PLATFORM_BINARY_SENSOR
 )
 from .coordinator import ActronDataCoordinator
 from .api import ActronApi, AuthenticationError, ApiError
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[str] = [PLATFORM_CLIMATE, PLATFORM_SENSOR, PLATFORM_SWITCH]
+PLATFORMS: list[str] = [
+    PLATFORM_CLIMATE,
+    PLATFORM_SENSOR,
+    PLATFORM_SWITCH,
+    PLATFORM_BINARY_SENSOR
+]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up ActronAir Neo from a config entry."""
@@ -44,7 +52,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error("Failed to connect to ActronAir Neo API: %s", api_err)
         raise ConfigEntryNotReady from api_err
 
-    coordinator = ActronDataCoordinator(hass, api, serial_number, refresh_interval)
+    enable_zone_control = entry.options.get(CONF_ENABLE_ZONE_CONTROL, False)
+    coordinator = ActronDataCoordinator(hass, api, serial_number, refresh_interval, enable_zone_control)
 
     await coordinator.async_config_entry_first_refresh()
 
@@ -52,9 +61,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    async def force_update(call):
+    entry.async_on_unload(entry.add_update_listener(update_listener))
+
+    async def force_update(call: ServiceCall) -> None:
         """Force update of all entities."""
-        await coordinator.async_request_refresh()
+        target_entities = await service.async_extract_entities(hass, call)
+        for entity in target_entities:
+            if entity.domain == PLATFORM_CLIMATE:
+                coordinator = hass.data[DOMAIN][entity.platform.config_entry.entry_id]
+                await coordinator.async_request_refresh()
 
     hass.services.async_register(DOMAIN, SERVICE_FORCE_UPDATE, force_update)
 
@@ -72,13 +87,40 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Update listener."""
-    await hass.config_entries.async_reload(entry.entry_id)
+    """Handle configuration entry updates with safe entity cleanup.
+    
+    This method ensures proper cleanup of entities when disabling zone control
+    and maintains system stability during configuration changes.
+    """
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    old_enable_zone_control = coordinator.enable_zone_control
+    new_enable_zone_control = entry.options[CONF_ENABLE_ZONE_CONTROL]
 
-async def force_update(hass, call):
-    """Force update of all entities."""
-    for entry_id, coordinator in hass.data[DOMAIN].items():
-        await coordinator.async_request_refresh()
+    try:
+        if old_enable_zone_control and not new_enable_zone_control:
+            _LOGGER.debug("Zone control being disabled, cleaning up entities")
+            entity_registry = er.async_get(hass)
+            entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+            
+            # First, remove entities from registry
+            for entity_entry in entries:
+                if entity_entry.unique_id.startswith(f"{coordinator.device_id}_zone_"):
+                    _LOGGER.debug(f"Removing entity: {entity_entry.entity_id}")
+                    entity_registry.async_remove(entity_entry.entity_id)
+            
+            # Then update coordinator state
+            await coordinator.set_enable_zone_control(new_enable_zone_control)
+            
+            # Finally, request a state refresh
+            await coordinator.async_request_refresh()
+        
+        # Reload the config entry to apply changes
+        await hass.config_entries.async_reload(entry.entry_id)
+        _LOGGER.info(f"Successfully updated zone control setting to: {new_enable_zone_control}")
+        
+    except Exception as err:
+        _LOGGER.error(f"Error updating zone control setting: {err}")
+        raise
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry."""

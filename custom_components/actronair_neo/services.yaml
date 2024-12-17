@@ -1,3 +1,11 @@
 force_update:
   name: Force Update
-  description: Force an immediate update of the ActronAir Neo data.
+  description: >
+    Force an immediate update of the ActronAir Neo data. This will fetch the latest
+    data from the ActronAir Neo API for the specified device(s), bypassing the
+    normal update interval.
+  target:
+    entity:
+      integration: actronair_neo
+      domain: climate
+  fields: {}

@@ -1,11 +1,11 @@
 """The ActronAir Neo integration."""
 import logging
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import service
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import entity_registry as er
+from homeassistant.config_entries import ConfigEntry # type: ignore
+from homeassistant.core import HomeAssistant, ServiceCall # type: ignore
+from homeassistant.helpers import service # type: ignore
+from homeassistant.helpers.aiohttp_client import async_get_clientsession # type: ignore
+from homeassistant.exceptions import ConfigEntryNotReady # type: ignore
+from homeassistant.helpers import entity_registry as er # type: ignore
 from .const import (
     DOMAIN,
     CONF_USERNAME,

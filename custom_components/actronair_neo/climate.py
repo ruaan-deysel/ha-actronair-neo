@@ -4,26 +4,26 @@ from __future__ import annotations
 from typing import Any
 import logging
 
-from homeassistant.components.climate import (
+from homeassistant.components.climate import ( # type: ignore
     ClimateEntity,
     ClimateEntityFeature,
     HVACMode,
 )
-from homeassistant.components.climate.const import (
+from homeassistant.components.climate.const import ( # type: ignore
     FAN_LOW,
     FAN_MEDIUM,
     FAN_HIGH,
     FAN_AUTO,
 )
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
+from homeassistant.config_entries import ConfigEntry # type: ignore
+from homeassistant.const import ( # type: ignore
     ATTR_TEMPERATURE,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers import entity_registry as er
+from homeassistant.core import HomeAssistant # type: ignore
+from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
+from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: ignore
+from homeassistant.helpers import entity_registry as er # type: ignore
 
 from .const import (
     DOMAIN,

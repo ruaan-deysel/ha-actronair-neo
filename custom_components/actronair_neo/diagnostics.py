@@ -5,10 +5,10 @@ from typing import Any
 import logging
 from datetime import datetime
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.components.diagnostics import async_redact_data
-from homeassistant.util import dt as dt_util
+from homeassistant.config_entries import ConfigEntry # type: ignore
+from homeassistant.core import HomeAssistant # type: ignore
+from homeassistant.components.diagnostics import async_redact_data # type: ignore
+from homeassistant.util import dt as dt_util # type: ignore
 
 from .const import DOMAIN
 

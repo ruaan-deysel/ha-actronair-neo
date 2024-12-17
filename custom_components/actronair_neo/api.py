@@ -1,8 +1,8 @@
 # ActronAir Neo API
 
 import os
-import aiohttp
-import aiofiles
+import aiohttp # type: ignore
+import aiofiles # type: ignore
 import asyncio
 import json
 import logging

@@ -4,13 +4,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import voluptuous as vol
+import voluptuous as vol # type: ignore
 
-from homeassistant import config_entries
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import aiohttp_client
+from homeassistant import config_entries # type: ignore
+from homeassistant.core import HomeAssistant, callback # type: ignore
+from homeassistant.data_entry_flow import FlowResult # type: ignore
+from homeassistant.exceptions import HomeAssistantError # type: ignore
+from homeassistant.helpers import aiohttp_client # type: ignore
 
 from .api import ActronApi, AuthenticationError, ApiError
 from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD, CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL, CONF_ENABLE_ZONE_CONTROL

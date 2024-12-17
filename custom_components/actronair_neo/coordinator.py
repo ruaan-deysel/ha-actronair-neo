@@ -1,13 +1,13 @@
 # ActronAir Neo Coordinator
 
 from datetime import timedelta
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict
 import logging
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.components.climate.const import HVACMode
+from homeassistant.core import HomeAssistant # type: ignore
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed # type: ignore
+from homeassistant.exceptions import ConfigEntryAuthFailed # type: ignore
+from homeassistant.components.climate.const import HVACMode # type: ignore
 
 from .api import ActronApi, AuthenticationError, ApiError
 from .const import DOMAIN, MAX_ZONES

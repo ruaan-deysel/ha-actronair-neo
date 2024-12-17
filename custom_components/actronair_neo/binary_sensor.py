@@ -4,20 +4,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.binary_sensor import (
+from homeassistant.components.binary_sensor import ( # type: ignore
     BinarySensorEntity,
     BinarySensorDeviceClass,
 )
-from homeassistant.components.sensor import (
-    SensorEntity,
-    SensorDeviceClass,
-)
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import EntityCategory  # Add this import
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import StateType
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.config_entries import ConfigEntry # type: ignore
+from homeassistant.core import HomeAssistant # type: ignore
+from homeassistant.helpers.entity import EntityCategory  # type: ignore # Add this import
+from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
+from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: ignore
 
 from .const import DOMAIN
 from .coordinator import ActronDataCoordinator

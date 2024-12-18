@@ -31,6 +31,7 @@ async def async_setup_entry(
     entities = [
         ActronFilterStatusSensor(coordinator),
         ActronSystemStatusSensor(coordinator),
+        ActronHealthMonitorSensor(coordinator),
     ]
     async_add_entities(entities)
 
@@ -127,7 +128,7 @@ class ActronSystemStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
 
             return True
 
-        except Exception as err:
+        except (KeyError, TypeError, ValueError) as err:
             _LOGGER.debug("Status validation failed: %s", err)
             return False
 
@@ -218,7 +219,7 @@ class ActronSystemStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
 
             return formatted_zones
 
-        except Exception as err:
+        except (KeyError, TypeError, ValueError) as err:
             _LOGGER.error("Error formatting zones: %s", err)
             return {}
 
@@ -226,7 +227,7 @@ class ActronSystemStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
         """Get the current operation mode for a zone."""
         if not zone_data.get("is_enabled", False):
             return "Off"
-        
+
         # If we have performance data for the zone, we could add more states here
         return "Running"
 
@@ -357,12 +358,15 @@ class ActronSystemStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
         """Return diagnostic attributes."""
         try:
             data = self.coordinator.data["main"]
-            raw_data = self.coordinator.data["raw_data"]
+            raw_data = self.coordinator.data.get("raw_data", {})
+            device_id = self.coordinator.device_id.upper()
+            last_known_state = raw_data.get("lastKnownState", {}).get(f"<{device_id}>", {})
+            live_aircon = last_known_state.get("LiveAircon", {})
+            outdoor_unit = live_aircon.get("OutdoorUnit", {})
             
-            # Basic attributes we know we can access
             attributes = {
-                # Basic system state - These are reliable
-                "compressor_state": data.get("compressor_state", self.UNKNOWN_VALUE),
+                # Basic system state
+                "compressor_state": live_aircon.get("CompressorMode", self.UNKNOWN_VALUE),
                 "operating_mode": data.get("mode", self.UNKNOWN_VALUE),
                 "fan_mode": data.get("fan_mode", self.UNKNOWN_VALUE),
                 "defrosting": self.YES_VALUE if data.get("defrosting") else self.NO_VALUE,
@@ -373,60 +377,175 @@ class ActronSystemStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
                     self.ENABLED_VALUE if data.get("away_mode") else self.DISABLED_VALUE
                 ),
                 
-                # Environmental conditions - These are reliable
-                "indoor_temperature": self._format_temperature(data.get("indoor_temp")),
-                "indoor_humidity": self._format_percentage(data.get("indoor_humidity")),
+                # Fan Performance Data
+                "fan_performance": {
+                    "rpm": f"{live_aircon.get('FanRPM', 0)} RPM",
+                    "pwm": f"{live_aircon.get('FanPWM', 0)}%",
+                    "status": (
+                        self.RUNNING_VALUE if live_aircon.get("AmRunningFan") 
+                        else self.OFF_VALUE
+                    )
+                },
                 
-                # System info - These are reliable
+                # Compressor Performance
+                "compressor": {
+                    "capacity": f"{live_aircon.get('CompressorCapacity', 0)}%",
+                    "target_temp": self._format_temperature(
+                        live_aircon.get("CompressorChasingTemperature")
+                    ),
+                    "current_temp": self._format_temperature(
+                        live_aircon.get("CompressorLiveTemperature")
+                    ),
+                    "power": f"{outdoor_unit.get('CompPower', 0)} W",
+                    "speed": f"{outdoor_unit.get('CompSpeed', 0)} RPM",
+                    "status": (
+                        self.RUNNING_VALUE if outdoor_unit.get("CompressorOn") 
+                        else self.OFF_VALUE
+                    ),
+                    "valve_position": outdoor_unit.get("ReverseValvePosition", self.UNKNOWN_VALUE)
+                },
+                
+                # Temperature Readings
+                "temperatures": {
+                    "indoor": self._format_temperature(data.get("indoor_temp")),
+                    "coil_inlet": self._format_temperature(live_aircon.get("CoilInlet")),
+                    "outdoor_coil": self._format_temperature(outdoor_unit.get("CoilTemp")),
+                    "ambient": self._format_temperature(
+                        last_known_state.get("SystemStatus_Local", {})
+                        .get("SensorInputs", {})
+                        .get("SHTC1", {})
+                        .get("Temperature_oC")
+                    )
+                },
+                
+                # System Info
                 "filter_status": (
                     "Needs Cleaning" if data.get("filter_clean_required") else "Clean"
                 ),
                 "firmware_version": f"v{data.get('firmware_version', self.UNKNOWN_VALUE)}",
             }
 
-            # Check if we have zones data
-            zones = self.coordinator.data.get("zones", {})
-            if zones:
-                attributes["zones"] = self._format_zones(zones)
+            # Add zone information with better formatting
+            zones = {}
+            for zone_id, zone_data in self.coordinator.data.get("zones", {}).items():
+                zone_info = {
+                    "state": "Active" if zone_data.get("is_enabled", False) else "Inactive",
+                    "temperature": self._format_temperature(zone_data.get("temp")),
+                    "humidity": self._format_percentage(zone_data.get("humidity")),
+                }
 
-            # Try to get status data for extended diagnostics
-            status = raw_data.get("lastKnownState", {}).get(
-                f"<{self.coordinator.device_id.upper()}>", {}
-            )
-
-            # Only add extended diagnostics if we have valid data
-            if status:
-                system_status = status.get("SystemStatus_Local", {})
-                if system_status:
-                    attributes["connection"] = {
-                        "wifi_signal": self._format_wifi_signal(system_status.get("WifiStrength_of3")),
-                        "wifi_firmware": system_status.get("WiFi", {}).get("FirmwareVersion", self.UNKNOWN_VALUE),
-                        "uptime": self._format_uptime(system_status.get("Uptime_s", 0)),
-                    }
-
-                live_aircon = status.get("LiveAircon", {})
-                if live_aircon:
-                    attributes["performance"] = {
-                        "fan_status": (
-                            self.RUNNING_VALUE if live_aircon.get("AmRunningFan") else self.OFF_VALUE
+                # Add sensor information
+                peripheral = self.coordinator.get_zone_peripheral(zone_id)
+                if peripheral:
+                    sensor_info = {
+                        "battery_level": self._format_percentage(
+                            peripheral.get("RemainingBatteryCapacity_pc")
                         ),
-                        "system_status": (
-                            self.RUNNING_VALUE if live_aircon.get("SystemOn") else self.OFF_VALUE
+                        "signal_strength": f"{peripheral.get('RSSI', {}).get('Local', 0)} dBm",
+                        "connection_state": peripheral.get("ConnectionState", self.UNKNOWN_VALUE),
+                        "last_connection": peripheral.get("LastConnectionTime", self.UNKNOWN_VALUE),
+                    }
+                    
+                    # Add temperature readings if available
+                    sensor_inputs = peripheral.get("SensorInputs", {})
+                    thermistors = sensor_inputs.get("Thermistors", {})
+                    if thermistors:
+                        sensor_info["wall_temp"] = self._format_temperature(
+                            thermistors.get("Wall_oC")
                         )
-                    }
+                        sensor_info["ambient_temp"] = self._format_temperature(
+                            thermistors.get("Ambient_oC")
+                        )
+                    
+                    zone_info["sensor"] = sensor_info
 
-                aircon_system = status.get("AirconSystem", {})
-                if aircon_system:
-                    attributes["hardware"] = {
-                        "model": aircon_system.get("MasterWCModel", self.UNKNOWN_VALUE),
-                        "firmware": f"v{aircon_system.get('MasterWCFirmwareVersion', self.UNKNOWN_VALUE)}"
-                    }
+                zones[zone_data["name"]] = zone_info
+
+            if zones:
+                attributes["zones"] = zones
+
+            # Add connection info
+            sys_status = last_known_state.get("SystemStatus_Local", {})
+            cloud_status = last_known_state.get("Cloud", {})
+            wifi_info = sys_status.get("WiFi", {})
+            
+            attributes["connection"] = {
+                "wifi_signal": self._format_wifi_signal(sys_status.get("WifiStrength_of3")),
+                "wifi_ssid": wifi_info.get("ApSSID", self.UNKNOWN_VALUE),
+                "wifi_firmware": wifi_info.get("FirmwareVersion", self.UNKNOWN_VALUE),
+                "connection_state": cloud_status.get("ConnectionState", self.UNKNOWN_VALUE),
+                "uptime": self._format_uptime(sys_status.get("Uptime_s", 0)),
+                "wifi_errors": wifi_info.get("HardwareErrorCount", 0),
+                "last_status_update": raw_data.get("lastStatusUpdate", self.UNKNOWN_VALUE)
+            }
 
             return attributes
 
-        except Exception as err:
-            _LOGGER.error("Error getting attributes: %s", err)
+        except (KeyError, TypeError, ValueError) as err:
+            _LOGGER.error("Error getting attributes: %s", str(err), exc_info=True)
             return {
                 "error": "Failed to get attributes",
+                "error_details": str(err)
+            }
+
+class ActronHealthMonitorSensor(ActronDiagnosticBase, BinarySensorEntity):
+    """Monitor system health and errors."""
+
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_icon = "mdi:alert-circle"
+
+    def __init__(self, coordinator: ActronDataCoordinator) -> None:
+        """Initialize the health monitor."""
+        super().__init__(coordinator, "system_health", "System Health")
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if there are system issues."""
+        try:
+            raw_data = self.coordinator.data["raw_data"]
+            last_known_state = raw_data.get("lastKnownState", {}).get(
+                f"<{self.coordinator.device_id.upper()}>", {}
+            )
+            live_aircon = last_known_state.get("LiveAircon", {})
+
+            # Check for various error conditions
+            has_error = (
+                bool(live_aircon.get("ErrCode", 0) != 0) or
+                bool(last_known_state.get("Servicing", {}).get("NV_ErrorHistory", []))
+            )
+
+            return has_error
+
+        except (KeyError, TypeError, ValueError) as err:
+            _LOGGER.error("Error checking system health: %s", err)
+            return False
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return health-related attributes."""
+        try:
+            raw_data = self.coordinator.data["raw_data"]
+            last_known_state = raw_data.get("lastKnownState", {}).get(
+                f"<{self.coordinator.device_id.upper()}>", {}
+            )
+            servicing = last_known_state.get("Servicing", {})
+            live_aircon = last_known_state.get("LiveAircon", {})
+
+            return {
+                "error_code": live_aircon.get("ErrCode", 0),
+                "error_history": servicing.get("NV_ErrorHistory", []),
+                "recent_events": servicing.get("NV_AC_EventHistory", [])[:5],
+                "system_checks": {
+                    "fan_rpm_error": live_aircon.get("FanRPM", 0) == 0 and 
+                                live_aircon.get("AmRunningFan", False),
+                    "compressor_error": live_aircon.get("CompressorCapacity", 0) == 0 and 
+                                    live_aircon.get("SystemOn", False),
+                }
+            }
+
+        except (KeyError, TypeError, ValueError) as err:
+            _LOGGER.error("Error getting health attributes: %s", err)
+            return {
+                "error": "Failed to get health attributes",
                 "error_details": str(err)
             }

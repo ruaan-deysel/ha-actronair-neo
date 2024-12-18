@@ -13,7 +13,14 @@ from homeassistant.exceptions import HomeAssistantError # type: ignore
 from homeassistant.helpers import aiohttp_client # type: ignore
 
 from .api import ActronApi, AuthenticationError, ApiError
-from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD, CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL, CONF_ENABLE_ZONE_CONTROL
+from .const import (
+    DOMAIN,
+    CONF_USERNAME,
+    CONF_PASSWORD,
+    CONF_REFRESH_INTERVAL,
+    DEFAULT_REFRESH_INTERVAL,
+    CONF_ENABLE_ZONE_CONTROL
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +43,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         devices = await api.get_devices()
         if not devices:
             raise CannotConnect("No devices found")
-        
+
         # For simplicity, we're selecting the first device found
         return {"title": f"ActronAir Neo ({devices[0]['name']})", "serial_number": devices[0]['serial']}
     except AuthenticationError as err:
@@ -66,7 +73,7 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 return self.async_create_entry(
-                    title=info["title"], 
+                    title=info["title"],
                     data={
                         CONF_USERNAME: user_input[CONF_USERNAME],
                         CONF_PASSWORD: user_input[CONF_PASSWORD],
@@ -93,7 +100,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        super().__init__(config_entry)
         self._config_entry = config_entry
 
     async def async_step_init(self, user_input=None):

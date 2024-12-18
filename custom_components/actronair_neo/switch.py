@@ -1,6 +1,8 @@
 """Support for ActronAir Neo switches."""
 from __future__ import annotations
-
+import datetime
+import logging
+import asyncio
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity # type: ignore
@@ -12,6 +14,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: i
 from .const import DOMAIN, ICON_ZONE
 from .coordinator import ActronDataCoordinator
 
+_LOGGER = logging.getLogger(__name__)
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -19,7 +23,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up ActronAir Neo switches from a config entry."""
     coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
-    
+
     entities = [
         ActronAwayModeSwitch(coordinator),
         ActronQuietModeSwitch(coordinator),
@@ -107,26 +111,80 @@ class ActronContinuousFanSwitch(ActronBaseSwitch):
     @property
     def is_on(self) -> bool:
         """Return true if continuous fan mode is on."""
-        return self.coordinator.continuous_fan
+        return self.coordinator.data["main"].get("fan_continuous", False)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
-        current_mode = self.coordinator.data["main"]["fan_mode"].split("-")[0]
-        self.coordinator.continuous_fan = True
-        await self.coordinator.set_fan_mode(current_mode, True)
+        try:
+            # Get current base fan mode from coordinator data
+            fan_mode = self.coordinator.data["main"].get("base_fan_mode", "LOW")
+            
+            # Validate base mode
+            valid_modes = ["LOW", "MED", "HIGH", "AUTO"]
+            if fan_mode not in valid_modes:
+                _LOGGER.warning("Invalid base fan mode %s, defaulting to LOW", fan_mode)
+                fan_mode = "LOW"
+                
+            _LOGGER.debug("Turning on continuous mode with base mode: %s", fan_mode)
+            
+            # Set fan mode with continuous enabled
+            await self.coordinator.set_fan_mode(fan_mode, True)
+            
+            # Request refresh to update state
+            await asyncio.sleep(1)  # Short delay for API processing
+            await self.coordinator.async_request_refresh()
+            
+            if not self.coordinator.data["main"].get("fan_continuous"):
+                _LOGGER.warning("Continuous mode did not activate as expected")
+                
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to turn on continuous fan mode: %s", 
+                str(err), 
+                exc_info=True
+            )
+            raise
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
-        current_mode = self.coordinator.data["main"]["fan_mode"].split("-")[0]
-        self.coordinator.continuous_fan = False
-        await self.coordinator.set_fan_mode(current_mode, False)
+        try:
+            # Get current base fan mode from coordinator data
+            fan_mode = self.coordinator.data["main"].get("base_fan_mode", "LOW")
+            
+            # Validate base mode
+            valid_modes = ["LOW", "MED", "HIGH", "AUTO"]
+            if fan_mode not in valid_modes:
+                _LOGGER.warning("Invalid base fan mode %s, defaulting to LOW", fan_mode)
+                fan_mode = "LOW"
+                
+            _LOGGER.debug("Turning off continuous mode, maintaining base mode: %s", fan_mode)
+            
+            # Set fan mode with continuous disabled
+            await self.coordinator.set_fan_mode(fan_mode, False)
+            
+            # Request refresh to update state
+            await asyncio.sleep(1)  # Short delay for API processing
+            await self.coordinator.async_request_refresh()
+            
+            if self.coordinator.data["main"].get("fan_continuous"):
+                _LOGGER.warning("Continuous mode did not deactivate as expected")
+                
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to turn off continuous fan mode: %s", 
+                str(err), 
+                exc_info=True
+            )
+            raise
 
-    async def async_update(self) -> None:
-        """Update the switch state from coordinator."""
-        await super().async_update()
-        # Update coordinator state based on actual AC state
-        fan_mode = self.coordinator.data["main"]["fan_mode"]
-        self.coordinator.continuous_fan = fan_mode.endswith("-CONT") if fan_mode else False
+        @property
+        def extra_state_attributes(self) -> dict[str, Any]:
+            """Return additional state attributes."""
+            return {
+                "base_fan_mode": self.coordinator.data["main"].get("base_fan_mode"),
+                "fan_mode": self.coordinator.data["main"].get("fan_mode"),
+                "last_update": datetime.now().isoformat(),
+            }
 
 class ActronZoneSwitch(CoordinatorEntity, SwitchEntity):
     """Representation of an Actron Neo Zone switch."""

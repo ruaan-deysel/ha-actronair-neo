@@ -35,14 +35,14 @@ async def async_setup_entry(
 ) -> None:
     """Set up ActronAir Neo sensors from a config entry."""
     coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
-    
+
     entities = [
         ActronMainSensor(coordinator),
     ]
 
     # Add zone sensors
     for zone_id, zone_data in coordinator.data['zones'].items():
-        _LOGGER.debug(f"Adding zone sensor for {zone_id}: {zone_data}")
+        _LOGGER.debug("Adding zone sensor for %s: %s", zone_id, zone_data)
         entities.append(ActronZoneSensor(coordinator, zone_id))
 
     async_add_entities(entities)
@@ -50,10 +50,10 @@ async def async_setup_entry(
 class ActronSensorBase(CoordinatorEntity, SensorEntity):
     """Base class for ActronAir Neo sensors."""
 
-    _attr_has_entity_name: Final = True
+    _ATTR_HAS_ENTITY_NAME: Final = True
 
     def __init__(
-        self, 
+        self,
         coordinator: ActronDataCoordinator,
         unique_id: str,
         name: str,
@@ -107,7 +107,7 @@ class ActronZoneSensor(ActronSensorBase):
         """Initialize the zone sensor."""
         self._zone_id = zone_id
         zone_data = coordinator.data['zones'][zone_id]
-        
+
         # Just use the zone name directly
         super().__init__(
             coordinator,
@@ -139,7 +139,7 @@ class ActronZoneSensor(ActronSensorBase):
         try:
             zone_data = self.coordinator.data['zones'][self._zone_id]
             peripheral_data = self.coordinator.get_zone_peripheral(self._zone_id)
-            
+
             attributes = {
                 ATTR_ZONE_NAME: zone_data['name'],
                 "humidity": zone_data['humidity'],
@@ -159,9 +159,15 @@ class ActronZoneSensor(ActronSensorBase):
                 if "ConnectionState" in peripheral_data:
                     attributes["connection_state"] = peripheral_data["ConnectionState"]
 
-            _LOGGER.debug(f"Zone {self._zone_id} attributes: {attributes}")
+            _LOGGER.debug("Zone %s attributes: %s", self._zone_id, attributes)
             return attributes
-            
-        except Exception as ex:
-            _LOGGER.error("Error getting attributes for zone %s: %s", self._zone_id, str(ex))
+
+        except KeyError as ex:
+            _LOGGER.error("Key error getting attributes for zone %s: %s", self._zone_id, str(ex))
+            return {}
+        except TypeError as ex:
+            _LOGGER.error("Type error getting attributes for zone %s: %s", self._zone_id, str(ex))
+            return {}
+        except ValueError as ex:
+            _LOGGER.error("Value error getting attributes for zone %s: %s", self._zone_id, str(ex))
             return {}

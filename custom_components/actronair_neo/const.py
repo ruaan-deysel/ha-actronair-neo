@@ -139,7 +139,7 @@ ATTR_LAST_CONNECTION = "last_connection"
 ATTR_INDOOR_TEMP = "indoor_temperature"
 ATTR_PERIPHERAL_INFO = "peripheral_info"
 
-# Diagnostic categories 
+# Diagnostic categories
 DIAG_SYSTEM = "system_status"
 DIAG_ENVIRONMENTAL = "environmental"
 DIAG_ZONES = "zones"

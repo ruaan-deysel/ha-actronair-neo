@@ -125,7 +125,7 @@ async def async_get_config_entry_diagnostics(
 
             # Find matching RemoteZoneInfo for this zone
             matching_zone_info = next(
-                (zone for zone in remote_zone_info 
+                (zone for zone in remote_zone_info
                 if zone.get("NV_Title") == zone_data["name"]),
                 {}
             )
@@ -163,7 +163,31 @@ async def async_get_config_entry_diagnostics(
 
         return diagnostics_data
 
-    except Exception as ex:
+    except KeyError as ex:
+        _LOGGER.error("KeyError generating diagnostics: %s", str(ex))
+        return {
+            "error": {
+                "type": "KeyError",
+                "message": str(ex),
+                "coordinator_available": bool(coordinator),
+                "has_data": bool(coordinator and coordinator.data),
+                "timestamp": datetime.now().isoformat(),
+            },
+            "entry": async_redact_data(entry.as_dict(), TO_REDACT),
+        }
+    except ValueError as ex:
+        _LOGGER.error("ValueError generating diagnostics: %s", str(ex))
+        return {
+            "error": {
+                "type": "ValueError",
+                "message": str(ex),
+                "coordinator_available": bool(coordinator),
+                "has_data": bool(coordinator and coordinator.data),
+                "timestamp": datetime.now().isoformat(),
+            },
+            "entry": async_redact_data(entry.as_dict(), TO_REDACT),
+        }
+    except (TypeError, AttributeError) as ex:
         _LOGGER.error("Error generating diagnostics: %s", str(ex))
         return {
             "error": {

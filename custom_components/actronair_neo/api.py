@@ -1,13 +1,13 @@
-# ActronAir Neo API
+"""ActronAir Neo API"""
 
-import os
-import aiohttp # type: ignore
-import aiofiles # type: ignore
 import asyncio
 import json
 import logging
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
+import os
+import aiohttp # type: ignore
+import aiofiles # type: ignore
 
 from .const import API_URL, API_TIMEOUT, MAX_RETRIES, MAX_REQUESTS_PER_MINUTE
 
@@ -53,33 +53,64 @@ class RateLimiter:
         self.semaphore.release()
 
 class ActronApi:
-    def __init__(self, username: str, password: str, session: aiohttp.ClientSession, config_path: str):
-        """Initialize the ActronApi class."""
+    def __init__(
+        self, 
+        username: str, 
+        password: str, 
+        session: aiohttp.ClientSession, 
+        config_path: str
+    ) -> None:
+        """Initialize the ActronApi class.
+        
+        Args:
+            username: ActronAir Neo account username
+            password: ActronAir Neo account password
+            session: aiohttp client session for API requests
+            config_path: Path to store configuration files
+            
+        Note:
+            The class manages API authentication, rate limiting, and maintains
+            state for the ActronAir Neo system including fan modes.
+        """
+        # Authentication credentials
         self.username = username
         self.password = password
         self.session = session
-        config_path = '/config' # Set to Home Assistant's config directory
-        self.token_file = os.path.join(config_path, "actron_token.json")
-        self.refresh_token_value = None
-        self.access_token = None
-        self.token_expires_at = None
+        
+        # Token management
+        self.token_file = os.path.join('/config', "actron_token.json")  # Use HA config dir
+        self.refresh_token_value: str | None = None
+        self.access_token: str | None = None
+        self.token_expires_at: datetime | None = None
+        
+        # Device identification
+        self.actron_serial: str = ''
+        self.actron_system_id: str = ''
+        
+        # API health tracking
+        self.error_count: int = 0
+        self.last_successful_request: datetime | None = None
+        self.cached_status: dict | None = None
+        
+        # Rate limiting
         self.rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
-        self.actron_serial = ''
-        self.actron_system_id = ''
-        self.error_count = 0
-        self.last_successful_request = None
-        self.cached_status = None
-        self._last_fan_mode_change = None
-        self._fan_mode_change_lock = asyncio.Lock()
-        self._min_fan_mode_interval = 5  # Minimum seconds between fan mode changes
-
+        
+        # Fan mode management
+        self._continuous_fan: bool = False
+        self._last_fan_mode_change: datetime | None = None
+        self._fan_mode_change_lock: asyncio.Lock = asyncio.Lock()
+        self._min_fan_mode_interval: int = 5  # Minimum seconds between fan mode changes
+        
+        # Request tracking
+        self._request_semaphore = asyncio.Semaphore(MAX_REQUESTS_PER_MINUTE)
+        self._request_timestamps: list[datetime] = []
 
     def validate_fan_mode(self, mode: str, continuous: bool = False) -> str:
         """Validate and format fan mode.
         
         Args:
             mode: The fan mode to validate (LOW, MED, HIGH, AUTO)
-            continuous: Whether to add -CONT suffix
+            continuous: Whether to add continuous suffix
             
         Returns:
             Validated and formatted fan mode string
@@ -94,8 +125,8 @@ class ActronApi:
         if base_mode not in valid_modes:
             _LOGGER.warning(f"Invalid fan mode {mode}, defaulting to LOW")
             base_mode = "LOW"
-            
-        return f"{base_mode}-CONT" if continuous else base_mode
+                
+        return f"{base_mode}+CONT" if continuous else base_mode
 
     async def load_tokens(self):
         """Load authentication tokens from storage."""
@@ -111,8 +142,10 @@ class ActronApi:
                 _LOGGER.debug("No token file found, will authenticate from scratch")
         except json.JSONDecodeError:
             _LOGGER.warning("Token file is corrupted, will authenticate from scratch")
-        except Exception as e:
-            _LOGGER.error(f"Error loading tokens: {e}")
+        except (OSError, IOError) as e:
+            _LOGGER.error("IO error loading tokens: %s", e)
+        except ValueError as e:
+            _LOGGER.error("Value error loading tokens: %s", e)
 
     async def save_tokens(self):
         """Save authentication tokens to storage."""
@@ -124,8 +157,10 @@ class ActronApi:
                     "expires_at": self.token_expires_at.isoformat() if self.token_expires_at else None
                 }))
             _LOGGER.debug("Tokens saved successfully")
-        except Exception as e:
-            _LOGGER.error(f"Error saving tokens: {e}")
+        except (OSError, IOError) as e:
+            _LOGGER.error("IO error saving tokens: %s", e)
+        except TypeError as e:
+            _LOGGER.error("JSON encoding error saving tokens: %s", e)
 
     async def clear_tokens(self):
         """Clear stored tokens when they become invalid."""
@@ -170,8 +205,8 @@ class ActronApi:
             await self.save_tokens()
             _LOGGER.info("New refresh token obtained and saved")
         except Exception as e:
-            _LOGGER.error(f"Failed to get new refresh token: {str(e)}")
-            raise AuthenticationError(f"Failed to get new refresh token: {str(e)}")
+            _LOGGER.error("Failed to get new refresh token: %s", str(e))
+            raise AuthenticationError(f"Failed to get new refresh token: {str(e)}") from e
 
     async def _get_access_token(self):
         """Get access token using refresh token."""
@@ -189,12 +224,16 @@ class ActronApi:
             expires_in = response.get("expires_in", 3600)
             self.token_expires_at = datetime.now() + timedelta(seconds=expires_in - 300)  # Refresh 5 minutes early
             if not self.access_token:
+                _LOGGER.error("No access token received in the response")
                 raise AuthenticationError("No access token received in response")
             await self.save_tokens()
-            _LOGGER.info("New access token obtained and saved")
+            _LOGGER.info("New access token obtained and valid until: %s", self.token_expires_at)
+        except AuthenticationError as e:
+            _LOGGER.error("Authentication failed: %s", e)
+            raise
         except Exception as e:
-            _LOGGER.error(f"Failed to get new access token: {str(e)}")
-            raise AuthenticationError(f"Failed to get new access token: {str(e)}")
+            _LOGGER.error("Failed to get new access token: %s", e)
+            raise AuthenticationError(f"Failed to get new access token: {e}") from e
 
     MAX_REFRESH_RETRIES = 3
     REFRESH_RETRY_DELAY = 5  # seconds
@@ -205,7 +244,7 @@ class ActronApi:
                 await self._get_access_token()
                 return
             except AuthenticationError as e:
-                _LOGGER.warning(f"Token refresh failed (attempt {attempt + 1}/{self.MAX_REFRESH_RETRIES}): {e}")
+                _LOGGER.warning("Token refresh failed (attempt %s/%s): %s", attempt + 1, self.MAX_REFRESH_RETRIES, e)
                 if attempt < self.MAX_REFRESH_RETRIES - 1:
                     await asyncio.sleep(self.REFRESH_RETRY_DELAY * (2 ** attempt))  # Exponential backoff
                 else:
@@ -216,7 +255,7 @@ class ActronApi:
                         await self._get_access_token()
                         return
                     except AuthenticationError as auth_err:
-                        _LOGGER.error(f"Re-authentication failed: {auth_err}")
+                        _LOGGER.error("Re-authentication failed: %s", auth_err)
                         raise
         raise AuthenticationError("Failed to refresh token and re-authentication failed")
 
@@ -232,28 +271,38 @@ class ActronApi:
                         headers['Authorization'] = f'Bearer {self.access_token}'
                     kwargs['headers'] = headers
 
-                    _LOGGER.debug(f"Making {method} request to: {url}")
-                    _LOGGER.debug(f"Request payload: {kwargs.get('json')}")  # Log the payload
+                    # Log request details
+                    _LOGGER.debug("Making %s request to: %s", method, url)
+                    if 'json' in kwargs and kwargs['json'] is not None:
+                        _LOGGER.debug("Request payload:\n%s", json.dumps(kwargs['json'], indent=2))
+
                     async with self.session.request(method, url, timeout=API_TIMEOUT, **kwargs) as response:
+                        response_text = await response.text()
+                        _LOGGER.debug("Response status: %s", response.status)
+                        try:
+                            response_json = json.loads(response_text)
+                            _LOGGER.debug("Response body:\n%s", json.dumps(response_json, indent=2))
+                        except json.JSONDecodeError:
+                            _LOGGER.debug("Non-JSON response body:\n%s", response_text)
+
                         if response.status == 200:
                             self.error_count = 0
                             self.last_successful_request = datetime.now()
-                            return await response.json()
+                            return response_json if 'response_json' in locals() else response_text
                         elif response.status == 401 and auth_required:
                             _LOGGER.warning("Token expired, refreshing...")
                             await self.refresh_access_token()
                             continue
                         else:
-                            text = await response.text()
-                            _LOGGER.error(f"API request failed: {response.status}, {text}")
+                            _LOGGER.error("API request failed: %s, %s", response.status, response_text)
                             self.error_count += 1
-                            raise ApiError(f"API request failed: {response.status}, {text}", status_code=response.status)
+                            raise ApiError(f"API request failed: {response.status}, {response_text}", status_code=response.status)
 
                 except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-                    _LOGGER.error(f"Request error on attempt {attempt + 1}: {err}")
+                    _LOGGER.error("Request error on attempt %s: %s", attempt + 1, err)
                     self.error_count += 1
                     if attempt == MAX_RETRIES - 1:
-                        raise ApiError(f"Request failed after {MAX_RETRIES} attempts: {err}")
+                        raise ApiError(f"Request failed after {MAX_RETRIES} attempts: {err}") from err
                     await asyncio.sleep(5 * (2 ** attempt))  # Exponential backoff
 
         raise ApiError(f"Failed to make request after {MAX_RETRIES} attempts")
@@ -268,9 +317,9 @@ class ActronApi:
     async def get_devices(self) -> List[Dict[str, str]]:
         """Fetch the list of devices from the API."""
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
-        _LOGGER.debug(f"Fetching devices from: {url}")
+        _LOGGER.debug("Fetching devices from: %s", url)
         response = await self._make_request("GET", url)
-        _LOGGER.debug(f"Get devices response: {response}")
+        _LOGGER.debug("Get devices response: %s", response)
         devices = []
         if '_embedded' in response and 'ac-system' in response['_embedded']:
             for system in response['_embedded']['ac-system']:
@@ -279,7 +328,7 @@ class ActronApi:
                     'name': system.get('description', 'Unknown Device'),
                     'type': system.get('type', 'Unknown')
                 })
-        _LOGGER.debug(f"Found devices: {devices}")
+        _LOGGER.debug("Found devices: %s", devices)
         return devices
 
     async def get_ac_status(self, serial: str) -> Dict[str, Any]:
@@ -289,31 +338,33 @@ class ActronApi:
             return self.cached_status if self.cached_status else {}
 
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
-        _LOGGER.debug(f"Fetching AC status from: {url}")
+        _LOGGER.debug("Fetching AC status from: %s", url)
         response = await self._make_request("GET", url)
-        _LOGGER.debug(f"AC status response: {response}")
+        _LOGGER.debug("AC status response: %s", response)
         self.cached_status = response
         return response
 
     async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
         """Send a command to the AC system."""
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
-        _LOGGER.debug(f"Sending command to: {url}, Command: {command}")
-        
+        _LOGGER.debug("Sending command to: %s", url)
+        _LOGGER.debug("Command payload:\n%s", json.dumps(command, indent=2))
+
         for attempt in range(MAX_RETRIES):
             try:
                 response = await self._make_request("POST", url, json=command)
-                _LOGGER.debug(f"Command response: {response}")
+                _LOGGER.debug("Command response:\n%s", json.dumps(response, indent=2))
                 return response
             except ApiError as e:
                 if (attempt < MAX_RETRIES - 1) and (e.status_code in [500, 502, 503, 504]):
                     wait_time = 2 ** attempt  # exponential backoff
-                    _LOGGER.warning(f"Received {e.status_code} error, retrying in {wait_time} seconds (attempt {attempt + 1}/{MAX_RETRIES})")
+                    _LOGGER.warning("Received %s error, retrying in %s seconds (attempt %s/%s)", e.status_code, wait_time, attempt + 1, MAX_RETRIES)
                     await asyncio.sleep(wait_time)
                 else:
+                    _LOGGER.error("API error: %s", e)
                     raise
-            except Exception as err:
-                _LOGGER.error(f"Unexpected error in send_command: {err}")
+            except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError) as err:
+                _LOGGER.error("Unexpected error in send_command: %s", err)
                 if attempt == MAX_RETRIES - 1:
                     raise
 
@@ -360,7 +411,7 @@ class ActronApi:
         if devices:
             self.actron_serial = devices[0]['serial']
             self.actron_system_id = devices[0].get('id', '')
-            _LOGGER.info(f"Located serial number {self.actron_serial} with ID of {self.actron_system_id}")
+            _LOGGER.info("Located serial number %s with ID of %s", self.actron_serial, self.actron_system_id)
         else:
             _LOGGER.error("Could not identify target device from list of returned systems")
 
@@ -422,7 +473,7 @@ class ActronApi:
                     "type": "set-settings"
                 }
             },
-        }    
+        }
         return commands[command_type](**params)
 
     async def set_climate_mode(self, mode: str) -> None:
@@ -430,30 +481,71 @@ class ActronApi:
         command = self.create_command("CLIMATE_MODE", mode=mode)
         await self.send_command(self.actron_serial, command)
 
-    async def set_fan_mode(self, mode: str, continuous: bool = False) -> None:
-        """Set fan mode with rate limiting and state transition management."""
+    async def set_fan_mode(self, mode: str, continuous: bool | None = None) -> None:
+        """Set fan mode with state tracking, validation and retry logic.
+        
+        Args:
+            mode: The fan mode to set (LOW, MED, HIGH, AUTO)
+            continuous: Whether to enable continuous fan mode. If None, maintains current state.
+        
+        Raises:
+            ApiError: If communication with the API fails
+            ValueError: If the fan mode is invalid
+            RateLimitError: If too many requests are made in a short period
+        """
         try:
+            # If continuous is not specified, maintain current state
+            if continuous is None:
+                current_mode = self.data["main"].get("fan_mode", "")
+                continuous = current_mode.endswith("+CONT")
+                _LOGGER.debug("Maintaining current continuous state: %s", continuous)
+            
+            # Rate limiting check
             async with self._fan_mode_change_lock:
-                # Check if enough time has passed since last fan mode change
-                now = datetime.now()
                 if self._last_fan_mode_change:
-                    time_since_last = (now - self._last_fan_mode_change).total_seconds()
-                    if time_since_last < self._min_fan_mode_interval:
-                        await asyncio.sleep(self._min_fan_mode_interval - time_since_last)
+                    elapsed = (datetime.now() - self._last_fan_mode_change).total_seconds()
+                    if elapsed < self._min_fan_mode_interval:
+                        wait_time = self._min_fan_mode_interval - elapsed
+                        _LOGGER.debug("Rate limiting: waiting %.1f seconds", wait_time)
+                        await asyncio.sleep(wait_time)
 
-                # Validate and send command
+                # Validate fan mode
                 validated_mode = self.validate_fan_mode(mode, continuous)
-                command = self.create_command("FAN_MODE", mode=validated_mode)
-                await self.send_command(self.actron_serial, command)
+                _LOGGER.debug("Setting fan mode: %s (original mode: %s, continuous: %s)", 
+                            validated_mode, mode, continuous)
 
-                # Update last change time
-                self._last_fan_mode_change = datetime.now()
-
-                # Add small delay after command
-                await asyncio.sleep(1)
+                # Add retry logic for API timeouts
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        command = self.create_command("FAN_MODE", mode=validated_mode)
+                        _LOGGER.debug("Sending fan mode command (attempt %d/%d): %s", 
+                                    attempt + 1, MAX_RETRIES, command)
+                        
+                        await self.send_command(self.actron_serial, command)
+                        
+                        # Update state tracking
+                        self._last_fan_mode_change = datetime.now()
+                        self._continuous_fan = continuous
+                        
+                        _LOGGER.info("Successfully set fan mode to: %s", validated_mode)
+                        break
+                        
+                    except ApiError as e:
+                        if e.status_code in [500, 502, 503, 504] and attempt < MAX_RETRIES - 1:
+                            wait_time = 2 ** attempt  # exponential backoff
+                            _LOGGER.warning("Received %s error, retrying in %s seconds (attempt %d/%d)", 
+                                        e.status_code, wait_time, attempt + 1, MAX_RETRIES)
+                            await asyncio.sleep(wait_time)
+                            continue
+                        _LOGGER.error("API error setting fan mode: %s", e)
+                        raise
+                    except Exception as err:
+                        _LOGGER.error("Unexpected error setting fan mode: %s", err)
+                        raise
 
         except Exception as err:
-            _LOGGER.error(f"Failed to set fan mode {mode} (continuous={continuous}): {err}")
+            _LOGGER.error("Failed to set fan mode %s (continuous=%s): %s", 
+                        mode, continuous, err, exc_info=True)
             raise
 
     async def set_temperature(self, temperature: float, is_cooling: bool) -> None:

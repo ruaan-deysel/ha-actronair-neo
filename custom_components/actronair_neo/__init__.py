@@ -101,25 +101,25 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
             _LOGGER.debug("Zone control being disabled, cleaning up entities")
             entity_registry = er.async_get(hass)
             entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-            
+
             # First, remove entities from registry
             for entity_entry in entries:
                 if entity_entry.unique_id.startswith(f"{coordinator.device_id}_zone_"):
-                    _LOGGER.debug(f"Removing entity: {entity_entry.entity_id}")
+                    _LOGGER.debug("Removing entity: %s", entity_entry.entity_id)
                     entity_registry.async_remove(entity_entry.entity_id)
-            
+
             # Then update coordinator state
             await coordinator.set_enable_zone_control(new_enable_zone_control)
-            
+
             # Finally, request a state refresh
             await coordinator.async_request_refresh()
-        
+
         # Reload the config entry to apply changes
         await hass.config_entries.async_reload(entry.entry_id)
-        _LOGGER.info(f"Successfully updated zone control setting to: {new_enable_zone_control}")
-        
+        _LOGGER.info("Successfully updated zone control setting to: %s", new_enable_zone_control)
+
     except Exception as err:
-        _LOGGER.error(f"Error updating zone control setting: {err}")
+        _LOGGER.error("Error updating zone control setting: %s", err)
         raise
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:

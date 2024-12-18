@@ -35,14 +35,14 @@ async def async_setup_entry(
 
 class ActronDiagnosticBase(CoordinatorEntity):
     """Base class for diagnostic entities."""
-    
+
     def __init__(self, coordinator: ActronDataCoordinator, unique_suffix: str, name: str) -> None:
         """Initialize the base diagnostic entity."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.device_id}_{unique_suffix}"
         self._attr_name = name
         self._attr_entity_category = EntityCategory.DIAGNOSTIC  # Use proper enum
-        
+
     @property
     def device_info(self):
         """Return device information."""
@@ -105,7 +105,7 @@ class ActronSystemStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
                 "temperature": zone_data["temp"],
                 "humidity": zone_data["humidity"]
             }
-            
+
             # Add battery info for wireless zones
             peripheral_data = self.coordinator.get_zone_peripheral(zone_id)
             if peripheral_data and "RemainingBatteryCapacity_pc" in peripheral_data:

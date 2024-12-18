@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import os
 import aiohttp # type: ignore
@@ -53,11 +53,12 @@ class RateLimiter:
         self.semaphore.release()
 
 class ActronApi:
+    """ActronAir Neo API class."""
     def __init__(
-        self, 
-        username: str, 
-        password: str, 
-        session: aiohttp.ClientSession, 
+        self,
+        username: str,
+        password: str,
+        session: aiohttp.ClientSession,
         config_path: str
     ) -> None:
         """Initialize the ActronApi class.
@@ -79,9 +80,9 @@ class ActronApi:
         
         # Token management
         self.token_file = os.path.join('/config', "actron_token.json")  # Use HA config dir
-        self.refresh_token_value: str | None = None
-        self.access_token: str | None = None
-        self.token_expires_at: datetime | None = None
+        self.refresh_token_value: Optional[str] = None
+        self.access_token: Optional[str] = None
+        self.token_expires_at: Optional[datetime] = None
         
         # Device identification
         self.actron_serial: str = ''
@@ -89,15 +90,15 @@ class ActronApi:
         
         # API health tracking
         self.error_count: int = 0
-        self.last_successful_request: datetime | None = None
-        self.cached_status: dict | None = None
+        self.last_successful_request: Optional[datetime] = None
+        self.cached_status: Optional[dict] = None
         
         # Rate limiting
         self.rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
         
         # Fan mode management
         self._continuous_fan: bool = False
-        self._last_fan_mode_change: datetime | None = None
+        self._last_fan_mode_change: Optional[datetime] = None
         self._fan_mode_change_lock: asyncio.Lock = asyncio.Lock()
         self._min_fan_mode_interval: int = 5  # Minimum seconds between fan mode changes
         
@@ -111,22 +112,49 @@ class ActronApi:
         Args:
             mode: The fan mode to validate (LOW, MED, HIGH, AUTO)
             continuous: Whether to add continuous suffix
-            
+                
         Returns:
             Validated and formatted fan mode string
-        """
-        # First strip any existing continuous suffix
-        base_mode = mode.split('-')[0] if '-' in mode else mode
-        base_mode = base_mode.split('+')[0] if '+' in mode else base_mode
-        
-        valid_modes = ["LOW", "MED", "HIGH", "AUTO"]
-        base_mode = base_mode.upper()
-        
-        if base_mode not in valid_modes:
-            _LOGGER.warning(f"Invalid fan mode {mode}, defaulting to LOW")
-            base_mode = "LOW"
                 
-        return f"{base_mode}+CONT" if continuous else base_mode
+        Raises:
+            ValueError: If the provided mode is None or empty
+        """
+        try:
+            if not mode:
+                _LOGGER.warning("Empty fan mode provided, defaulting to LOW")
+                return "LOW+CONT" if continuous else "LOW"
+
+            # First strip any existing continuous suffix
+            base_mode = mode.strip().upper()
+            base_mode = base_mode.split('-')[0] if '-' in base_mode else base_mode
+            base_mode = base_mode.split('+')[0] if '+' in base_mode else base_mode
+
+            # Validate against known modes
+            valid_modes = ["LOW", "MED", "HIGH", "AUTO"]
+            if base_mode not in valid_modes:
+                _LOGGER.warning(
+                    "Invalid fan mode '%s' (derived from '%s'), defaulting to LOW",
+                    base_mode,
+                    mode
+                )
+                base_mode = "LOW"
+
+            _LOGGER.debug(
+                "Fan mode validation - Input: %s, Base: %s, Continuous: %s",
+                mode,
+                base_mode,
+                continuous
+            )
+
+            return f"{base_mode}+CONT" if continuous else base_mode
+
+        except (ValueError, KeyError, TypeError) as err:
+            _LOGGER.error(
+                "Error validating fan mode '%s': %s",
+                mode,
+                str(err)
+            )
+            return "LOW+CONT" if continuous else "LOW"
 
     async def load_tokens(self):
         """Load authentication tokens from storage."""
@@ -239,6 +267,16 @@ class ActronApi:
     REFRESH_RETRY_DELAY = 5  # seconds
 
     async def refresh_access_token(self):
+        """
+        Refreshes the access token using exponential backoff strategy.
+
+        This method attempts to refresh the access token up to a maximum number of retries
+        defined by `MAX_REFRESH_RETRIES`. If all attempts fail, it will attempt to re-authenticate
+        by clearing the tokens and obtaining a new refresh token and access token.
+
+        Raises:
+            AuthenticationError: If all token refresh attempts and re-authentication attempts fail.
+        """
         for attempt in range(self.MAX_REFRESH_RETRIES):
             try:
                 await self._get_access_token()
@@ -481,7 +519,7 @@ class ActronApi:
         command = self.create_command("CLIMATE_MODE", mode=mode)
         await self.send_command(self.actron_serial, command)
 
-    async def set_fan_mode(self, mode: str, continuous: bool | None = None) -> None:
+    async def set_fan_mode(self, mode: str, continuous: Optional[bool] = None) -> None:
         """Set fan mode with state tracking, validation and retry logic.
         
         Args:
@@ -494,12 +532,6 @@ class ActronApi:
             RateLimitError: If too many requests are made in a short period
         """
         try:
-            # If continuous is not specified, maintain current state
-            if continuous is None:
-                current_mode = self.data["main"].get("fan_mode", "")
-                continuous = current_mode.endswith("+CONT")
-                _LOGGER.debug("Maintaining current continuous state: %s", continuous)
-            
             # Rate limiting check
             async with self._fan_mode_change_lock:
                 if self._last_fan_mode_change:
@@ -511,30 +543,32 @@ class ActronApi:
 
                 # Validate fan mode
                 validated_mode = self.validate_fan_mode(mode, continuous)
-                _LOGGER.debug("Setting fan mode: %s (original mode: %s, continuous: %s)", 
+                _LOGGER.debug("Setting fan mode: %s (original mode: %s, continuous: %s)",
                             validated_mode, mode, continuous)
 
                 # Add retry logic for API timeouts
                 for attempt in range(MAX_RETRIES):
                     try:
                         command = self.create_command("FAN_MODE", mode=validated_mode)
-                        _LOGGER.debug("Sending fan mode command (attempt %d/%d): %s", 
+                        _LOGGER.debug("Sending fan mode command (attempt %d/%d): %s",
                                     attempt + 1, MAX_RETRIES, command)
-                        
+
                         await self.send_command(self.actron_serial, command)
-                        
+
                         # Update state tracking
                         self._last_fan_mode_change = datetime.now()
                         self._continuous_fan = continuous
-                        
+
                         _LOGGER.info("Successfully set fan mode to: %s", validated_mode)
                         break
-                        
+
                     except ApiError as e:
                         if e.status_code in [500, 502, 503, 504] and attempt < MAX_RETRIES - 1:
                             wait_time = 2 ** attempt  # exponential backoff
-                            _LOGGER.warning("Received %s error, retrying in %s seconds (attempt %d/%d)", 
-                                        e.status_code, wait_time, attempt + 1, MAX_RETRIES)
+                            _LOGGER.warning(
+                                "Received %s error, retrying in %s seconds (attempt %d/%d)",
+                                e.status_code, wait_time, attempt + 1, MAX_RETRIES
+                            )
                             await asyncio.sleep(wait_time)
                             continue
                         _LOGGER.error("API error setting fan mode: %s", e)

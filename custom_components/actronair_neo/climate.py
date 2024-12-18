@@ -29,6 +29,8 @@ from .const import (
     DOMAIN,
     MIN_TEMP,
     MAX_TEMP,
+    VALID_FAN_MODES,
+    FAN_MODE_SUFFIX_CONT,
 )
 from .coordinator import ActronDataCoordinator
 
@@ -116,8 +118,9 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
     def fan_mode(self) -> str | None:
         """Return the fan setting."""
         actron_fan_mode = self.coordinator.data["main"]["fan_mode"]
-        # Remove -CONT suffix for Home Assistant but preserve in extra state attributes
-        base_mode = actron_fan_mode.split('-')[0] if actron_fan_mode else "LOW"
+        # Remove +CONT suffix and get base mode
+        base_mode = actron_fan_mode.split('+')[0] if actron_fan_mode else "LOW"
+        base_mode = base_mode.split('-')[0] if '-' in base_mode else base_mode
         return REVERSE_FAN_MODE_MAP.get(base_mode, FAN_LOW)
 
     @property
@@ -148,12 +151,27 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        """Set new target fan mode."""
-        actron_fan_mode = FAN_MODE_MAP.get(fan_mode, "LOW")  # Default to LOW if not found
-        # Preserve continuous state when changing fan mode
-        current_fan_mode = self.coordinator.data["main"]["fan_mode"]
-        continuous = current_fan_mode.endswith("-CONT")
-        await self.coordinator.set_fan_mode(actron_fan_mode, continuous)
+        """Set new target fan mode while preserving continuous state."""
+        try:
+            # Get current continuous state
+            current_fan_mode = self.coordinator.data["main"]["fan_mode"]
+            continuous = "+CONT" in current_fan_mode
+
+            # Convert HA fan mode to Actron mode
+            actron_fan_mode = FAN_MODE_MAP.get(fan_mode, "LOW")
+
+            # Set fan mode while preserving continuous state
+            await self.coordinator.set_fan_mode(actron_fan_mode, continuous)
+
+            _LOGGER.debug(
+                "Set fan mode - Mode: %s, Continuous: %s, Result: %s",
+                actron_fan_mode,
+                continuous,
+                self.coordinator.data["main"]["fan_mode"]
+            )
+        except Exception as err:
+            _LOGGER.error("Failed to set fan mode %s: %s", fan_mode, err)
+            raise
 
     async def async_turn_on(self) -> None:
         """Turn the entity on."""
@@ -213,7 +231,8 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
         return {
             "away_mode": self.coordinator.data["main"]["away_mode"],
             "quiet_mode": self.coordinator.data["main"]["quiet_mode"],
-            "continuous_fan": actron_fan_mode.endswith("-CONT") if actron_fan_mode else False,
+            "continuous_fan": "+CONT" in actron_fan_mode if actron_fan_mode else False,
+            "base_fan_mode": actron_fan_mode.split('+')[0] if actron_fan_mode else "LOW"
         }
 
 class ActronZoneClimate(CoordinatorEntity, ClimateEntity):
@@ -358,7 +377,7 @@ class ActronZoneClimate(CoordinatorEntity, ClimateEntity):
         if temperature is None:
             return
 
-        if not (MIN_TEMP <= temperature <= MAX_TEMP):
+        if not MIN_TEMP <= temperature <= MAX_TEMP:
             _LOGGER.warning("Requested temperature %s outside valid range", temperature)
             return
 
@@ -426,7 +445,8 @@ class ActronZoneClimate(CoordinatorEntity, ClimateEntity):
 
         try:
             await self.coordinator.set_zone_state(self.zone_id, True)
-            self._attr_hvac_mode = self._actron_to_ha_hvac_mode(self.coordinator.data["main"]["mode"])
+            main_mode = self.coordinator.data["main"]["mode"]
+            self._attr_hvac_mode = self._actron_to_ha_hvac_mode(main_mode)
             self.async_write_ha_state()
         except Exception as err:
             _LOGGER.error("Failed to turn on zone %s: %s", self.zone_id, err)

@@ -1,6 +1,9 @@
-# ActronAir Neo Coordinator
+"""Coordinator for the ActronAir Neo integration."""
 
+
+import asyncio
 from datetime import timedelta
+import datetime
 from typing import Any, Dict, Optional, Union
 import logging
 
@@ -10,14 +13,28 @@ from homeassistant.exceptions import ConfigEntryAuthFailed # type: ignore
 from homeassistant.components.climate.const import HVACMode # type: ignore
 
 from .api import ActronApi, AuthenticationError, ApiError
-from .const import DOMAIN, MAX_ZONES
+from .const import (
+    DOMAIN,
+    MAX_RETRIES,
+    MAX_ZONES,
+    MIN_FAN_MODE_INTERVAL,
+    VALID_FAN_MODES,
+    FAN_MODE_SUFFIX_CONT,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 class ActronDataCoordinator(DataUpdateCoordinator):
     """Class to manage fetching ActronAir Neo data."""
 
-    def __init__(self, hass: HomeAssistant, api: ActronApi, device_id: str, update_interval: int, enable_zone_control: bool):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api: ActronApi,
+        device_id: str,
+        update_interval: int,
+        enable_zone_control: bool
+    ):
         """Initialize the data coordinator.
         
         Args:
@@ -37,7 +54,73 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         self.device_id = device_id
         self.enable_zone_control = enable_zone_control
         self.last_data = None
+
+        # Fan mode control attributes
         self._continuous_fan = False
+        self._fan_mode_change_lock = asyncio.Lock()
+        self._last_fan_mode_change = None
+        self._min_fan_mode_interval = MIN_FAN_MODE_INTERVAL
+
+    def validate_fan_mode(self, mode: str, continuous: bool = False) -> str:
+        """Validate and format fan mode.
+        
+        Args:
+            mode: The fan mode to validate (LOW, MED, HIGH, AUTO)
+            continuous: Whether to add continuous suffix
+                
+        Returns:
+            Validated and formatted fan mode string
+                
+        Raises:
+            ValueError: If fan mode is invalid
+        """
+        # First strip any existing continuous suffix
+        base_mode = mode.split('+')[0] if '+' in mode else mode
+        base_mode = base_mode.split('-')[0] if '-' in mode else base_mode
+        base_mode = base_mode.upper()
+
+        if base_mode not in VALID_FAN_MODES:
+            _LOGGER.warning("Invalid fan mode %s, defaulting to LOW", mode)
+            base_mode = "LOW"
+
+        return f"{base_mode}{FAN_MODE_SUFFIX_CONT}" if continuous else base_mode
+
+    def _validate_fan_mode_response(
+        self, requested_mode: str, continuous: bool, actual_mode: str
+    ) -> bool:
+        """Validate that the fan mode was set correctly.
+
+        Args:
+            requested_mode: The requested fan mode
+            continuous: The requested continuous state
+            actual_mode: The actual mode returned by the API
+
+        Returns:
+            bool: True if the mode was set correctly
+        """
+        base_requested = requested_mode.split('+')[0].split('-')[0].upper()
+        base_actual = actual_mode.split('+')[0].split('-')[0].upper()
+
+        is_continuous = "+CONT" in actual_mode
+
+        mode_correct = base_requested == base_actual
+        continuous_correct = continuous == is_continuous
+
+        if not mode_correct:
+            _LOGGER.warning(
+                "Fan mode mismatch - Requested: %s, Got: %s",
+                base_requested,
+                base_actual
+            )
+
+        if not continuous_correct:
+            _LOGGER.warning(
+                "Continuous state mismatch - Requested: %s, Got: %s",
+                continuous,
+                is_continuous
+            )
+
+        return mode_correct and continuous_correct
 
     @property
     def continuous_fan(self) -> bool:
@@ -102,7 +185,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             live_aircon = last_known_state.get("LiveAircon", {})
             aircon_system = last_known_state.get("AirconSystem", {})
             alerts = last_known_state.get("Alerts", {})
-            
+
             # Get fan mode and check for continuous state using '+CONT'
             fan_mode = user_aircon_settings.get("FanMode", "")
             is_continuous = fan_mode.endswith("+CONT")
@@ -114,7 +197,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             parsed_data = {
                 # Store raw data for diagnostics
                 "raw_data": data,
-                
+
                 "main": {
                     "is_on": user_aircon_settings.get("isOn", False),
                     "mode": user_aircon_settings.get("Mode", "OFF"),
@@ -141,7 +224,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
             # Update continuous fan state based on actual mode
             self._continuous_fan = is_continuous
-            
+
             _LOGGER.debug(
                 "Fan mode status - Raw: %s, Base: %s, Continuous: %s",
                 fan_mode,
@@ -187,7 +270,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Get peripheral data for a specific zone."""
         try:
             zone_index = int(zone_id.split('_')[1]) - 1
-            peripherals = self.data.get("raw_data", {}).get("AirconSystem", {}).get("Peripherals", [])
+            peripherals = self.data.get("raw_data", {}).get(
+                "AirconSystem", {}
+            ).get("Peripherals", [])
 
             for peripheral in peripherals:
                 if peripheral.get("ZoneAssignment", []) == [zone_index + 1]:
@@ -227,70 +312,103 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.api.send_command(self.device_id, command)
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set %s temperature to %s: %s", 'cooling' if is_cooling else 'heating', temperature, err)
+            _LOGGER.error(
+                "Failed to set %s temperature to %s: %s", 
+                'cooling' if is_cooling else 'heating', 
+                temperature, 
+                err
+            )
             raise
 
-    async def set_fan_mode(self, mode: str, continuous: bool | None = None) -> None:
-        """Set fan mode with proper state tracking and validation.
+    async def set_fan_mode(self, mode: str, continuous: Optional[bool] = None) -> None:
+        """Set fan mode with state tracking, validation and retry logic.
         
         Args:
             mode: The fan mode to set (LOW, MED, HIGH, AUTO)
-            continuous: Whether to enable continuous mode. If None, maintains current state.
-            
+            continuous: Whether to enable continuous fan mode. If None, maintains current state.
+        
         Raises:
-            ApiError: If API communication fails
-            ValueError: If fan mode is invalid
+            ApiError: If communication with the API fails
+            ValueError: If the fan mode is invalid
+            RateLimitError: If too many requests are made in a short period
         """
         try:
-            # Validate mode before proceeding
-            valid_modes = ["LOW", "MED", "HIGH", "AUTO"]
-            base_mode = mode.upper()
-            if base_mode not in valid_modes:
-                _LOGGER.warning("Invalid fan mode %s, defaulting to LOW", mode)
-                base_mode = "LOW"
-                
-            # If continuous is not specified, maintain current state from coordinator data
+            # If continuous is not specified, maintain current state
             if continuous is None:
-                current_mode = self.data["main"].get("fan_mode", "")
+                current_mode = self.coordinator.data["main"].get("fan_mode", "")
                 continuous = current_mode.endswith("+CONT")
                 _LOGGER.debug("Maintaining current continuous state: %s", continuous)
 
-            # Log the intended change
-            _LOGGER.debug(
-                "Setting fan mode - Base: %s, Continuous: %s (Current: %s)", 
-                base_mode,
-                continuous,
-                self.data["main"].get("fan_mode")
-            )
+            # Rate limiting check
+            async with self._fan_mode_change_lock:
+                if self._last_fan_mode_change:
+                    elapsed = (datetime.datetime.now() - self._last_fan_mode_change).total_seconds()
+                    if elapsed < self._min_fan_mode_interval:
+                        wait_time = self._min_fan_mode_interval - elapsed
+                        _LOGGER.debug("Rate limiting: waiting %.1f seconds", wait_time)
+                        await asyncio.sleep(wait_time)
 
-            # Send command to API
-            await self.api.set_fan_mode(base_mode, continuous)
-            
-            # Update local state tracking
-            self._continuous_fan = continuous
-            
-            # Force immediate refresh to update UI state
-            await self.async_request_refresh()
-            
-            # Verify the change was successful
-            new_mode = self.data["main"].get("fan_mode", "")
-            _LOGGER.debug("New fan mode after update: %s", new_mode)
-            
-            if continuous and not new_mode.endswith("+CONT"):
-                _LOGGER.warning("Continuous mode may not have been set correctly")
-                
-        except ApiError as err:
-            _LOGGER.error(
-                "API error setting fan mode %s (continuous=%s): %s", 
-                mode, continuous, err
-            )
-            raise
+                # Validate fan mode
+                validated_mode = self.validate_fan_mode(mode, continuous)
+                _LOGGER.debug("Setting fan mode: %s (original mode: %s, continuous: %s)",
+                            validated_mode, mode, continuous)
+
+                # Add retry logic for API timeouts
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        command = self.api.create_command("FAN_MODE", mode=validated_mode)
+                        _LOGGER.debug("Sending fan mode command (attempt %d/%d): %s",
+                                    attempt + 1, MAX_RETRIES, command)
+
+                        await self.api.send_command(self.device_id, command)
+
+                        # Update state tracking
+                        self._last_fan_mode_change = datetime.datetime.now()
+                        self._continuous_fan = continuous
+
+                        # Force immediate refresh
+                        await self.async_request_refresh()
+
+                        # Verify the change
+                        new_mode = self.data["main"].get("fan_mode", "")
+                        _LOGGER.debug("New fan mode after update: %s", new_mode)
+
+                        # Validate continuous mode was set correctly
+                        if continuous and "+CONT" not in new_mode:
+                            if attempt < MAX_RETRIES - 1:
+                                _LOGGER.warning(
+                                    "Continuous mode not set correctly, retrying (attempt %d/%d)",
+                                    attempt + 1, MAX_RETRIES
+                                )
+                                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                                continue
+                            else:
+                                _LOGGER.error(
+                                    "Failed to set continuous mode after %d attempts", 
+                                    MAX_RETRIES
+                                )
+
+                        _LOGGER.info("Successfully set fan mode to: %s", validated_mode)
+                        break
+
+                    except ApiError as e:
+                        if e.status_code in [500, 502, 503, 504] and attempt < MAX_RETRIES - 1:
+                            wait_time = 2 ** attempt  # exponential backoff
+                            _LOGGER.warning(
+                                "Received %s error, retrying in %s seconds (attempt %d/%d)",
+                                e.status_code, wait_time, attempt + 1, MAX_RETRIES
+                            )
+                            await asyncio.sleep(wait_time)
+                            continue
+                        _LOGGER.error("API error setting fan mode: %s", e)
+                        raise
+                    except Exception as err:
+                        _LOGGER.error("Unexpected error setting fan mode: %s", err)
+                        raise
+
         except Exception as err:
-            _LOGGER.error(
-                "Failed to set fan mode %s (continuous=%s): %s",
-                mode, continuous, err,
-                exc_info=True
-            )
+            _LOGGER.error("Failed to set fan mode %s (continuous=%s): %s",
+                        mode, continuous, err, exc_info=True)
             raise
 
     async def set_zone_temperature(self, zone_id: str, temperature: float, temp_key: str) -> None:

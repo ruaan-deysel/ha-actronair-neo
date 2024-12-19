@@ -74,16 +74,47 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         Raises:
             ValueError: If fan mode is invalid
         """
-        # First strip any existing continuous suffix
-        base_mode = mode.split('+')[0] if '+' in mode else mode
-        base_mode = base_mode.split('-')[0] if '-' in mode else base_mode
-        base_mode = base_mode.upper()
+        try:
+            # Get supported modes from coordinator data
+            supported_modes = self.data["main"].get("supported_fan_modes", ["LOW", "MED", "HIGH"])
 
-        if base_mode not in VALID_FAN_MODES:
-            _LOGGER.warning("Invalid fan mode %s, defaulting to LOW", mode)
-            base_mode = "LOW"
+            # First strip any existing continuous suffix
+            base_mode = mode.split('+')[0] if '+' in mode else mode
+            base_mode = base_mode.split('-')[0] if '-' in base_mode else base_mode
+            base_mode = base_mode.upper()
 
-        return f"{base_mode}{FAN_MODE_SUFFIX_CONT}" if continuous else base_mode
+            # Validate against supported modes
+            if base_mode not in supported_modes:
+                _LOGGER.warning(
+                    "Fan mode %s not supported by device. Supported modes: %s. Defaulting to LOW",
+                    mode,
+                    supported_modes
+                )
+                base_mode = "LOW"
+
+            # Validate against known valid modes as a safety check
+            if base_mode not in VALID_FAN_MODES:
+                _LOGGER.warning("Invalid fan mode %s, defaulting to LOW", mode)
+                base_mode = "LOW"
+
+            _LOGGER.debug(
+                "Fan mode validation - Input: %s, Base: %s, Continuous: %s, Supported: %s",
+                mode,
+                base_mode,
+                continuous,
+                supported_modes
+            )
+
+            return f"{base_mode}{FAN_MODE_SUFFIX_CONT}" if continuous else base_mode
+
+        except Exception as err:
+            _LOGGER.error(
+                "Error validating fan mode '%s': %s",
+                mode,
+                str(err),
+                exc_info=True
+            )
+            return "LOW+CONT" if continuous else "LOW"
 
     def _validate_fan_mode_response(
         self, requested_mode: str, continuous: bool, actual_mode: str
@@ -184,7 +215,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             master_info = last_known_state.get("MasterInfo", {})
             live_aircon = last_known_state.get("LiveAircon", {})
             aircon_system = last_known_state.get("AirconSystem", {})
+            indoor_unit = aircon_system.get("IndoorUnit", {})
             alerts = last_known_state.get("Alerts", {})
+
+            # Get supported modes
+            supported_fan_modes = self._validate_fan_modes(
+                indoor_unit.get("NV_SupportedFanModes", 0)  # Default to 0 if not present
+            )
 
             # Get fan mode and check for continuous state using '+CONT'
             fan_mode = user_aircon_settings.get("FanMode", "")
@@ -204,6 +241,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     "fan_mode": fan_mode,  # Store complete fan mode string
                     "fan_continuous": is_continuous,  # Explicit continuous state tracking
                     "base_fan_mode": base_fan_mode,  # Store base fan mode without suffix
+                    "supported_fan_modes": supported_fan_modes,
                     "temp_setpoint_cool": user_aircon_settings.get("TemperatureSetpoint_Cool_oC"),
                     "temp_setpoint_heat": user_aircon_settings.get("TemperatureSetpoint_Heat_oC"),
                     "indoor_temp": master_info.get("LiveTemp_oC"),
@@ -243,7 +281,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                         "name": zone.get("NV_Title", f"Zone {i+1}"),
                         "temp": zone.get("LiveTemp_oC"),
                         "humidity": zone.get("LiveHumidity_pc"),
-                        "is_enabled": parsed_data["main"]["EnabledZones"][i] if i < len(parsed_data["main"]["EnabledZones"]) else False,
+                        "is_enabled": (
+                            parsed_data["main"]["EnabledZones"][i]
+                            if i < len(parsed_data["main"]["EnabledZones"])
+                            else False
+                        ),
                     }
 
                     # Find matching peripheral for battery info
@@ -265,6 +307,117 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         except Exception as e:
             _LOGGER.error("Failed to parse API response: %s", e, exc_info=True)
             raise UpdateFailed(f"Failed to parse API response: {e}") from e
+
+    def _validate_fan_modes(self, modes: Any) -> list[str]:
+        """Validate and normalize supported fan modes."""
+        valid_modes = {"LOW", "MED", "HIGH", "AUTO"}
+        default_modes = ["LOW", "MED", "HIGH"]
+        
+        try:
+            _LOGGER.debug("Starting fan mode validation with input: %s (type: %s)", modes, type(modes))
+            
+            # Handle integer case - API returns a bitmap
+            if isinstance(modes, int):
+                # Binary mapping: 1=LOW, 2=MED, 4=HIGH, 8=AUTO (bitmap)
+                _LOGGER.debug(
+                    "Processing bitmap value: %d (binary: %s, hex: 0x%X)",
+                    modes, bin(modes), modes
+                )
+                
+                # Get current fan mode from settings - safely handle None case
+                current_mode = None
+                if hasattr(self, 'data') and self.data is not None:
+                    user_settings = self.data.get("raw_data", {}).get("lastKnownState", {}).get(
+                        f"<{self.device_id.upper()}>", {}
+                    ).get("UserAirconSettings", {})
+                    current_mode = user_settings.get("FanMode", "")
+                    _LOGGER.debug("Current device fan mode: %s", current_mode)
+                else:
+                    _LOGGER.debug("No data available yet, skipping current mode check")
+                
+                # Detailed bitmap analysis
+                _LOGGER.debug("Bitmap analysis:")
+                _LOGGER.debug("- LOW  (0x1): %s", bool(modes & 1))
+                _LOGGER.debug("- MED  (0x2): %s", bool(modes & 2))
+                _LOGGER.debug("- HIGH (0x4): %s", bool(modes & 4))
+                _LOGGER.debug("- AUTO (0x8): %s", bool(modes & 8))
+                
+                # Process bitmap
+                supported = []
+                if modes & 1:
+                    supported.append("LOW")
+                    _LOGGER.debug("Added LOW mode (bit 0 set)")
+                if modes & 2:
+                    supported.append("MED")
+                    _LOGGER.debug("Added MED mode (bit 1 set)")
+                if modes & 4:
+                    supported.append("HIGH")
+                    _LOGGER.debug("Added HIGH mode (bit 2 set)")
+                if modes & 8:
+                    auto_enabled = False
+                    if hasattr(self, 'data') and self.data is not None:
+                        indoor_unit = self.data.get("raw_data", {}).get("lastKnownState", {}).get(
+                            f"<{self.device_id.upper()}>", {}
+                        ).get("AirconSystem", {}).get("IndoorUnit", {})
+                        auto_enabled = indoor_unit.get("NV_AutoFanEnabled", False)
+                    if auto_enabled:
+                        supported.append("AUTO")
+                        _LOGGER.debug("Added AUTO mode (bit 3 set and enabled)")
+
+                # If actual mode is HIGH or device supports basic modes, use defaults
+                if current_mode == "HIGH" or modes & 0x03:
+                    _LOGGER.debug(
+                        "Using default modes due to: Current mode=%s, Basic modes supported=%s",
+                        current_mode,
+                        bool(modes & 0x03)
+                    )
+                    return default_modes
+                    
+                _LOGGER.debug("Bitmap decoding complete - Supported modes: %s", supported)
+                
+                if not supported:
+                    _LOGGER.debug("No modes decoded from bitmap, using default modes: %s", default_modes)
+                    return default_modes
+                    
+                return supported
+
+            # Handle other cases
+            if not modes:
+                _LOGGER.debug("Empty/None input received, using default modes: %s", default_modes)
+                return default_modes
+
+            if isinstance(modes, str):
+                _LOGGER.debug("Processing string input: %s", modes)
+                modes = [m.strip().upper() for m in modes.split(",")]
+                _LOGGER.debug("Parsed string into list: %s", modes)
+
+            elif isinstance(modes, (list, tuple)):
+                _LOGGER.debug("Processing list/tuple input: %s", modes)
+                modes = [str(m).strip().upper() for m in modes]
+                _LOGGER.debug("Normalized list values: %s", modes)
+
+            supported = [m for m in modes if m in valid_modes]
+            _LOGGER.debug(
+                "Validated modes against valid set %s - Result: %s", 
+                valid_modes,
+                supported
+            )
+
+            if not supported:
+                _LOGGER.debug("No valid modes found, using defaults: %s", default_modes)
+                return default_modes
+
+            return supported
+
+        except Exception as err:
+            _LOGGER.error(
+                "Error validating fan modes: %s (input was: %s, type: %s)", 
+                err,
+                modes,
+                type(modes)
+            )
+            _LOGGER.debug("Returning default modes due to error: %s", default_modes)
+            return default_modes
 
     def get_zone_peripheral(self, zone_id: str) -> Union[Dict[str, Any], None]:
         """Get peripheral data for a specific zone."""

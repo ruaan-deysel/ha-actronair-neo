@@ -83,7 +83,7 @@ class ActronMainSensor(ActronEntityBase, SensorEntity):
     
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the main temperature sensor."""
-        super().__init__(coordinator, "sensor", "Indoor Temperature")
+        super().__init__(coordinator, "sensor", "Avg. Inside Temp")
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -97,7 +97,7 @@ class ActronMainSensor(ActronEntityBase, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return entity specific state attributes."""
         return {
-            "humidity": self.coordinator.data["main"]["indoor_humidity"],
+            "Inside Humidity": self.coordinator.data["main"]["indoor_humidity"],
         }
 
 class ActronZoneSensor(ActronEntityBase, SensorEntity):

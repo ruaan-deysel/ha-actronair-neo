@@ -121,7 +121,7 @@ ICON_HVAC: Final = "mdi:hvac"
 ICON_THERMOMETER: Final = "mdi:thermometer"
 ICON_HUMIDITY: Final = "mdi:water-percent"
 ICON_FAN: Final = "mdi:fan"
-ICON_ZONE: Final = "mdi:view-dashboard-variant"
+ICON_ZONE: Final = "mdi:air-conditioner"
 
 # Diagnostic Attributes
 ATTR_BATTERY_LEVEL: Final = "battery_level"

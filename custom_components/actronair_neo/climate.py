@@ -31,8 +31,6 @@ from .const import (
     DOMAIN,
     MIN_TEMP,
     MAX_TEMP,
-    VALID_FAN_MODES,
-    FAN_MODE_SUFFIX_CONT,
 )
 from .coordinator import ActronDataCoordinator
 
@@ -76,14 +74,13 @@ async def async_setup_entry(
 
 class ActronClimate(ActronEntityBase, ClimateEntity):
     """Main climate entity."""
-    
+
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the climate entity."""
         super().__init__(coordinator, "climate")
         self._attr_name = self.DEVICE_NAME
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_hvac_modes = HVAC_MODES
-        self._attr_fan_modes = FAN_MODES
         self._attr_min_temp = MIN_TEMP
         self._attr_max_temp = MAX_TEMP
         self._attr_supported_features = (
@@ -92,6 +89,27 @@ class ActronClimate(ActronEntityBase, ClimateEntity):
             | ClimateEntityFeature.TURN_ON
             | ClimateEntityFeature.TURN_OFF
         )
+
+    @property
+    def fan_modes(self) -> list[str]:
+        """Return the list of available fan modes."""
+        supported_modes = self.coordinator.data["main"].get("supported_fan_modes", [])
+        available_modes = []
+
+        # Map Actron modes to HA modes
+        mode_map = {
+            "LOW": FAN_LOW,
+            "MED": FAN_MEDIUM,
+            "HIGH": FAN_HIGH,
+            "AUTO": FAN_AUTO
+        }
+
+        for mode in supported_modes:
+            if ha_mode := mode_map.get(mode):
+                available_modes.append(ha_mode)
+
+        _LOGGER.debug("Available fan modes: %s", available_modes)
+        return available_modes or [FAN_LOW, FAN_MEDIUM, FAN_HIGH]  # Fallback
 
     @property
     def current_temperature(self) -> float | None:

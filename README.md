@@ -1,13 +1,13 @@
 
 # ActronAir Neo Integration for Home Assistant
 
-> **IMPORTANT NOTICE:** This integration is currently under active development. It may contain bugs or incomplete features. Use at your own risk and please report any issues you encounter.
+> **IMPORTANT NOTICE:** This integration is currently under development. It may contain bugs or incomplete features. Use at your own risk and please report any issues you encounter.
 
 The ActronAir Neo Integration enables seamless control and monitoring of your ActronAir Neo air conditioning system directly from Home Assistant. With this integration, you can automate climate control, monitor indoor and outdoor temperatures, and adjust settings based on real-time data, all from one central location.
 
 ## Development Status
 
-This integration is in active development. Here are a few things to keep in mind:
+This integration is in development. Here are a few things to keep in mind:
 
 - Features may be added, changed, or removed without notice.
 - There might be bugs or unexpected behavior.
@@ -46,8 +46,9 @@ After setup, your ActronAir Neo system will appear as a climate entity in Home A
 
 ## Entities
 
-- **Climate**: Main control for your ActronAir Neo system.
+- **Controls**: Main control for your ActronAir Neo system.
 - **Sensor**: Temperature and humidity readings.
+- **Diagnostics**: System Status, System Health and Filter Status.
 
 The entities will update based on the refresh interval you have configured, providing you with the most recent data.
 

@@ -1,36 +1,102 @@
 {
   "config": {
-    "step": {
-      "user": {
-        "title": "Connect to ActronAir Neo",
-        "description": "Please enter your ActronAir Neo credentials.",
-        "data": {
-          "username": "Username",
-          "password": "Password",
-          "refresh_interval": "Refresh Interval (seconds)",
-          "enable_zone_control": "Enable Individual Zone Control"
-        }
+      "step": {
+          "user": {
+              "title": "Connect to ActronAir Neo",
+              "description": "Please enter your ActronAir Neo credentials.",
+              "data": {
+                  "username": "Username",
+                  "password": "Password",
+                  "refresh_interval": "Refresh Interval (seconds)",
+                  "enable_zone_control": "Enable Zone Control"
+              }
+          }
+      },
+      "error": {
+          "invalid_auth": "Invalid authentication",
+          "cannot_connect": "Failed to connect",
+          "no_devices": "No devices found on account",
+          "unknown": "Unexpected error"
+      },
+      "abort": {
+          "already_configured": "Device is already configured"
       }
-    },
-    "error": {
-      "invalid_auth": "Invalid authentication",
-      "cannot_connect": "Failed to connect",
-      "no_devices": "No devices found on account",
-      "unknown": "Unexpected error"
-    },
-    "abort": {
-      "already_configured": "Device is already configured"
-    }
   },
   "options": {
-    "step": {
-      "init": {
-        "title": "ActronAir Neo Options",
-        "data": {
-          "refresh_interval": "Refresh Interval (seconds)",
-          "enable_zone_control": "Enable Individual Zone Control"
-        }
+      "step": {
+          "init": {
+              "title": "ActronAir Neo Options",
+              "description": "Modify your ActronAir Neo settings",
+              "data": {
+                  "refresh_interval": "Refresh Interval (seconds)",
+                  "enable_zone_control": "Enable Zone Control"
+              }
+          }
       }
-    }
+  },
+  "entity": {
+      "climate": {
+          "actronair_neo": {
+              "name": "ActronAir Neo",
+              "state_attributes": {
+                  "fan_mode": {
+                      "state": {
+                          "low": "Low",
+                          "medium": "Medium",
+                          "high": "High",
+                          "auto": "Auto"
+                      }
+                  },
+                  "hvac_mode": {
+                      "state": {
+                          "off": "Off",
+                          "heat": "Heat",
+                          "cool": "Cool",
+                          "auto": "Auto",
+                          "fan_only": "Fan Only"
+                      }
+                  }
+              }
+          }
+      },
+      "sensor": {
+          "actronair_neo_indoor_temperature": {
+              "name": "Indoor Temperature"
+          }
+      },
+      "binary_sensor": {
+          "actronair_neo_filter_status": {
+              "name": "Filter Status",
+              "state": {
+                  "on": "Needs Cleaning",
+                  "off": "Clean"
+              }
+          },
+          "actronair_neo_system_status": {
+              "name": "System Status",
+              "state": {
+                  "on": "Running",
+                  "off": "Idle"
+              }
+          },
+          "actronair_neo_system_health": {
+              "name": "System Health",
+              "state": {
+                  "on": "Issue Detected",
+                  "off": "Normal"
+              }
+          }
+      },
+      "switch": {
+          "actronair_neo_away_mode": {
+              "name": "Away Mode"
+          },
+          "actronair_neo_quiet_mode": {
+              "name": "Quiet Mode"
+          },
+          "actronair_neo_continuous_fan": {
+              "name": "Continuous Fan"
+          }
+      }
   }
 }

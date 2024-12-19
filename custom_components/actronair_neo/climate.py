@@ -25,6 +25,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ig
 from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: ignore
 from homeassistant.helpers import entity_registry as er # type: ignore
 
+from .base_entity import ActronEntityBase
+
 from .const import (
     DOMAIN,
     MIN_TEMP,
@@ -72,14 +74,13 @@ async def async_setup_entry(
     async_add_entities(entities, update_before_add=True)
 
 
-class ActronClimate(CoordinatorEntity, ClimateEntity):
-    """Representation of an ActronAir Neo climate device."""
-
+class ActronClimate(ActronEntityBase, ClimateEntity):
+    """Main climate entity."""
+    
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
-        """Initialize the climate device."""
-        super().__init__(coordinator)
-        self._attr_name = "ActronAir Neo"
-        self._attr_unique_id = f"{coordinator.device_id}_climate"
+        """Initialize the climate entity."""
+        super().__init__(coordinator, "climate")
+        self._attr_name = self.DEVICE_NAME
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_hvac_modes = HVAC_MODES
         self._attr_fan_modes = FAN_MODES
@@ -235,28 +236,30 @@ class ActronClimate(CoordinatorEntity, ClimateEntity):
             "base_fan_mode": actron_fan_mode.split('+')[0] if actron_fan_mode else "LOW"
         }
 
-class ActronZoneClimate(CoordinatorEntity, ClimateEntity):
-    """Representation of an ActronAir Neo Zone climate device."""
-
+class ActronZoneClimate(ActronEntityBase, ClimateEntity):
+    """Zone climate entity."""
+    
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
-        """Initialize the zone climate device."""
-        super().__init__(coordinator)
+        """Initialize the zone climate entity."""
+        zone_name = coordinator.data['zones'][zone_id]['name']
+        super().__init__(coordinator, "climate", f"Zone {zone_name}")
+        
         self.zone_id = zone_id
-
+        
         # Get zone info from RemoteZoneInfo array to check capabilities
-        zone_info = next(
+        self._zone_info = next(
             (zone for zone in coordinator.data["raw_data"].get("lastKnownState", {})
             .get(f"<{coordinator.device_id.upper()}>", {}).get("RemoteZoneInfo", [])
             if zone.get("NV_Title") == coordinator.data['zones'][zone_id]['name']),
             {}
         )
-
+        
         # Check if zone supports temperature control
         self._has_temp_control = (
-            zone_info.get("NV_VAV", False) and
-            zone_info.get("NV_ITC", False)
+            self._zone_info.get("NV_VAV", False) and
+            self._zone_info.get("NV_ITC", False)
         )
-
+        
         if not self._has_temp_control:
             _LOGGER.debug(
                 "Zone %s (%s) does not support individual temperature control",
@@ -264,27 +267,25 @@ class ActronZoneClimate(CoordinatorEntity, ClimateEntity):
                 coordinator.data['zones'][zone_id]['name']
             )
 
-        self._zone_info = zone_info
-        self._attr_name = f"ActronAir Neo Zone {coordinator.data['zones'][zone_id]['name']}"
-        self._attr_unique_id = f"{coordinator.device_id}_zone_{zone_id}"
+        # Set up basic attributes
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.AUTO]
         self._attr_min_temp = MIN_TEMP
         self._attr_max_temp = MAX_TEMP
-
+        
         # Initialize hvac_mode based on zone state
         self._attr_hvac_mode = (
             HVACMode.OFF if not self.coordinator.data['zones'][zone_id]['is_enabled']
             else self._actron_to_ha_hvac_mode(self.coordinator.data["main"]["mode"])
         )
-
+        
         # Base features all zones support
         features = ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
-
+        
         # Only add temperature control if supported
         if self._has_temp_control:
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
-
+            
         self._attr_supported_features = features
 
     @property

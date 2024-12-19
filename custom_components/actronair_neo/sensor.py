@@ -25,6 +25,7 @@ from .const import (
     ATTR_LAST_UPDATED,
 )
 from .coordinator import ActronDataCoordinator
+from .base_entity import ActronEntityBase
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,16 +78,15 @@ class ActronSensorBase(CoordinatorEntity, SensorEntity):
             "sw_version": self.coordinator.data["main"]["firmware_version"],
         }
 
-class ActronMainSensor(ActronSensorBase):
-    """Representation of the main ActronAir Neo Temperature Sensor."""
-
+class ActronMainSensor(ActronEntityBase, SensorEntity):
+    """Main temperature sensor."""
+    
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the main temperature sensor."""
-        super().__init__(
-            coordinator,
-            "main_temperature",
-            "Indoor Temperature",
-        )
+        super().__init__(coordinator, "sensor", "Indoor Temperature")
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> StateType:
@@ -100,28 +100,25 @@ class ActronMainSensor(ActronSensorBase):
             "humidity": self.coordinator.data["main"]["indoor_humidity"],
         }
 
-class ActronZoneSensor(ActronSensorBase):
-    """Representation of an ActronAir Neo Zone Sensor."""
-
+class ActronZoneSensor(ActronEntityBase, SensorEntity):
+    """Zone temperature sensor."""
+    
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
         """Initialize the zone sensor."""
-        self._zone_id = zone_id
-        zone_data = coordinator.data['zones'][zone_id]
-
-        # Just use the zone name directly
-        super().__init__(
-            coordinator,
-            f"zone_{zone_id}_temperature",
-            f"Zone {zone_data['name']}",
-        )
+        zone_name = coordinator.data['zones'][zone_id]['name']
+        super().__init__(coordinator, "sensor", f"Zone {zone_name}")
+        self.zone_id = zone_id
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> StateType:
         """Return the temperature of the zone."""
         try:
-            return self.coordinator.data['zones'][self._zone_id]['temp']
+            return self.coordinator.data['zones'][self.zone_id]['temp']
         except KeyError as err:
-            _LOGGER.error("Failed to get temperature for zone %s: %s", self._zone_id, err)
+            _LOGGER.error("Failed to get temperature for zone %s: %s", self.zone_id, err)
             return None
 
     @property
@@ -129,16 +126,16 @@ class ActronZoneSensor(ActronSensorBase):
         """Return if entity is available."""
         return (
             super().available
-            and self._zone_id in self.coordinator.data['zones']
-            and self.coordinator.data['zones'][self._zone_id].get('temp') is not None
+            and self.zone_id in self.coordinator.data['zones']
+            and self.coordinator.data['zones'][self.zone_id].get('temp') is not None
         )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return zone specific attributes including humidity and battery level."""
         try:
-            zone_data = self.coordinator.data['zones'][self._zone_id]
-            peripheral_data = self.coordinator.get_zone_peripheral(self._zone_id)
+            zone_data = self.coordinator.data['zones'][self.zone_id]
+            peripheral_data = self.coordinator.get_zone_peripheral(self.zone_id)
 
             attributes = {
                 ATTR_ZONE_NAME: zone_data['name'],
@@ -159,15 +156,15 @@ class ActronZoneSensor(ActronSensorBase):
                 if "ConnectionState" in peripheral_data:
                     attributes["connection_state"] = peripheral_data["ConnectionState"]
 
-            _LOGGER.debug("Zone %s attributes: %s", self._zone_id, attributes)
+            _LOGGER.debug("Zone %s attributes: %s", self.zone_id, attributes)
             return attributes
 
         except KeyError as ex:
-            _LOGGER.error("Key error getting attributes for zone %s: %s", self._zone_id, str(ex))
+            _LOGGER.error("Key error getting attributes for zone %s: %s", self.zone_id, str(ex))
             return {}
         except TypeError as ex:
-            _LOGGER.error("Type error getting attributes for zone %s: %s", self._zone_id, str(ex))
+            _LOGGER.error("Type error getting attributes for zone %s: %s", self.zone_id, str(ex))
             return {}
         except ValueError as ex:
-            _LOGGER.error("Value error getting attributes for zone %s: %s", self._zone_id, str(ex))
+            _LOGGER.error("Value error getting attributes for zone %s: %s", self.zone_id, str(ex))
             return {}

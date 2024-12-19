@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: 
 
 from .const import DOMAIN
 from .coordinator import ActronDataCoordinator
+from .base_entity import ActronEntityBase
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,7 +35,6 @@ async def async_setup_entry(
         ActronHealthMonitorSensor(coordinator),
     ]
     async_add_entities(entities)
-
 
 class ActronDiagnosticBase(CoordinatorEntity):
     """Base class for diagnostic entities."""
@@ -57,15 +57,18 @@ class ActronDiagnosticBase(CoordinatorEntity):
             "sw_version": self.coordinator.data["main"]["firmware_version"],
         }
 
-
-class ActronFilterStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
-    """Binary sensor for filter status."""
-
-    _attr_device_class = BinarySensorDeviceClass.PROBLEM
-
+class ActronFilterStatusSensor(ActronEntityBase, BinarySensorEntity):
+    """Filter status sensor."""
+    
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the filter status sensor."""
-        super().__init__(coordinator, "filter_status", "Filter Status")
+        super().__init__(
+            coordinator,
+            "binary_sensor",
+            "Filter Status",
+            is_diagnostic=True
+        )
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
 
     @property
     def is_on(self) -> bool:
@@ -81,9 +84,8 @@ class ActronFilterStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
             "status": "Needs Cleaning" if self.is_on else "Clean",
         }
 
-
-class ActronSystemStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
-    """Binary sensor for system status."""
+class ActronSystemStatusSensor(ActronEntityBase, BinarySensorEntity):
+    """System status sensor."""
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
     _attr_icon = "mdi:hvac"
@@ -101,7 +103,14 @@ class ActronSystemStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
 
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the system status sensor."""
-        super().__init__(coordinator, "system_status", "System Status")
+        super().__init__(
+            coordinator,
+            "binary_sensor",
+            "System Status",
+            is_diagnostic=True
+        )
+        self._attr_device_class = BinarySensorDeviceClass.RUNNING
+        self._attr_icon = "mdi:hvac"
 
     def _validate_status(self, status: dict[str, Any]) -> bool:
         """Validate the status data structure."""
@@ -488,15 +497,19 @@ class ActronSystemStatusSensor(ActronDiagnosticBase, BinarySensorEntity):
                 "error_details": str(err)
             }
 
-class ActronHealthMonitorSensor(ActronDiagnosticBase, BinarySensorEntity):
-    """Monitor system health and errors."""
-
-    _attr_device_class = BinarySensorDeviceClass.PROBLEM
-    _attr_icon = "mdi:alert-circle"
+class ActronHealthMonitorSensor(ActronEntityBase, BinarySensorEntity):
+    """System health monitor."""
 
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the health monitor."""
-        super().__init__(coordinator, "system_health", "System Health")
+        super().__init__(
+            coordinator,
+            "binary_sensor",
+            "System Health",
+            is_diagnostic=True
+        )
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+        self._attr_icon = "mdi:alert-circle"
 
     @property
     def is_on(self) -> bool:

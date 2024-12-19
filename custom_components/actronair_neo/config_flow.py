@@ -1,10 +1,9 @@
 """Config flow for ActronAir Neo integration."""
 from __future__ import annotations
+import voluptuous as vol # type: ignore
 
 import logging
 from typing import Any
-
-import voluptuous as vol # type: ignore
 
 from homeassistant import config_entries # type: ignore
 from homeassistant.core import HomeAssistant, callback # type: ignore

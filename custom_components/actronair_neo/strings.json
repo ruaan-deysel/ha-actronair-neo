@@ -1,0 +1,38 @@
+{
+    "config": {
+        "flow_title": "{name}",
+        "step": {
+            "user": {
+                "title": "config.step.user.title",
+                "description": "config.step.user.description",
+                "data": {
+                    "username": "config.step.user.data.username",
+                    "password": "config.step.user.data.password",
+                    "refresh_interval": "config.step.user.data.refresh_interval",
+                    "enable_zone_control": "config.step.user.data.enable_zone_control"
+                }
+            }
+        },
+        "error": {
+            "invalid_auth": "config.error.invalid_auth",
+            "cannot_connect": "config.error.cannot_connect",
+            "no_devices": "config.error.no_devices",
+            "unknown": "config.error.unknown"
+        },
+        "abort": {
+            "already_configured": "config.abort.already_configured"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "options.step.init.title",
+                "description": "options.step.init.description",
+                "data": {
+                    "refresh_interval": "options.step.init.data.refresh_interval",
+                    "enable_zone_control": "options.step.init.data.enable_zone_control"
+                }
+            }
+        }
+    }
+}

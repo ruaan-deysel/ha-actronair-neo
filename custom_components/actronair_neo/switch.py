@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: i
 
 from .const import DOMAIN, ICON_ZONE
 from .coordinator import ActronDataCoordinator
+from .base_entity import ActronEntityBase
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,12 +58,12 @@ class ActronBaseSwitch(CoordinatorEntity, SwitchEntity):
             "sw_version": self.coordinator.data["main"]["firmware_version"],
         }
 
-class ActronAwayModeSwitch(ActronBaseSwitch):
-    """Representation of an ActronAir Neo Away Mode switch."""
-
+class ActronAwayModeSwitch(ActronEntityBase, SwitchEntity):
+    """Away mode switch."""
+    
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the away mode switch."""
-        super().__init__(coordinator, "away_mode")
+        super().__init__(coordinator, "switch", "Away Mode")
         self._attr_icon = "mdi:home-export-outline"
 
     @property
@@ -78,12 +79,12 @@ class ActronAwayModeSwitch(ActronBaseSwitch):
         """Turn the switch off."""
         await self.coordinator.set_away_mode(False)
 
-class ActronQuietModeSwitch(ActronBaseSwitch):
-    """Representation of an Actron Neo Quiet Mode switch."""
-
+class ActronQuietModeSwitch(ActronEntityBase, SwitchEntity):
+    """Quiet mode switch."""
+    
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the quiet mode switch."""
-        super().__init__(coordinator, "quiet_mode")
+        super().__init__(coordinator, "switch", "Quiet Mode")
         self._attr_icon = "mdi:volume-mute"
 
     @property
@@ -99,13 +100,12 @@ class ActronQuietModeSwitch(ActronBaseSwitch):
         """Turn the switch off."""
         await self.coordinator.set_quiet_mode(False)
 
-class ActronContinuousFanSwitch(ActronBaseSwitch):
-    """Representation of an ActronAir Neo Continuous Fan Mode switch."""
-
+class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
+    """Continuous fan mode switch."""
+    
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the continuous fan mode switch."""
-        super().__init__(coordinator, "continuous_fan")
-        self._attr_name = "ActronAir Neo Continuous Fan"
+        super().__init__(coordinator, "switch", "Continuous Fan")
         self._attr_icon = "mdi:fan-clock"
 
     @property
@@ -204,16 +204,15 @@ class ActronContinuousFanSwitch(ActronBaseSwitch):
             "last_update": datetime.datetime.now().isoformat(),
         }
 
-class ActronZoneSwitch(CoordinatorEntity, SwitchEntity):
-    """Representation of an Actron Neo Zone switch."""
-
+class ActronZoneSwitch(ActronEntityBase, SwitchEntity):
+    """Zone switch."""
+    
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
         """Initialize the zone switch."""
-        super().__init__(coordinator)
+        zone_name = coordinator.data['zones'][zone_id]['name']
+        super().__init__(coordinator, "switch", f"Zone {zone_name}")
         self.zone_id = zone_id
-        self.zone_index = int(zone_id.split('_')[1]) - 1  # Convert to zero-based index
-        self._attr_name = f"ActronAir Neo Zone {coordinator.data['zones'][zone_id]['name']}"
-        self._attr_unique_id = f"{coordinator.device_id}_zone_{zone_id}"
+        self.zone_index = int(zone_id.split('_')[1]) - 1
         self._attr_icon = ICON_ZONE
 
     @property

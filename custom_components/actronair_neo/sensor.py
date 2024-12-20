@@ -80,7 +80,7 @@ class ActronSensorBase(CoordinatorEntity, SensorEntity):
 
 class ActronMainSensor(ActronEntityBase, SensorEntity):
     """Main temperature sensor."""
-    
+
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the main temperature sensor."""
         super().__init__(coordinator, "sensor", "Avg. Inside Temp")
@@ -102,7 +102,7 @@ class ActronMainSensor(ActronEntityBase, SensorEntity):
 
 class ActronZoneSensor(ActronEntityBase, SensorEntity):
     """Zone temperature sensor."""
-    
+
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
         """Initialize the zone sensor."""
         zone_name = coordinator.data['zones'][zone_id]['name']

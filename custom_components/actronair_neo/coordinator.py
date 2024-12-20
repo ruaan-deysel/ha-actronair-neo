@@ -107,7 +107,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
             return f"{base_mode}{FAN_MODE_SUFFIX_CONT}" if continuous else base_mode
 
-        except Exception as err:
+        except (KeyError, AttributeError, ValueError) as err:
             _LOGGER.error(
                 "Error validating fan mode '%s': %s",
                 mode,
@@ -177,7 +177,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
             _LOGGER.debug("Fetching data for device %s", self.device_id)
             status = await self.api.get_ac_status(self.device_id)
-            parsed_data = self._parse_data(status)
+            parsed_data = await self._parse_data(status)  # Add await here
             self.last_data = parsed_data
             _LOGGER.debug("Parsed data: %s", parsed_data)
             return parsed_data
@@ -197,7 +197,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 return self.last_data
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
-    def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    async def _parse_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Parse the data from the API into a format suitable for the climate entity.
         
         Args:
@@ -270,37 +270,54 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 is_continuous
             )
 
-            # Parse zone data with battery information
+            # Parse zone data with enhanced capabilities and peripheral information
             remote_zone_info = last_known_state.get("RemoteZoneInfo", [])
             peripherals = aircon_system.get("Peripherals", [])
 
             for i, zone in enumerate(remote_zone_info):
-                if i < MAX_ZONES and zone.get("NV_Exists", False):
+                if i < MAX_ZONES:
                     zone_id = f"zone_{i+1}"
-                    zone_data = {
-                        "name": zone.get("NV_Title", f"Zone {i+1}"),
-                        "temp": zone.get("LiveTemp_oC"),
-                        "humidity": zone.get("LiveHumidity_pc"),
-                        "is_enabled": (
-                            parsed_data["main"]["EnabledZones"][i]
-                            if i < len(parsed_data["main"]["EnabledZones"])
-                            else False
-                        ),
-                    }
 
-                    # Find matching peripheral for battery info
-                    for peripheral in peripherals:
-                        if peripheral.get("ZoneAssignment", []) == [i + 1]:
-                            zone_data.update({
-                                "battery_level": peripheral.get("RemainingBatteryCapacity_pc"),
-                                "signal_strength": peripheral.get("Signal_of3"),
-                                "peripheral_type": peripheral.get("DeviceType"),
-                                "last_connection": peripheral.get("LastConnectionTime"),
-                                "connection_state": peripheral.get("ConnectionState"),
-                            })
-                            break
+                    # Get zone capabilities including existence check
+                    capabilities = self.api.get_zone_capabilities(zone)
 
-                    parsed_data["zones"][zone_id] = zone_data
+                    if capabilities["exists"]:
+                        zone_data = {
+                            "name": zone.get("NV_Title", f"Zone {i+1}"),
+                            "temp": zone.get("LiveTemp_oC"),
+                            "humidity": zone.get("LiveHumidity_pc"),
+                            "is_enabled": (
+                                parsed_data["main"]["EnabledZones"][i]
+                                if i < len(parsed_data["main"]["EnabledZones"])
+                                else False
+                            ),
+                            "capabilities": capabilities,
+                            # Add temperature setpoints from capabilities
+                            "temp_setpoint_cool": capabilities.get("target_temp_cool"),
+                            "temp_setpoint_heat": capabilities.get("target_temp_heat"),
+                        }
+
+                        # Find matching peripheral for battery info
+                        for peripheral in peripherals:
+                            if peripheral.get("ZoneAssignment", []) == [i + 1]:
+                                peripheral_data = {
+                                    "battery_level": peripheral.get("RemainingBatteryCapacity_pc"),
+                                    "signal_strength": peripheral.get("Signal_of3"),
+                                    "peripheral_type": peripheral.get("DeviceType"),
+                                    "last_connection": peripheral.get("LastConnectionTime"),
+                                    "connection_state": peripheral.get("ConnectionState"),
+                                }
+                                # Add peripheral data to zone_data
+                                zone_data.update(peripheral_data)
+
+                                # Add peripheral capabilities if present
+                                if peripheral.get("ControlCapabilities"):
+                                    zone_data["capabilities"].update({
+                                        "peripheral_capabilities": peripheral.get("ControlCapabilities")
+                                    })
+                                break
+
+                        parsed_data["zones"][zone_id] = zone_data
 
             return parsed_data
 
@@ -312,10 +329,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Validate and normalize supported fan modes."""
         valid_modes = {"LOW", "MED", "HIGH", "AUTO"}
         default_modes = ["LOW", "MED", "HIGH"]
-        
+
         try:
             _LOGGER.debug("Starting fan mode validation with input: %s (type: %s)", modes, type(modes))
-            
+
             # Handle integer case - API returns a bitmap
             if isinstance(modes, int):
                 # Binary mapping: 1=LOW, 2=MED, 4=HIGH, 8=AUTO (bitmap)
@@ -323,7 +340,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     "Processing bitmap value: %d (binary: %s, hex: 0x%X)",
                     modes, bin(modes), modes
                 )
-                
+
                 # Get current fan mode from settings - safely handle None case
                 current_mode = None
                 if hasattr(self, 'data') and self.data is not None:
@@ -334,14 +351,14 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     _LOGGER.debug("Current device fan mode: %s", current_mode)
                 else:
                     _LOGGER.debug("No data available yet, skipping current mode check")
-                
+
                 # Detailed bitmap analysis
                 _LOGGER.debug("Bitmap analysis:")
                 _LOGGER.debug("- LOW  (0x1): %s", bool(modes & 1))
                 _LOGGER.debug("- MED  (0x2): %s", bool(modes & 2))
                 _LOGGER.debug("- HIGH (0x4): %s", bool(modes & 4))
                 _LOGGER.debug("- AUTO (0x8): %s", bool(modes & 8))
-                
+
                 # Process bitmap
                 supported = []
                 if modes & 1:
@@ -372,13 +389,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                         bool(modes & 0x03)
                     )
                     return default_modes
-                    
+
                 _LOGGER.debug("Bitmap decoding complete - Supported modes: %s", supported)
-                
+
                 if not supported:
                     _LOGGER.debug("No modes decoded from bitmap, using default modes: %s", default_modes)
                     return default_modes
-                    
+
                 return supported
 
             # Handle other cases
@@ -468,7 +485,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error(
                 "Failed to set %s temperature to %s: %s", 
                 'cooling' if is_cooling else 'heating', 
-                temperature, 
+                temperature,
                 err
             )
             raise

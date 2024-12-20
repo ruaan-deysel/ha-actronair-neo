@@ -59,7 +59,7 @@ class ActronDiagnosticBase(CoordinatorEntity):
 
 class ActronFilterStatusSensor(ActronEntityBase, BinarySensorEntity):
     """Filter status sensor."""
-    
+
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the filter status sensor."""
         super().__init__(
@@ -219,7 +219,7 @@ class ActronSystemStatusSensor(ActronEntityBase, BinarySensorEntity):
                             "battery": self._format_percentage(battery_level),
                             "signal": peripheral_data.get("Signal_of3", self.UNKNOWN_VALUE),
                             "last_seen": peripheral_data.get("LastConnectionTime", self.UNKNOWN_VALUE),
-                            "connection": peripheral_data.get("ConnectionState", self.UNKNOWN_VALUE)
+                            "connection": peripheral_data.get("ConnectionState", self.UNKNOWN_VALUE),
                         }
 
                 # Add to formatted zones with a cleaner name
@@ -372,7 +372,7 @@ class ActronSystemStatusSensor(ActronEntityBase, BinarySensorEntity):
             last_known_state = raw_data.get("lastKnownState", {}).get(f"<{device_id}>", {})
             live_aircon = last_known_state.get("LiveAircon", {})
             outdoor_unit = live_aircon.get("OutdoorUnit", {})
-            
+
             attributes = {
                 # Basic system state
                 "compressor_state": live_aircon.get("CompressorMode", self.UNKNOWN_VALUE),
@@ -385,17 +385,17 @@ class ActronSystemStatusSensor(ActronEntityBase, BinarySensorEntity):
                 "away_mode": (
                     self.ENABLED_VALUE if data.get("away_mode") else self.DISABLED_VALUE
                 ),
-                
+
                 # Fan Performance Data
                 "fan_performance": {
                     "rpm": f"{live_aircon.get('FanRPM', 0)} RPM",
                     "pwm": f"{live_aircon.get('FanPWM', 0)}%",
                     "status": (
-                        self.RUNNING_VALUE if live_aircon.get("AmRunningFan") 
+                        self.RUNNING_VALUE if live_aircon.get("AmRunningFan")
                         else self.OFF_VALUE
                     )
                 },
-                
+
                 # Compressor Performance
                 "compressor": {
                     "capacity": f"{live_aircon.get('CompressorCapacity', 0)}%",
@@ -408,12 +408,12 @@ class ActronSystemStatusSensor(ActronEntityBase, BinarySensorEntity):
                     "power": f"{outdoor_unit.get('CompPower', 0)} W",
                     "speed": f"{outdoor_unit.get('CompSpeed', 0)} RPM",
                     "status": (
-                        self.RUNNING_VALUE if outdoor_unit.get("CompressorOn") 
+                        self.RUNNING_VALUE if outdoor_unit.get("CompressorOn")
                         else self.OFF_VALUE
                     ),
                     "valve_position": outdoor_unit.get("ReverseValvePosition", self.UNKNOWN_VALUE)
                 },
-                
+
                 # Temperature Readings
                 "temperatures": {
                     "indoor": self._format_temperature(data.get("indoor_temp")),
@@ -426,7 +426,7 @@ class ActronSystemStatusSensor(ActronEntityBase, BinarySensorEntity):
                         .get("Temperature_oC")
                     )
                 },
-                
+
                 # System Info
                 "filter_status": (
                     "Needs Cleaning" if data.get("filter_clean_required") else "Clean"
@@ -454,7 +454,7 @@ class ActronSystemStatusSensor(ActronEntityBase, BinarySensorEntity):
                         "connection_state": peripheral.get("ConnectionState", self.UNKNOWN_VALUE),
                         "last_connection": peripheral.get("LastConnectionTime", self.UNKNOWN_VALUE),
                     }
-                    
+
                     # Add temperature readings if available
                     sensor_inputs = peripheral.get("SensorInputs", {})
                     thermistors = sensor_inputs.get("Thermistors", {})
@@ -465,7 +465,7 @@ class ActronSystemStatusSensor(ActronEntityBase, BinarySensorEntity):
                         sensor_info["ambient_temp"] = self._format_temperature(
                             thermistors.get("Ambient_oC")
                         )
-                    
+
                     zone_info["sensor"] = sensor_info
 
                 zones[zone_data["name"]] = zone_info
@@ -477,7 +477,7 @@ class ActronSystemStatusSensor(ActronEntityBase, BinarySensorEntity):
             sys_status = last_known_state.get("SystemStatus_Local", {})
             cloud_status = last_known_state.get("Cloud", {})
             wifi_info = sys_status.get("WiFi", {})
-            
+            # attributes
             attributes["connection"] = {
                 "wifi_signal": self._format_wifi_signal(sys_status.get("WifiStrength_of3")),
                 "wifi_ssid": wifi_info.get("ApSSID", self.UNKNOWN_VALUE),

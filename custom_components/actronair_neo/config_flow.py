@@ -1,9 +1,10 @@
 """Config flow for ActronAir Neo integration."""
 from __future__ import annotations
-import voluptuous as vol # type: ignore
 
 import logging
 from typing import Any
+
+import voluptuous as vol # type: ignore
 
 from homeassistant import config_entries # type: ignore
 from homeassistant.core import HomeAssistant, callback # type: ignore
@@ -35,7 +36,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
     session = aiohttp_client.async_get_clientsession(hass)
-    api = ActronApi(data[CONF_USERNAME], data[CONF_PASSWORD], session, hass.config.path())
+    api = ActronApi(username=data[CONF_USERNAME], password=data[CONF_PASSWORD], session=session)
 
     try:
         await api.initializer()

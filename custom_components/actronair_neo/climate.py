@@ -22,7 +22,6 @@ from homeassistant.const import ( # type: ignore
 )
 from homeassistant.core import HomeAssistant # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
-from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: ignore
 from homeassistant.helpers import entity_registry as er # type: ignore
 
 from .base_entity import ActronEntityBase
@@ -61,7 +60,7 @@ async def async_setup_entry(
     entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
 
     if coordinator.enable_zone_control:
-        for zone_id, zone_data in coordinator.data['zones'].items():
+        for zone_id, _ in coordinator.data['zones'].items():
             entities.append(ActronZoneClimate(coordinator, zone_id))
     else:
         # Remove any existing zone climate entities
@@ -255,29 +254,24 @@ class ActronClimate(ActronEntityBase, ClimateEntity):
         }
 
 class ActronZoneClimate(ActronEntityBase, ClimateEntity):
-    """Zone climate entity."""
-    
+    """Zone climate entity with enhanced control capabilities."""
+
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
         """Initialize the zone climate entity."""
         zone_name = coordinator.data['zones'][zone_id]['name']
         super().__init__(coordinator, "climate", f"Zone {zone_name}")
-        
+
         self.zone_id = zone_id
-        
-        # Get zone info from RemoteZoneInfo array to check capabilities
-        self._zone_info = next(
-            (zone for zone in coordinator.data["raw_data"].get("lastKnownState", {})
-            .get(f"<{coordinator.device_id.upper()}>", {}).get("RemoteZoneInfo", [])
-            if zone.get("NV_Title") == coordinator.data['zones'][zone_id]['name']),
-            {}
-        )
-        
-        # Check if zone supports temperature control
-        self._has_temp_control = (
-            self._zone_info.get("NV_VAV", False) and
-            self._zone_info.get("NV_ITC", False)
-        )
-        
+
+        # Load capabilities from coordinator data
+        zone_data = coordinator.data['zones'][zone_id]
+        capabilities = zone_data.get('capabilities', {})
+
+        self._can_operate = capabilities.get('can_operate', False)
+        self._exists = capabilities.get('exists', False)
+        self._has_temp_control = capabilities.get('has_temp_control', False)
+        self._has_separate_targets = capabilities.get('has_separate_targets', False)
+
         if not self._has_temp_control:
             _LOGGER.debug(
                 "Zone %s (%s) does not support individual temperature control",
@@ -290,20 +284,21 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
         self._attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.AUTO]
         self._attr_min_temp = MIN_TEMP
         self._attr_max_temp = MAX_TEMP
-        
+
         # Initialize hvac_mode based on zone state
         self._attr_hvac_mode = (
             HVACMode.OFF if not self.coordinator.data['zones'][zone_id]['is_enabled']
             else self._actron_to_ha_hvac_mode(self.coordinator.data["main"]["mode"])
         )
-        
-        # Base features all zones support
+
+        # Set up features based on capabilities
         features = ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
-        
-        # Only add temperature control if supported
+
         if self._has_temp_control:
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
-            
+            if self._has_separate_targets:
+                features |= ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+
         self._attr_supported_features = features
 
     @property
@@ -312,6 +307,8 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
         return (
             super().available
             and self.coordinator.enable_zone_control
+            and self._exists
+            and self._can_operate
             and self.coordinator.data['zones'].get(self.zone_id) is not None
         )
 
@@ -337,26 +334,47 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
         if not self._has_temp_control:
             return None
 
-        try:
-            main_mode = self.coordinator.data["main"]["mode"]
-            zone_info = self._zone_info
+        zone_data = self.coordinator.data['zones'][self.zone_id]
+        main_mode = self.coordinator.data["main"]["mode"]
 
-            if main_mode == "COOL":
-                return float(zone_info.get("TemperatureSetpoint_Cool_oC"))
-            elif main_mode == "HEAT":
-                return float(zone_info.get("TemperatureSetpoint_Heat_oC"))
-            elif main_mode == "AUTO":
-                # In auto mode, return based on current compressor state
-                compressor_state = self.coordinator.data["main"]["compressor_state"]
-                if compressor_state == "COOL":
-                    return float(zone_info.get("TemperatureSetpoint_Cool_oC"))
-                elif compressor_state == "HEAT":
-                    return float(zone_info.get("TemperatureSetpoint_Heat_oC"))
+        try:
+            if self._has_separate_targets:
+                if main_mode == "COOL":
+                    return zone_data["temp_setpoint_cool"]
+                elif main_mode == "HEAT":
+                    return zone_data["temp_setpoint_heat"]
+                elif main_mode == "AUTO":
+                    # In auto mode, return based on current compressor state
+                    compressor_state = self.coordinator.data["main"]["compressor_state"]
+                    if compressor_state == "COOL":
+                        return zone_data["temp_setpoint_cool"]
+                    elif compressor_state == "HEAT":
+                        return zone_data["temp_setpoint_heat"]
+            else:
+                # Single target mode
+                return zone_data.get("temp_setpoint_heat")  # Default to heat setpoint
+
             return None
 
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.debug("Error getting target temperature for zone %s: %s", self.zone_id, err)
             return None
+
+    @property
+    def target_temperature_high(self) -> float | None:
+        """Return the high target temperature."""
+        if not (self._has_temp_control and self._has_separate_targets):
+            return None
+
+        return self.coordinator.data['zones'][self.zone_id]["temp_setpoint_cool"]
+
+    @property
+    def target_temperature_low(self) -> float | None:
+        """Return the low target temperature."""
+        if not (self._has_temp_control and self._has_separate_targets):
+            return None
+
+        return self.coordinator.data['zones'][self.zone_id]["temp_setpoint_heat"]
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
@@ -392,64 +410,33 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
             _LOGGER.warning("Cannot set temperature: Zone control is disabled")
             return
 
-        temperature = kwargs.get(ATTR_TEMPERATURE)
-        if temperature is None:
-            return
-
-        if not MIN_TEMP <= temperature <= MAX_TEMP:
-            _LOGGER.warning("Requested temperature %s outside valid range", temperature)
-            return
-
         try:
-            # Get the zone index (1-based)
             zone_index = int(self.zone_id.split('_')[1]) - 1
 
-            main_mode = self.coordinator.data["main"]["mode"]
-            curr_temp = float(temperature)
+            if self._has_separate_targets:
+                # Handle separate heat/cool targets
+                target_high = kwargs.get('target_temp_high')
+                target_low = kwargs.get('target_temp_low')
 
-            # Create appropriate temperature command based on mode
-            if main_mode == "AUTO":
-                # In auto mode, update both setpoints
-                await self.coordinator.api.send_command(
-                    self.coordinator.device_id,
-                    self.coordinator.api.create_command(
-                        "SET_ZONE_TEMP",
-                        zone=zone_index,
-                        temp=curr_temp,
-                        temp_key="TemperatureSetpoint_Cool_oC"
+                if target_high is not None or target_low is not None:
+                    await self.coordinator.api.set_zone_temperature(
+                        zone_index=zone_index,
+                        target_cool=target_high,
+                        target_heat=target_low
                     )
-                )
-                await self.coordinator.api.send_command(
-                    self.coordinator.device_id,
-                    self.coordinator.api.create_command(
-                        "SET_ZONE_TEMP",
-                        zone=zone_index,
-                        temp=curr_temp,
-                        temp_key="TemperatureSetpoint_Heat_oC"
-                    )
-                )
-            elif main_mode == "COOL":
-                await self.coordinator.api.send_command(
-                    self.coordinator.device_id,
-                    self.coordinator.api.create_command(
-                        "SET_ZONE_TEMP",
-                        zone=zone_index,
-                        temp=curr_temp,
-                        temp_key="TemperatureSetpoint_Cool_oC"
-                    )
-                )
-            elif main_mode == "HEAT":
-                await self.coordinator.api.send_command(
-                    self.coordinator.device_id,
-                    self.coordinator.api.create_command(
-                        "SET_ZONE_TEMP",
-                        zone=zone_index,
-                        temp=curr_temp,
-                        temp_key="TemperatureSetpoint_Heat_oC"
-                    )
-                )
+            else:
+                # Handle single target
+                temperature = kwargs.get(ATTR_TEMPERATURE)
+                if temperature is not None:
+                    if not MIN_TEMP <= temperature <= MAX_TEMP:
+                        _LOGGER.warning("Requested temperature %s outside valid range", temperature)
+                        return
 
-            # Refresh the coordinator data
+                    await self.coordinator.api.set_zone_temperature(
+                        zone_index=zone_index,
+                        temperature=temperature
+                    )
+
             await self.coordinator.async_request_refresh()
 
         except Exception as err:
@@ -510,10 +497,16 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return zone specific attributes."""
+        zone_data = self.coordinator.data['zones'][self.zone_id]
         data = {
-            "zone_name": self.coordinator.data['zones'][self.zone_id]['name'],
+            "zone_name": zone_data['name'],
             "supports_temperature_control": self._has_temp_control,
-            "current_humidity": self.coordinator.data['zones'][self.zone_id]['humidity'],
+            "supports_separate_targets": self._has_separate_targets,
+            "current_humidity": zone_data['humidity'],
         }
+
+        # Add capability information if relevant
+        if capabilities := zone_data.get("capabilities"):
+            data["capabilities"] = capabilities
 
         return data

@@ -32,7 +32,7 @@ async def async_setup_entry(
     ]
 
     # Add zone switches
-    for zone_id, zone_data in coordinator.data['zones'].items():
+    for zone_id, _ in coordinator.data['zones'].items():
         entities.append(ActronZoneSwitch(coordinator, zone_id))
 
     async_add_entities(entities)
@@ -60,7 +60,7 @@ class ActronBaseSwitch(CoordinatorEntity, SwitchEntity):
 
 class ActronAwayModeSwitch(ActronEntityBase, SwitchEntity):
     """Away mode switch."""
-    
+
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the away mode switch."""
         super().__init__(coordinator, "switch", "Away Mode")
@@ -71,17 +71,17 @@ class ActronAwayModeSwitch(ActronEntityBase, SwitchEntity):
         """Return true if away mode is on."""
         return self.coordinator.data["main"]["away_mode"]
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self) -> None:
         """Turn the switch on."""
         await self.coordinator.set_away_mode(True)
 
-    async def async_turn_off(self, **kwargs: Any) -> None:
+    async def async_turn_off(self) -> None:
         """Turn the switch off."""
         await self.coordinator.set_away_mode(False)
 
 class ActronQuietModeSwitch(ActronEntityBase, SwitchEntity):
     """Quiet mode switch."""
-    
+
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the quiet mode switch."""
         super().__init__(coordinator, "switch", "Quiet Mode")
@@ -92,17 +92,17 @@ class ActronQuietModeSwitch(ActronEntityBase, SwitchEntity):
         """Return true if quiet mode is on."""
         return self.coordinator.data["main"]["quiet_mode"]
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self) -> None:
         """Turn the switch on."""
         await self.coordinator.set_quiet_mode(True)
 
-    async def async_turn_off(self, **kwargs: Any) -> None:
+    async def async_turn_off(self) -> None:
         """Turn the switch off."""
         await self.coordinator.set_quiet_mode(False)
 
 class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
     """Continuous fan mode switch."""
-    
+
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the continuous fan mode switch."""
         super().__init__(coordinator, "switch", "Continuous Fan")
@@ -114,7 +114,7 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
         current_mode = self.coordinator.data["main"].get("fan_mode", "")
         return "+CONT" in current_mode
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self) -> None:
         """Turn the switch on."""
         try:
             # Get current fan mode and strip any existing suffixes
@@ -153,7 +153,7 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
             )
             raise
 
-    async def async_turn_off(self, **kwargs: Any) -> None:
+    async def async_turn_off(self) -> None:
         """Turn the switch off."""
         try:
             # Get current fan mode and strip continuous suffix
@@ -197,7 +197,7 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
         """Return additional state attributes."""
         current_mode = self.coordinator.data["main"].get("fan_mode", "")
         base_mode = current_mode.split('+')[0] if '+' in current_mode else current_mode
-        
+
         return {
             "base_fan_mode": base_mode,
             "fan_mode": current_mode,
@@ -206,7 +206,7 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
 
 class ActronZoneSwitch(ActronEntityBase, SwitchEntity):
     """Zone switch."""
-    
+
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
         """Initialize the zone switch."""
         zone_name = coordinator.data['zones'][zone_id]['name']
@@ -220,11 +220,11 @@ class ActronZoneSwitch(ActronEntityBase, SwitchEntity):
         """Return true if the zone is enabled."""
         return self.coordinator.data['zones'][self.zone_id]['is_enabled']
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self) -> None:
         """Turn the zone on."""
         await self.coordinator.set_zone_state(self.zone_index, True)
 
-    async def async_turn_off(self, **kwargs: Any) -> None:
+    async def async_turn_off(self) -> None:
         """Turn the zone off."""
         await self.coordinator.set_zone_state(self.zone_index, False)
 

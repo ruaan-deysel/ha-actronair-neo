@@ -3,7 +3,7 @@ from typing import Final
 
 # Integration information
 DOMAIN: Final = "actronair_neo"
-VERSION: Final = "2024.12.17"
+VERSION: Final = "2024.12.23"
 
 # Configuration constants
 CONF_USERNAME: Final = "username"
@@ -151,3 +151,42 @@ DIAG_SYSTEM: Final = "system_status"
 DIAG_ENVIRONMENTAL: Final = "environmental"
 DIAG_ZONES: Final = "zones"
 DIAG_INFO: Final = "info"
+
+# Model Series Definitions
+ADVANCE_SERIES_MODELS: Final[frozenset[str]] = frozenset({
+    "CRV13AS", "EVV13AS-V", 
+    "CRV15AS", "EVV15AS-V", 
+    "CRV17AS", "EVV17AS-V", 
+    "CRV15AT", "EVV15AS", 
+    "CRV17AT", "EVV17AS", 
+    "CRV210T", "EVV210S", 
+    "CRV240T", "EVV240S"
+})
+
+AIRES_SERIES_MODELS: Final[frozenset[str]] = frozenset({
+    "CRS17AT", "CRS20AT"
+})
+
+CLASSIC_SERIES_MODELS: Final[frozenset[str]] = frozenset({
+    "CRA100S", "EVA100S",
+    "CRA130S", "EVA130S",
+    "CRA150S", "EVA150S",
+    "CRA170S", "EVA170S",
+    "CRA130T", "EVA130S",
+    "CRA150T", "EVA150S",
+    "CRA170T", "EVA170S",
+    "CRA200T", "EVA200S",
+    "CRA230T", "EVA230S"
+})
+
+# Fan Mode Capabilities
+BASE_FAN_MODES: Final[frozenset[str]] = frozenset({"LOW", "MED", "HIGH"})
+ADVANCE_FAN_MODES: Final[frozenset[str]] = frozenset({"LOW", "MED", "HIGH", "AUTO"})
+
+# Bitmap values for fan modes
+FAN_MODE_BITMASK: Final[dict[str, int]] = {
+    "LOW": 0x01,
+    "MED": 0x02,
+    "HIGH": 0x04,
+    "AUTO": 0x08
+}

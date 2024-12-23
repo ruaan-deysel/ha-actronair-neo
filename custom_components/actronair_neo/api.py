@@ -17,6 +17,10 @@ from .const import (
     MAX_TEMP,
     MAX_ZONES,
     MIN_TEMP,
+    BASE_FAN_MODES,
+    ADVANCE_FAN_MODES,
+    ADVANCE_SERIES_MODELS,
+    FAN_MODE_BITMASK,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -101,6 +105,12 @@ class ActronApi:
 
         # Rate limiting
         self.rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
+        
+        # Document the rate limiting strategy
+        _LOGGER.debug(
+            "Initializing rate limiter with %s requests per minute",
+            MAX_REQUESTS_PER_MINUTE
+        )
 
         # Fan mode management
         self._continuous_fan: bool = False
@@ -112,8 +122,122 @@ class ActronApi:
         self._zone_locks: Dict[int, asyncio.Lock] = {}
 
         # Request tracking
-        self._request_semaphore = asyncio.Semaphore(MAX_REQUESTS_PER_MINUTE)
         self._request_timestamps: list[datetime] = []
+
+        # Refresh token lock
+        self._refresh_lock = asyncio.Lock()
+
+    def _get_model_series_capabilities(self, model: str) -> set[str]:
+        """Determine supported fan modes based on model series.
+        
+        Args:
+            model: The model number of the AC unit
+            
+        Returns:
+            Set of supported fan modes for this model series
+        """
+        model_base = model.split('-')[0] if '-' in model else model
+        
+        if model_base in ADVANCE_SERIES_MODELS:
+            return ADVANCE_FAN_MODES
+        return BASE_FAN_MODES
+
+    def _is_advance_series(self, model: str | None) -> bool:
+        """Check if model is from Advance series."""
+        if not model:
+            return False
+        model_base = model.split('-')[0] if '-' in model else model
+        return model_base in ADVANCE_SERIES_MODELS
+
+    def _validate_fan_modes(self, modes: Any, model: str | None = None) -> list[str]:
+        """Validate and normalize supported fan modes.
+        
+        Args:
+            modes: Bitmap or list of fan modes from the API
+            model: AC unit model number (optional)
+            
+        Returns:
+            List of supported fan modes for this unit
+            
+        Note:
+            - NV_SupportedFanModes is a bitmap where:
+                1=LOW, 2=MED, 4=HIGH, 8=AUTO
+            - Some devices omit HIGH from NV_SupportedFanModes even though
+                they support it. If we detect HIGH mode in current settings,
+                we add it to supported modes regardless of bitmap.
+            - AUTO mode is only available on Advance Series models
+        """
+        try:
+            _LOGGER.debug("Validating fan modes - Input: %s, Model: %s", modes, model)
+            
+            # Get base capabilities from model series
+            supported_modes = set(BASE_FAN_MODES)  # Start with base modes
+            if model:
+                supported_modes = self._get_model_series_capabilities(model)
+            
+            # If we have a bitmap, process it
+            if isinstance(modes, int):
+                reported_modes = set()
+                for mode, bit in FAN_MODE_BITMASK.items():
+                    if modes & bit:
+                        reported_modes.add(mode)
+                
+                _LOGGER.debug(
+                    "Bitmap analysis: %s (0x%X) reports modes: %s",
+                    bin(modes),
+                    modes,
+                    reported_modes
+                )
+                
+                # Special handling for AUTO mode
+                if "AUTO" in reported_modes:
+                    if model and model not in ADVANCE_SERIES_MODELS:
+                        _LOGGER.warning(
+                            "AUTO mode reported but model %s is not Advance Series",
+                            model
+                        )
+                        reported_modes.remove("AUTO")
+                
+                # Check current mode
+                current_mode = None
+                if hasattr(self, 'data') and self.data is not None:
+                    user_settings = self.data.get("raw_data", {}).get("lastKnownState", {}).get(
+                        f"<{self.device_id.upper()}>", {}
+                    ).get("UserAirconSettings", {})
+                    current_mode = user_settings.get("FanMode", "").split('+')[0]
+                
+                # Always include HIGH if it's the current mode
+                if current_mode == "HIGH":
+                    reported_modes.add("HIGH")
+                
+                # Merge reported modes with base capabilities
+                supported_modes &= reported_modes
+                
+                _LOGGER.debug(
+                    "Final supported modes after bitmap analysis: %s",
+                    supported_modes
+                )
+            
+            # Ensure we always have at least the base modes
+            if not supported_modes or len(supported_modes) < 2:
+                _LOGGER.warning(
+                    "Insufficient modes detected (%s), falling back to base modes",
+                    supported_modes
+                )
+                supported_modes = set(BASE_FAN_MODES)
+            
+            return sorted(list(supported_modes))
+            
+        except Exception as err:
+            _LOGGER.error(
+                "Error validating fan modes: %s (input: %s, model: %s)",
+                self.device_id,
+                err,
+                modes,
+                model,
+                exc_info=True
+            )
+            return list(BASE_FAN_MODES)
 
     def validate_fan_mode(self, mode: str, continuous: bool = False) -> str:
         """Validate and format fan mode.
@@ -333,8 +457,9 @@ class ActronApi:
                 try:
                     headers = kwargs.get('headers', {})
                     if auth_required:
-                        if not self.access_token or datetime.now() >= self.token_expires_at:
-                            await self.refresh_access_token()
+                        async with self._refresh_lock:
+                            if not self.access_token or datetime.now() >= self.token_expires_at:
+                                await self.refresh_access_token()
                         headers['Authorization'] = f'Bearer {self.access_token}'
                     kwargs['headers'] = headers
 
@@ -650,19 +775,26 @@ class ActronApi:
 
     async def set_fan_mode(self, mode: str, continuous: Optional[bool] = None) -> None:
         """Set fan mode with state tracking, validation and retry logic.
-        
+
         Args:
             mode: The fan mode to set (LOW, MED, HIGH, AUTO)
             continuous: Whether to enable continuous fan mode. If None, maintains current state.
-        
+
         Raises:
-            ApiError: If communication with the API fails
-            ValueError: If the fan mode is invalid
+            ApiError: If communication with the API fails after all retries
+            ValueError: If the fan mode is invalid or unsupported
             RateLimitError: If too many requests are made in a short period
         """
         try:
-            # Rate limiting check
+            # If continuous is not specified, maintain current state
+            if continuous is None:
+                current_mode = self.data["main"].get("fan_mode", "")
+                continuous = "+CONT" in current_mode
+                _LOGGER.debug("Maintaining current continuous state: %s", continuous)
+
+            # Acquire lock for rate limiting
             async with self._fan_mode_change_lock:
+                # Check rate limiting
                 if self._last_fan_mode_change:
                     elapsed = (datetime.now() - self._last_fan_mode_change).total_seconds()
                     if elapsed < self._min_fan_mode_interval:
@@ -670,45 +802,92 @@ class ActronApi:
                         _LOGGER.debug("Rate limiting: waiting %.1f seconds", wait_time)
                         await asyncio.sleep(wait_time)
 
-                # Validate fan mode
+                # Get current model and validate mode against capabilities
+                model = self.data["main"].get("model") if hasattr(self, 'data') else None
                 validated_mode = self.validate_fan_mode(mode, continuous)
-                _LOGGER.debug("Setting fan mode: %s (original mode: %s, continuous: %s)",
-                            validated_mode, mode, continuous)
+                
+                if model and validated_mode.startswith("AUTO") and model not in ADVANCE_SERIES_MODELS:
+                    raise ValueError(f"AUTO fan mode not supported on model {model}")
 
-                # Add retry logic for API timeouts
+                _LOGGER.debug(
+                    "Setting fan mode: %s (original: %s, continuous: %s, model: %s)",
+                    validated_mode,
+                    mode,
+                    continuous,
+                    model
+                )
+
+                # Retry logic for API timeouts
+                last_error = None
                 for attempt in range(MAX_RETRIES):
                     try:
                         command = self.create_command("FAN_MODE", mode=validated_mode)
-                        _LOGGER.debug("Sending fan mode command (attempt %d/%d): %s",
-                                    attempt + 1, MAX_RETRIES, command)
+                        _LOGGER.debug(
+                            "Sending fan mode command (attempt %d/%d): %s",
+                            attempt + 1,
+                            MAX_RETRIES,
+                            command
+                        )
 
                         await self.send_command(self.actron_serial, command)
 
-                        # Update state tracking
+                        # Update state tracking on success
                         self._last_fan_mode_change = datetime.now()
                         self._continuous_fan = continuous
 
-                        _LOGGER.info("Successfully set fan mode to: %s", validated_mode)
-                        break
+                        _LOGGER.info(
+                            "Successfully set fan mode to: %s (continuous: %s)",
+                            validated_mode,
+                            continuous
+                        )
+                        return  # Success, exit the retry loop
 
-                    except ApiError as e:
-                        if e.status_code in [500, 502, 503, 504] and attempt < MAX_RETRIES - 1:
-                            wait_time = 2 ** attempt  # exponential backoff
+                    except ApiError as api_err:
+                        last_error = api_err
+                        if api_err.status_code in [500, 502, 503, 504] and attempt < MAX_RETRIES - 1:
+                            wait_time = min(2 ** attempt, 30)  # Cap exponential backoff at 30 seconds
                             _LOGGER.warning(
-                                "Received %s error, retrying in %s seconds (attempt %d/%d)",
-                                e.status_code, wait_time, attempt + 1, MAX_RETRIES
+                                "API error %s, retrying in %s seconds (attempt %d/%d)",
+                                api_err.status_code,
+                                wait_time,
+                                attempt + 1,
+                                MAX_RETRIES
                             )
                             await asyncio.sleep(wait_time)
                             continue
-                        _LOGGER.error("API error setting fan mode: %s", e)
-                        raise
+                        raise  # Re-raise if we're out of retries or it's not a retriable error
+
                     except Exception as err:
-                        _LOGGER.error("Unexpected error setting fan mode: %s", err)
+                        _LOGGER.error(
+                            "Unexpected error setting fan mode: %s",
+                            err,
+                            exc_info=True
+                        )
                         raise
 
+                # If we get here, all retries failed
+                if last_error:
+                    raise ApiError(
+                        f"Failed to set fan mode after {MAX_RETRIES} attempts: {last_error}"
+                    )
+
+        except ValueError as val_err:
+            _LOGGER.error(
+                "Invalid fan mode request: %s (mode: %s, continuous: %s)",
+                val_err,
+                mode,
+                continuous
+            )
+            raise
+
         except Exception as err:
-            _LOGGER.error("Failed to set fan mode %s (continuous=%s): %s",
-                        mode, continuous, err, exc_info=True)
+            _LOGGER.error(
+                "Failed to set fan mode %s (continuous=%s): %s",
+                mode,
+                continuous,
+                err,
+                exc_info=True
+            )
             raise
 
     async def set_temperature(self, temperature: float, is_cooling: bool) -> None:

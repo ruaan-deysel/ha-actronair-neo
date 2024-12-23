@@ -30,6 +30,7 @@ from .const import (
     DOMAIN,
     MIN_TEMP,
     MAX_TEMP,
+    ADVANCE_SERIES_MODELS,
 )
 from .coordinator import ActronDataCoordinator
 
@@ -72,7 +73,7 @@ async def async_setup_entry(
 
 
 class ActronClimate(ActronEntityBase, ClimateEntity):
-    """Main climate entity."""
+    """Main climate entity with model-aware fan modes."""
 
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the climate entity."""
@@ -91,24 +92,39 @@ class ActronClimate(ActronEntityBase, ClimateEntity):
 
     @property
     def fan_modes(self) -> list[str]:
-        """Return the list of available fan modes."""
-        supported_modes = self.coordinator.data["main"].get("supported_fan_modes", [])
-        available_modes = []
-
-        # Map Actron modes to HA modes
-        mode_map = {
-            "LOW": FAN_LOW,
-            "MED": FAN_MEDIUM,
-            "HIGH": FAN_HIGH,
-            "AUTO": FAN_AUTO
-        }
-
-        for mode in supported_modes:
-            if ha_mode := mode_map.get(mode):
-                available_modes.append(ha_mode)
-
-        _LOGGER.debug("Available fan modes: %s", available_modes)
-        return available_modes or [FAN_LOW, FAN_MEDIUM, FAN_HIGH]  # Fallback
+        """Return the list of available fan modes based on model capabilities."""
+        try:
+            model = self.coordinator.data["main"].get("model")
+            supported_modes = self.coordinator.api._validate_fan_modes(
+                self.coordinator.data["main"].get("supported_fan_modes", 0),
+                model
+            )
+            
+            # Map Actron modes to HA modes
+            mode_map = {
+                "LOW": FAN_LOW,
+                "MED": FAN_MEDIUM,
+                "HIGH": FAN_HIGH,
+                "AUTO": FAN_AUTO
+            }
+            
+            available_modes = []
+            for mode in supported_modes:
+                if ha_mode := mode_map.get(mode):
+                    available_modes.append(ha_mode)
+            
+            _LOGGER.debug(
+                "Available fan modes for model %s: %s (raw supported: %s)",
+                model,
+                available_modes,
+                supported_modes
+            )
+            
+            return available_modes or [FAN_LOW, FAN_MEDIUM, FAN_HIGH]  # Fallback
+            
+        except Exception as err:
+            _LOGGER.error("Error getting fan modes: %s", err, exc_info=True)
+            return [FAN_LOW, FAN_MEDIUM, FAN_HIGH]  # Safe fallback
 
     @property
     def current_temperature(self) -> float | None:
@@ -169,24 +185,43 @@ class ActronClimate(ActronEntityBase, ClimateEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        """Set new target fan mode while preserving continuous state."""
+        """Set fan mode with model-specific validation."""
         try:
+            # Convert HA fan mode to Actron mode
+            actron_mode = FAN_MODE_MAP.get(fan_mode, "LOW")
+            
             # Get current continuous state
             current_fan_mode = self.coordinator.data["main"]["fan_mode"]
             continuous = "+CONT" in current_fan_mode
-
-            # Convert HA fan mode to Actron mode
-            actron_fan_mode = FAN_MODE_MAP.get(fan_mode, "LOW")
-
+            
+            # Check model support for AUTO mode
+            model = self.coordinator.data["main"].get("model")
+            if actron_mode == "AUTO" and model not in ADVANCE_SERIES_MODELS:
+                _LOGGER.warning(
+                    "Cannot set AUTO fan mode on model %s (Advance Series only)",
+                    model
+                )
+                return
+            
             # Set fan mode while preserving continuous state
-            await self.coordinator.set_fan_mode(actron_fan_mode, continuous)
-
+            await self.coordinator.set_fan_mode(actron_mode, continuous)
+            
             _LOGGER.debug(
-                "Set fan mode - Mode: %s, Continuous: %s, Result: %s",
-                actron_fan_mode,
+                "Set fan mode - Mode: %s, Continuous: %s, Model: %s, Result: %s",
+                actron_mode,
                 continuous,
+                model,
                 self.coordinator.data["main"]["fan_mode"]
             )
+            
+        except ValueError as err:
+            # Handle specific error for unsupported AUTO mode
+            if "AUTO fan mode is not supported" in str(err):
+                _LOGGER.warning(
+                    "Cannot set AUTO fan mode on non-Advance Series model"
+                )
+            else:
+                raise
         except Exception as err:
             _LOGGER.error("Failed to set fan mode %s: %s", fan_mode, err)
             raise

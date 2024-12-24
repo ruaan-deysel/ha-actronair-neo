@@ -326,7 +326,16 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Failed to parse API response: {e}") from e
 
     def _validate_fan_modes(self, modes: Any) -> list[str]:
-        """Validate and normalize supported fan modes."""
+        """Validate and normalize supported fan modes.
+        
+        Note on Actron Quirks:
+        - NV_SupportedFanModes is a bitmap where:
+            1=LOW, 2=MED, 4=HIGH, 8=AUTO
+        - Some devices omit HIGH from NV_SupportedFanModes even though
+            they support it. If we detect HIGH mode in current settings,
+            we add it to supported modes regardless of bitmap.
+        - When in doubt, we fall back to [LOW, MED, HIGH] as safe defaults.
+        """
         valid_modes = {"LOW", "MED", "HIGH", "AUTO"}
         default_modes = ["LOW", "MED", "HIGH"]
 
@@ -341,7 +350,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     modes, bin(modes), modes
                 )
 
-                # Get current fan mode from settings - safely handle None case
+                # Get current fan mode to check for HIGH support
                 current_mode = None
                 if hasattr(self, 'data') and self.data is not None:
                     user_settings = self.data.get("raw_data", {}).get("lastKnownState", {}).get(

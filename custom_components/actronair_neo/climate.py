@@ -30,6 +30,8 @@ from .const import (
     DOMAIN,
     MIN_TEMP,
     MAX_TEMP,
+    BASE_FAN_MODES,
+    ADVANCE_FAN_MODES,
     ADVANCE_SERIES_MODELS,
 )
 from .coordinator import ActronDataCoordinator

@@ -1,11 +1,13 @@
 """Base entity for ActronAir Neo integration."""
+
 from __future__ import annotations
 
-from homeassistant.helpers.entity import EntityCategory # type: ignore
-from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: ignore
+from homeassistant.helpers.entity import EntityCategory  # type: ignore
+from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
 
 from .const import DOMAIN
 from .coordinator import ActronDataCoordinator
+
 
 class ActronEntityBase(CoordinatorEntity):
     """Base class for all ActronAir Neo entities."""
@@ -20,7 +22,7 @@ class ActronEntityBase(CoordinatorEntity):
         is_diagnostic: bool = False,
     ) -> None:
         """Initialize the base entity.
-        
+
         Args:
             coordinator: The data coordinator
             entity_type: Type of entity (climate, sensor, etc.)
@@ -38,7 +40,8 @@ class ActronEntityBase(CoordinatorEntity):
         base_unique_id = f"{coordinator.device_id}_{entity_type}"
         self._attr_unique_id = (
             f"{base_unique_id}_{name_suffix.lower().replace(' ', '_')}"
-            if name_suffix else base_unique_id
+            if name_suffix
+            else base_unique_id
         )
 
         # Set consistent name

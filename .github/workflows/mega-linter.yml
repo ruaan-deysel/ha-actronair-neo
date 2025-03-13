@@ -13,7 +13,6 @@ env:
   APPLY_FIXES_EVENT: pull_request
   APPLY_FIXES_MODE: commit
   VALIDATE_ALL_CODEBASE: true
-  # Reducing log verbosity after initial setup
   LOG_LEVEL: INFO
 
 concurrency:
@@ -34,7 +33,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       # MegaLinter
@@ -42,22 +41,10 @@ jobs:
         id: ml
         uses: oxsecurity/megalinter@v8
         env:
-          FLAVOR: python
-          # Configure linters specifically for Home Assistant custom components
-          ENABLE_LINTERS: "PYTHON_FLAKE8,PYTHON_BLACK,PYTHON_ISORT,PYTHON_RUFF,JSON_JSONLINT,YAML_YAMLLINT,MARKDOWN_MARKDOWNLINT"
-          DISABLE_LINTERS: "COPYPASTE,SPELL,PYTHON_BANDIT,PYTHON_MYPY,PYTHON_PYLINT"
+          # Use the simplest configuration with only essential linters
+          PYTHON_BLACK_ARGUMENTS: "--target-version py310 --line-length 88"
+          ENABLE_LINTERS: "PYTHON_BLACK,PYTHON_ISORT,JSON_JSONLINT"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Home Assistant specific configurations
-          PYTHON_BLACK_ARGUMENTS: "--target-version py310"
-          PYTHON_FLAKE8_CONFIG_FILE: .flake8
-          PYTHON_ISORT_ARGUMENTS: "--profile black"
-          # Exclude paths not relevant to code quality
-          FILTER_REGEX_EXCLUDE: "(LICENSE|README.md|info.md)"
-          # Skip repository file listing for better performance
-          REPOSITORIES_SKIP_LINTERS_FILE_LISTING: "PYTHON_FLAKE8,PYTHON_BLACK,PYTHON_ISORT"
-          # Reduce file load
-          PYTHON_RUFF_FILTER_REGEX_INCLUDE: "custom_components/actronair_neo/.*\\.py$"
-          JSON_JSONLINT_FILTER_REGEX_INCLUDE: "custom_components/actronair_neo/.*\\.json$"
 
       # Upload MegaLinter artifacts
       - name: Archive production artifacts
@@ -69,23 +56,10 @@ jobs:
             megalinter-reports
             mega-linter.log
 
-      # Create pull request if applicable
-      - name: Create Pull Request with applied fixes
-        id: cpr
-        if: steps.ml.outputs.has_updated_sources == 1 && (env.APPLY_FIXES_EVENT == 'all' || env.APPLY_FIXES_EVENT == github.event_name) && env.APPLY_FIXES_MODE == 'pull_request' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && !contains(github.event.head_commit.message, 'skip fix')
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
-          commit-message: "[MegaLinter] Apply linters automatic fixes"
-          title: "[MegaLinter] Apply linters automatic fixes"
-          labels: bot
-
       # Commit and push applied linter fixes
       - name: Commit and push applied linter fixes
-        if: steps.ml.outputs.has_updated_sources == 1 && (env.APPLY_FIXES_EVENT == 'all' || env.APPLY_FIXES_EVENT == github.event_name) && env.APPLY_FIXES_MODE == 'commit' && github.ref != 'refs/heads/main' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && !contains(github.event.head_commit.message, 'skip fix')
+        if: steps.ml.outputs.has_updated_sources == 1 && (env.APPLY_FIXES_EVENT == 'all' || env.APPLY_FIXES_EVENT == github.event_name) && env.APPLY_FIXES_MODE == 'commit' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && !contains(github.event.head_commit.message, 'skip fix')
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           branch: ${{ github.event.pull_request.head.ref || github.head_ref || github.ref }}
           commit_message: "[MegaLinter] Apply linters fixes"
-          commit_user_name: megalinter-bot
-          commit_user_email: 129584137+megalinter-bot@users.noreply.github.com

@@ -1,11 +1,12 @@
 """The ActronAir Neo integration."""
+
 import logging
-from homeassistant.config_entries import ConfigEntry # type: ignore
-from homeassistant.core import HomeAssistant, ServiceCall # type: ignore
-from homeassistant.helpers import service # type: ignore
-from homeassistant.helpers.aiohttp_client import async_get_clientsession # type: ignore
-from homeassistant.exceptions import ConfigEntryNotReady # type: ignore
-from homeassistant.helpers import entity_registry as er # type: ignore
+from homeassistant.config_entries import ConfigEntry  # type: ignore
+from homeassistant.core import HomeAssistant, ServiceCall  # type: ignore
+from homeassistant.helpers import service  # type: ignore
+from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore
+from homeassistant.exceptions import ConfigEntryNotReady  # type: ignore
+from homeassistant.helpers import entity_registry as er  # type: ignore
 from .const import (
     DOMAIN,
     CONF_USERNAME,
@@ -17,7 +18,7 @@ from .const import (
     PLATFORM_CLIMATE,
     PLATFORM_SENSOR,
     PLATFORM_SWITCH,
-    PLATFORM_BINARY_SENSOR
+    PLATFORM_BINARY_SENSOR,
 )
 from .coordinator import ActronDataCoordinator
 from .api import ActronApi, AuthenticationError, ApiError
@@ -28,10 +29,13 @@ PLATFORMS: list[str] = [
     PLATFORM_CLIMATE,
     PLATFORM_SENSOR,
     PLATFORM_SWITCH,
-    PLATFORM_BINARY_SENSOR
+    PLATFORM_BINARY_SENSOR,
 ]
 
-async def async_migrate_entities(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+
+async def async_migrate_entities(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> None:
     """Migrate old entity IDs to new entity IDs."""
     entity_registry = er.async_get(hass)
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
@@ -67,8 +71,8 @@ async def async_migrate_entities(hass: HomeAssistant, config_entry: ConfigEntry)
     }
 
     # Add zone entity mappings
-    for zone_id, zone_data in coordinator.data['zones'].items():
-        zone_name = zone_data['name'].lower().replace(' ', '_')
+    for zone_id, zone_data in coordinator.data["zones"].items():
+        zone_name = zone_data["name"].lower().replace(" ", "_")
         # Climate entities
         migration_mappings[f"{coordinator.device_id}_zone_{zone_id}"] = (
             f"{coordinator.device_id}_climate_zone_{zone_name}"
@@ -97,10 +101,9 @@ async def async_migrate_entities(hass: HomeAssistant, config_entry: ConfigEntry)
                     )
                 except er.HomeAssistantError as ex:
                     _LOGGER.error(
-                        "Error migrating entity %s: %s",
-                        entry.entity_id,
-                        str(ex)
+                        "Error migrating entity %s: %s", entry.entity_id, str(ex)
                     )
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up ActronAir Neo from a config entry."""
@@ -165,6 +168,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     return True
 
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -176,9 +180,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     return unload_ok
 
+
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle configuration entry updates with safe entity cleanup.
-    
+
     This method ensures proper cleanup of entities when disabling zone control
     and maintains system stability during configuration changes.
     """
@@ -206,11 +211,14 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
         # Reload the config entry to apply changes
         await hass.config_entries.async_reload(entry.entry_id)
-        _LOGGER.info("Successfully updated zone control setting to: %s", new_enable_zone_control)
+        _LOGGER.info(
+            "Successfully updated zone control setting to: %s", new_enable_zone_control
+        )
 
     except Exception as err:
         _LOGGER.error("Error updating zone control setting: %s", err)
         raise
+
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry."""

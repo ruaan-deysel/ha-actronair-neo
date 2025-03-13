@@ -1,17 +1,16 @@
 """Config flow for ActronAir Neo integration."""
-
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-import voluptuous as vol  # type: ignore
+import voluptuous as vol # type: ignore
 
-from homeassistant import config_entries  # type: ignore
-from homeassistant.core import HomeAssistant, callback  # type: ignore
-from homeassistant.data_entry_flow import FlowResult  # type: ignore
-from homeassistant.exceptions import HomeAssistantError  # type: ignore
-from homeassistant.helpers import aiohttp_client  # type: ignore
+from homeassistant import config_entries # type: ignore
+from homeassistant.core import HomeAssistant, callback # type: ignore
+from homeassistant.data_entry_flow import FlowResult # type: ignore
+from homeassistant.exceptions import HomeAssistantError # type: ignore
+from homeassistant.helpers import aiohttp_client # type: ignore
 
 from .api import ActronApi, AuthenticationError, ApiError
 from .const import (
@@ -20,7 +19,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_REFRESH_INTERVAL,
     DEFAULT_REFRESH_INTERVAL,
-    CONF_ENABLE_ZONE_CONTROL,
+    CONF_ENABLE_ZONE_CONTROL
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,13 +33,10 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
-
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
     session = aiohttp_client.async_get_clientsession(hass)
-    api = ActronApi(
-        username=data[CONF_USERNAME], password=data[CONF_PASSWORD], session=session
-    )
+    api = ActronApi(username=data[CONF_USERNAME], password=data[CONF_PASSWORD], session=session)
 
     try:
         await api.initializer()
@@ -49,15 +45,11 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
             raise CannotConnect("No devices found")
 
         # For simplicity, we're selecting the first device found
-        return {
-            "title": f"ActronAir Neo ({devices[0]['name']})",
-            "serial_number": devices[0]["serial"],
-        }
+        return {"title": f"ActronAir Neo ({devices[0]['name']})", "serial_number": devices[0]['serial']}
     except AuthenticationError as err:
         raise InvalidAuth from err
     except ApiError as err:
         raise CannotConnect from err
-
 
 class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for ActronAir Neo."""
@@ -90,7 +82,7 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                     options={
                         CONF_ENABLE_ZONE_CONTROL: user_input[CONF_ENABLE_ZONE_CONTROL],
-                    },
+                    }
                 )
 
         return self.async_show_form(
@@ -102,7 +94,6 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
         return OptionsFlowHandler(config_entry)
-
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options."""
@@ -136,10 +127,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             ),
         )
 
-
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
-
 
 class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""

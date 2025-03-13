@@ -374,16 +374,16 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
                 # Process bitmap
                 supported = []
-                if modes & 1:
+                if modes >= 1:
                     supported.append("LOW")
                     _LOGGER.debug("Added LOW mode (bit 0 set)")
-                if modes & 2:
+                if modes >= 2:
                     supported.append("MED")
                     _LOGGER.debug("Added MED mode (bit 1 set)")
-                if modes & 4:
+                if modes >= 4:
                     supported.append("HIGH")
                     _LOGGER.debug("Added HIGH mode (bit 2 set)")
-                if modes & 8:
+                if modes == 8:
                     auto_enabled = False
                     if hasattr(self, 'data') and self.data is not None:
                         indoor_unit = self.data.get("raw_data", {}

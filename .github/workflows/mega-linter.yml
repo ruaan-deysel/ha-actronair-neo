@@ -8,11 +8,13 @@ on:
     branches: [main, master]
 
 env:
-  APPLY_FIXES: "PYTHON_BLACK,PYTHON_ISORT" # Apply fixes only for Black and Isort
-  APPLY_FIXES_EVENT: pull_request # Apply fixes only during pull requests
-  APPLY_FIXES_MODE: commit # Commit fixes directly to the branch
-  VALIDATE_ALL_CODEBASE: true # Validate all files in the repository
-  LOG_LEVEL: DEBUG # Enable verbose logging for debugging
+  # Home Assistant typical formatting tools
+  APPLY_FIXES: "PYTHON_BLACK,PYTHON_ISORT" 
+  APPLY_FIXES_EVENT: pull_request
+  APPLY_FIXES_MODE: commit
+  VALIDATE_ALL_CODEBASE: true
+  # Reducing log verbosity after initial setup
+  LOG_LEVEL: INFO
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
@@ -33,18 +35,29 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
-          fetch-depth: 0 # Fetch full history to allow linting of all files
+          fetch-depth: 0
 
       # MegaLinter
       - name: MegaLinter
         id: ml
         uses: oxsecurity/megalinter@v8
         env:
-          FLAVOR: python # Use the Python flavor to optimize performance
-          ENABLE_LINTERS: "PYTHON_FLAKE8,PYTHON_PYLINT,PYTHON_BLACK,PYTHON_ISORT,JSON_JSONLINT" # Enable specific linters for Python and JSON
-          DISABLE_LINTERS: "COPYPASTE,SPELL" # Disable unnecessary linters
+          FLAVOR: python
+          # Configure linters specifically for Home Assistant custom components
+          ENABLE_LINTERS: "PYTHON_FLAKE8,PYTHON_BLACK,PYTHON_ISORT,PYTHON_RUFF,JSON_JSONLINT,YAML_YAMLLINT,MARKDOWN_MARKDOWNLINT"
+          DISABLE_LINTERS: "COPYPASTE,SPELL,PYTHON_BANDIT,PYTHON_MYPY,PYTHON_PYLINT"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PYTHON_PYLINT_RCFILE: .pylintrc
+          # Home Assistant specific configurations
+          PYTHON_BLACK_ARGUMENTS: "--target-version py310"
+          PYTHON_FLAKE8_CONFIG_FILE: .flake8
+          PYTHON_ISORT_ARGUMENTS: "--profile black"
+          # Exclude paths not relevant to code quality
+          FILTER_REGEX_EXCLUDE: "(LICENSE|README.md|info.md)"
+          # Skip repository file listing for better performance
+          REPOSITORIES_SKIP_LINTERS_FILE_LISTING: "PYTHON_FLAKE8,PYTHON_BLACK,PYTHON_ISORT"
+          # Reduce file load
+          PYTHON_RUFF_FILTER_REGEX_INCLUDE: "custom_components/actronair_neo/.*\\.py$"
+          JSON_JSONLINT_FILTER_REGEX_INCLUDE: "custom_components/actronair_neo/.*\\.json$"
 
       # Upload MegaLinter artifacts
       - name: Archive production artifacts

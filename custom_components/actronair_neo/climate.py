@@ -461,6 +461,16 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
                         target_cool=target_high,
                         target_heat=target_low
                     )
+
+                else:
+                    # Handle single target when separate targets are supported
+                    temperature = kwargs.get(ATTR_TEMPERATURE)
+                    await self.coordinator.api.set_zone_temperature(
+                        zone_index=zone_index,
+                        target_cool=temperature,
+                        target_heat=temperature
+                    )
+
             else:
                 # Handle single target
                 temperature = kwargs.get(ATTR_TEMPERATURE)

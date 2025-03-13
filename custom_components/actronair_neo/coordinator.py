@@ -219,9 +219,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             alerts = last_known_state.get("Alerts", {})
 
             # Get supported modes
-            supported_fan_modes = self._validate_fan_modes(
-                indoor_unit.get("NV_SupportedFanModes", 0)  # Default to 0 if not present
-            )
+            if indoor_unit.get("NV_AutoFanEnabled", False):
+                supported_fan_modes = self._validate_fan_modes(8)
+            else:     
+                supported_fan_modes = self._validate_fan_modes(
+                    indoor_unit.get("NV_SupportedFanModes", 0)  # Default to 0 if not present
+                )
 
             # Get fan mode and check for continuous state using '+CONT'
             fan_mode = user_aircon_settings.get("FanMode", "")
@@ -251,6 +254,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     "away_mode": user_aircon_settings.get("AwayMode", False),
                     "quiet_mode": user_aircon_settings.get("QuietMode", False),
                     "model": aircon_system.get("MasterWCModel"),
+                    "indoor_model": indoor_unit.get("NV_ModelNumber"),
                     "serial_number": aircon_system.get("MasterSerial"),
                     "firmware_version": aircon_system.get("MasterWCFirmwareVersion"),
                     # Add alert statuses
@@ -353,9 +357,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 # Get current fan mode to check for HIGH support
                 current_mode = None
                 if hasattr(self, 'data') and self.data is not None:
-                    user_settings = self.data.get("raw_data", {}).get("lastKnownState", {}).get(
-                        f"<{self.device_id.upper()}>", {}
-                    ).get("UserAirconSettings", {})
+                    user_settings = self.data.get("raw_data", {}
+                                                  ).get("lastKnownState", {}
+                                                        ).get("UserAirconSettings", {})
                     current_mode = user_settings.get("FanMode", "")
                     _LOGGER.debug("Current device fan mode: %s", current_mode)
                 else:
@@ -382,9 +386,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 if modes & 8:
                     auto_enabled = False
                     if hasattr(self, 'data') and self.data is not None:
-                        indoor_unit = self.data.get("raw_data", {}).get("lastKnownState", {}).get(
-                            f"<{self.device_id.upper()}>", {}
-                        ).get("AirconSystem", {}).get("IndoorUnit", {})
+                        indoor_unit = self.data.get("raw_data", {}
+                                                    ).get("lastKnownState", {}
+                                                        ).get("AirconSystem", {}
+                                                            ).get("IndoorUnit", {})
                         auto_enabled = indoor_unit.get("NV_AutoFanEnabled", False)
                     if auto_enabled:
                         supported.append("AUTO")

@@ -31,7 +31,9 @@ from .const import (
     MIN_TEMP,
     MAX_TEMP,
     BASE_FAN_MODES,
+    BASE_FAN_MODE_ORDER,
     ADVANCE_FAN_MODES,
+    ADVANCED_FAN_MODE_ORDER,
     ADVANCE_SERIES_MODELS,
 )
 from .coordinator import ActronDataCoordinator
@@ -98,6 +100,10 @@ class ActronClimate(ActronEntityBase, ClimateEntity):
         try:
             model = self.coordinator.data["main"].get("model")
             supported_modes = self.coordinator.data["main"].get("supported_fan_modes", BASE_FAN_MODES)
+            if supported_modes == ADVANCE_FAN_MODES:
+                supported_modes = ADVANCED_FAN_MODE_ORDER
+            elif supported_modes == BASE_FAN_MODES:
+                supported_modes = BASE_FAN_MODE_ORDER
             
             # Map Actron modes to HA modes
             mode_map = {

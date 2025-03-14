@@ -97,12 +97,7 @@ class ActronClimate(ActronEntityBase, ClimateEntity):
         """Return the list of available fan modes based on model capabilities."""
         try:
             model = self.coordinator.data["main"].get("model")
-            if "NTB" in model or "NTW" in model:
-                model = self.coordinator.data["main"].get("indoor_model")
-            supported_modes = self.coordinator.api._validate_fan_modes(
-                self.coordinator.data["main"].get("supported_fan_modes", 0),
-                model
-            )
+            supported_modes = self.coordinator.data["main"].get("supported_fan_modes", BASE_FAN_MODES)
             
             # Map Actron modes to HA modes
             mode_map = {
@@ -200,8 +195,6 @@ class ActronClimate(ActronEntityBase, ClimateEntity):
             
             # Check model support for AUTO mode
             model = self.coordinator.data["main"].get("model")
-            if "NTB" in model or "NTW" in model:
-                model = self.coordinator.data["main"].get("indoor_model")
             if actron_mode == "AUTO" and model not in ADVANCE_SERIES_MODELS:
                 _LOGGER.warning(
                     "Cannot set AUTO fan mode on model %s (Advance Series only)",

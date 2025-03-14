@@ -179,6 +179,10 @@ CLASSIC_SERIES_MODELS: Final[frozenset[str]] = frozenset({
     "CRA230T", "EVA230S"
 })
 
+NEO_SERIES_WC: Final[frozenset[str]] = frozenset({
+    "NTB-10", "NTW-10"
+})
+
 # Fan Mode Capabilities
 BASE_FAN_MODES: Final[frozenset[str]] = frozenset({"LOW", "MED", "HIGH"})
 ADVANCE_FAN_MODES: Final[frozenset[str]] = frozenset({"LOW", "MED", "HIGH", "AUTO"})

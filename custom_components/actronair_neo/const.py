@@ -179,9 +179,17 @@ CLASSIC_SERIES_MODELS: Final[frozenset[str]] = frozenset({
     "CRA230T", "EVA230S"
 })
 
+NEO_SERIES_WC: Final[frozenset[str]] = frozenset({
+    "NTB-10", "NTW-10"
+})
+
 # Fan Mode Capabilities
 BASE_FAN_MODES: Final[frozenset[str]] = frozenset({"LOW", "MED", "HIGH"})
 ADVANCE_FAN_MODES: Final[frozenset[str]] = frozenset({"LOW", "MED", "HIGH", "AUTO"})
+
+# Fan Mode Display Order
+ADVANCED_FAN_MODE_ORDER: Final = ["AUTO", "LOW", "MED", "HIGH"]
+BASE_FAN_MODE_ORDER: Final = ["LOW", "MED", "HIGH"]
 
 # Bitmap values for fan modes
 FAN_MODE_BITMASK: Final[dict[str, int]] = {

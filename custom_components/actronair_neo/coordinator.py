@@ -20,6 +20,8 @@ from .const import (
     MIN_FAN_MODE_INTERVAL,
     VALID_FAN_MODES,
     FAN_MODE_SUFFIX_CONT,
+    ADVANCE_FAN_MODES,
+    NEO_SERIES_WC,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -220,7 +222,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
             # Get supported modes
             if indoor_unit.get("NV_AutoFanEnabled", False):
-                supported_fan_modes = self._validate_fan_modes(8)
+                supported_fan_modes = ADVANCE_FAN_MODES
             else:     
                 supported_fan_modes = self._validate_fan_modes(
                     indoor_unit.get("NV_SupportedFanModes", 0)  # Default to 0 if not present
@@ -234,6 +236,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             base_fan_mode = fan_mode.split('+')[0] if '+' in fan_mode else fan_mode
             base_fan_mode = base_fan_mode.split('-')[0] if '-' in base_fan_mode else base_fan_mode
 
+            # Get model number for specific handling of NEO Series WC
+            model = aircon_system.get("MasterWCModel", "")
+            if model in NEO_SERIES_WC:
+                model = indoor_unit.get("NV_ModelNumber", "")
+            
             parsed_data = {
                 # Store raw data for diagnostics
                 "raw_data": data,
@@ -253,7 +260,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     "EnabledZones": user_aircon_settings.get("EnabledZones", []),
                     "away_mode": user_aircon_settings.get("AwayMode", False),
                     "quiet_mode": user_aircon_settings.get("QuietMode", False),
-                    "model": aircon_system.get("MasterWCModel"),
+                    "model": model,
                     "indoor_model": indoor_unit.get("NV_ModelNumber"),
                     "serial_number": aircon_system.get("MasterSerial"),
                     "firmware_version": aircon_system.get("MasterWCFirmwareVersion"),
@@ -374,16 +381,16 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
                 # Process bitmap
                 supported = []
-                if modes >= 1:
+                if modes & 1:
                     supported.append("LOW")
                     _LOGGER.debug("Added LOW mode (bit 0 set)")
-                if modes >= 2:
+                if modes & 2:
                     supported.append("MED")
                     _LOGGER.debug("Added MED mode (bit 1 set)")
-                if modes >= 4:
+                if modes & 4:
                     supported.append("HIGH")
                     _LOGGER.debug("Added HIGH mode (bit 2 set)")
-                if modes == 8:
+                if modes & 8:
                     auto_enabled = False
                     if hasattr(self, 'data') and self.data is not None:
                         indoor_unit = self.data.get("raw_data", {}

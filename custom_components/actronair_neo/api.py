@@ -20,7 +20,6 @@ from .const import (
     BASE_FAN_MODES,
     ADVANCE_FAN_MODES,
     ADVANCE_SERIES_MODELS,
-    FAN_MODE_BITMASK,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -148,96 +147,6 @@ class ActronApi:
             return False
         model_base = model.split('-')[0] if '-' in model else model
         return model_base in ADVANCE_SERIES_MODELS
-
-    def _validate_fan_modes(self, modes: Any, model: str | None = None) -> list[str]:
-        """Validate and normalize supported fan modes.
-        
-        Args:
-            modes: Bitmap or list of fan modes from the API
-            model: AC unit model number (optional)
-            
-        Returns:
-            List of supported fan modes for this unit
-            
-        Note:
-            - NV_SupportedFanModes is a bitmap where:
-                1=LOW, 2=MED, 4=HIGH, 8=AUTO
-            - Some devices omit HIGH from NV_SupportedFanModes even though
-                they support it. If we detect HIGH mode in current settings,
-                we add it to supported modes regardless of bitmap.
-            - AUTO mode is only available on Advance Series models
-        """
-        try:
-            _LOGGER.debug("Validating fan modes - Input: %s, Model: %s", modes, model)
-            
-            # Get base capabilities from model series
-            supported_modes = set(BASE_FAN_MODES)  # Start with base modes
-            if model:
-                supported_modes = self._get_model_series_capabilities(model)
-            
-            # If we have a bitmap, process it
-            if isinstance(modes, int):
-                reported_modes = set()
-                for mode, bit in FAN_MODE_BITMASK.items():
-                    if modes & bit:
-                        reported_modes.add(mode)
-                
-                _LOGGER.debug(
-                    "Bitmap analysis: %s (0x%X) reports modes: %s",
-                    bin(modes),
-                    modes,
-                    reported_modes
-                )
-                
-                # Special handling for AUTO mode
-                if "AUTO" in reported_modes:
-                    if model and model not in ADVANCE_SERIES_MODELS:
-                        _LOGGER.warning(
-                            "AUTO mode reported but model %s is not Advance Series",
-                            model
-                        )
-                        reported_modes.remove("AUTO")
-                
-                # Check current mode
-                current_mode = None
-                if hasattr(self, 'data') and self.data is not None:
-                    user_settings = self.data.get("raw_data", {}).get("lastKnownState", {}).get(
-                        f"<{self.device_id.upper()}>", {}
-                    ).get("UserAirconSettings", {})
-                    current_mode = user_settings.get("FanMode", "").split('+')[0]
-                
-                # Always include HIGH if it's the current mode
-                if current_mode == "HIGH":
-                    reported_modes.add("HIGH")
-                
-                # Merge reported modes with base capabilities
-                supported_modes &= reported_modes
-                
-                _LOGGER.debug(
-                    "Final supported modes after bitmap analysis: %s",
-                    supported_modes
-                )
-            
-            # Ensure we always have at least the base modes
-            if not supported_modes or len(supported_modes) < 2:
-                _LOGGER.warning(
-                    "Insufficient modes detected (%s), falling back to base modes",
-                    supported_modes
-                )
-                supported_modes = set(BASE_FAN_MODES)
-            
-            return sorted(list(supported_modes))
-            
-        except Exception as err:
-            _LOGGER.error(
-                "Error validating fan modes: %s (input: %s, model: %s)",
-                self.device_id,
-                err,
-                modes,
-                model,
-                exc_info=True
-            )
-            return list(BASE_FAN_MODES)
 
     def validate_fan_mode(self, mode: str, continuous: bool = False) -> str:
         """Validate and format fan mode.

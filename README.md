@@ -62,7 +62,45 @@ If you encounter any issues:
 
 ## Contributing
 
-Contributions to this integration are welcome. Please fork the repository and submit a pull request with your changes. Make sure to follow the contribution guidelines.
+Contributions to this integration are welcome. Please fork the repository and submit a pull request with your changes.
+
+### Development Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/domalab/ha-actronair-neo.git
+   cd ha-actronair-neo
+   ```
+
+2. Set up a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Install development tools:
+   ```bash
+   pip install black flake8 pylint mypy pytest
+   ```
+
+### Code Style
+
+This project uses:
+- Black for code formatting
+- Flake8 and Pylint for linting
+- Mypy for type checking
+
+### Testing
+
+We encourage adding tests for new features. Run tests with:
+```bash
+pytest
+```
 
 ## License
 

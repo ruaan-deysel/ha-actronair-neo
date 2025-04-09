@@ -1,0 +1,34 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-asyncio pytest-cov
+        # Install dependencies from requirements.txt
+        # Note: We're using a version of Home Assistant that exists for testing
+        pip install -r requirements.txt
+        # Install additional dependencies that might be needed for tests
+        pip install types-aiofiles
+    - name: Run pytest
+      run: |
+        pytest tests/ -v --cov=custom_components/actronair_neo --cov-report=xml
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false

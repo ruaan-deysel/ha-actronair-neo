@@ -76,7 +76,5 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/domalab/ha-actronair-neo
-    - icon: fontawesome/brands/discord
-      link: https://discord.gg/c5DvZ4e
   version:
     provider: mike

@@ -11,6 +11,7 @@ The ActronAir Neo Integration enables seamless control and monitoring of your Ac
 
 - **Comprehensive Control**: Easily switch between modes (heat, cool, fan, auto), set temperatures, and adjust fan speeds.
 - **Real-time Monitoring**: Keep track of your home's temperature and humidity levels with up-to-date readings.
+- **Zone Control**: Manage individual zones in your home for targeted climate control.
 - **Automation Friendly**: Integrate ActronAir Neo into your Home Assistant automations to maintain optimal comfort with minimal effort.
 - **Periodic Updates**: The system state is automatically refreshed based on your configured interval, ensuring your data is always current.
 
@@ -51,6 +52,22 @@ You can adjust the following options in the integration settings:
 
 - **Refresh Interval**: How often the integration should fetch updates from the ActronAir Neo API.
 
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory and can be viewed online at [domalab.github.io/ha-actronair-neo](https://domalab.github.io/ha-actronair-neo/).
+
+- **User Guide**: Installation, configuration, usage, and troubleshooting
+- **Developer Guide**: Architecture, API reference, contributing, and testing
+- **API Documentation**: Authentication, commands, queries, and responses
+
+To preview the documentation locally:
+
+```bash
+./preview_docs.sh
+```
+
+Then visit `http://localhost:8000` in your browser. The documentation is automatically built and deployed to GitHub Pages when changes are pushed to the main branch.
+
 ## Troubleshooting
 
 If you encounter any issues:
@@ -58,7 +75,8 @@ If you encounter any issues:
 1. Check that your credentials are correct.
 2. Ensure your ActronAir Neo system is online and accessible.
 3. Check the Home Assistant logs for any error messages.
-4. If you encounter a bug, please report it on our [GitHub issues page](https://github.com/domalab/ha-actronair-neo/issues).
+4. Refer to the [Troubleshooting Guide](docs/user/troubleshooting.md) for detailed solutions.
+5. If you encounter a bug, please report it on our [GitHub issues page](https://github.com/domalab/ha-actronair-neo/issues).
 
 ## Contributing
 

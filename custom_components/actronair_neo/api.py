@@ -3,12 +3,25 @@
 import asyncio
 import json
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, cast, TypeVar, Union
 from datetime import datetime, timedelta
 import os
 import aiohttp # type: ignore
 import aiofiles # type: ignore
 
+from .types import (
+    # TokenResponse used in type hints for responses
+    TokenResponse,
+    DeviceInfo,
+    AcStatusResponse,
+    CommandResponse,
+    FanModeType,
+    HvacModeType,
+    ZoneCapabilities,
+    PeripheralData,
+    CommandData,
+    ApiResponse
+)
 from .const import (
     API_URL,
     API_TIMEOUT,
@@ -46,7 +59,7 @@ class RateLimiter:
     async def __aenter__(self):
         await self.acquire()
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, *_: Any) -> None:
         self.release()
 
     async def acquire(self):
@@ -72,7 +85,7 @@ class ActronApi:
         session: aiohttp.ClientSession,
     ) -> None:
         """Initialize the ActronApi class.
-        
+
         Args:
             username: ActronAir Neo account username
             password: ActronAir Neo account password
@@ -104,7 +117,7 @@ class ActronApi:
 
         # Rate limiting
         self.rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
-        
+
         # Document the rate limiting strategy
         _LOGGER.debug(
             "Initializing rate limiter with %s requests per minute",
@@ -128,15 +141,15 @@ class ActronApi:
 
     def _get_model_series_capabilities(self, model: str) -> set[str]:
         """Determine supported fan modes based on model series.
-        
+
         Args:
             model: The model number of the AC unit
-            
+
         Returns:
             Set of supported fan modes for this model series
         """
         model_base = model.split('-')[0] if '-' in model else model
-        
+
         if model_base in ADVANCE_SERIES_MODELS:
             return ADVANCE_FAN_MODES
         return BASE_FAN_MODES
@@ -150,14 +163,14 @@ class ActronApi:
 
     def validate_fan_mode(self, mode: str, continuous: bool = False) -> str:
         """Validate and format fan mode.
-        
+
         Args:
             mode: The fan mode to validate (LOW, MED, HIGH, AUTO)
             continuous: Whether to add continuous suffix
-                
+
         Returns:
             Validated and formatted fan mode string
-                
+
         Raises:
             ValueError: If the provided mode is None or empty
         """
@@ -198,7 +211,7 @@ class ActronApi:
             )
             return "LOW+CONT" if continuous else "LOW"
 
-    async def load_tokens(self):
+    async def load_tokens(self) -> None:
         """Load authentication tokens from storage."""
         try:
             if os.path.exists(self.token_file):
@@ -218,7 +231,7 @@ class ActronApi:
         except ValueError as e:
             _LOGGER.error("Value error loading tokens: %s", e)
 
-    async def save_tokens(self):
+    async def save_tokens(self) -> None:
         """Save authentication tokens to storage."""
         try:
             async with aiofiles.open(self.token_file, mode='w') as f:
@@ -237,7 +250,7 @@ class ActronApi:
         except TypeError as e:
             _LOGGER.error("JSON encoding error saving tokens: %s", e)
 
-    async def clear_tokens(self):
+    async def clear_tokens(self) -> None:
         """Clear stored tokens when they become invalid."""
         self.refresh_token_value = None
         self.access_token = None
@@ -246,7 +259,7 @@ class ActronApi:
             os.remove(self.token_file)
         _LOGGER.info("Cleared stored tokens due to authentication failure")
 
-    async def authenticate(self):
+    async def authenticate(self) -> None:
         """Authenticate and get the token."""
         _LOGGER.debug("Starting authentication process")
         try:
@@ -260,7 +273,7 @@ class ActronApi:
             await self._get_access_token()
         _LOGGER.debug("Authentication process completed")
 
-    async def _get_refresh_token(self):
+    async def _get_refresh_token(self) -> None:
         """Get the refresh token."""
         url = f"{API_URL}/api/v0/client/user-devices"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -285,7 +298,7 @@ class ActronApi:
             _LOGGER.error("Failed to get new refresh token: %s", str(e))
             raise AuthenticationError(f"Failed to get new refresh token: {str(e)}") from e
 
-    async def _get_access_token(self):
+    async def _get_access_token(self) -> None:
         """Get access token using refresh token."""
         url = f"{API_URL}/api/v0/oauth/token"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -319,7 +332,7 @@ class ActronApi:
     MAX_REFRESH_RETRIES = 3
     REFRESH_RETRY_DELAY = 5  # seconds
 
-    async def refresh_access_token(self):
+    async def refresh_access_token(self) -> None:
         """
         Refreshes the access token using exponential backoff strategy.
 
@@ -357,9 +370,11 @@ class ActronApi:
                         raise
         raise AuthenticationError("Failed to refresh token and re-authentication failed")
 
+    T = TypeVar('T')
+
     async def _make_request(
         self, method: str, url: str, auth_required: bool = True, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> Union[ApiResponse, str]:
         """Make an API request with rate limiting and error handling."""
         async with self.rate_limiter:
             for attempt in range(MAX_RETRIES):
@@ -426,37 +441,38 @@ class ActronApi:
                 return False
         return True
 
-    async def get_devices(self) -> List[Dict[str, str]]:
+    async def get_devices(self) -> List[DeviceInfo]:
         """Fetch the list of devices from the API."""
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
         _LOGGER.debug("Fetching devices from: %s", url)
         response = await self._make_request("GET", url)
         _LOGGER.debug("Get devices response: %s", response)
-        devices = []
+        devices: List[DeviceInfo] = []
         if '_embedded' in response and 'ac-system' in response['_embedded']:
             for system in response['_embedded']['ac-system']:
                 devices.append({
                     'serial': system.get('serial', 'Unknown'),
                     'name': system.get('description', 'Unknown Device'),
-                    'type': system.get('type', 'Unknown')
+                    'type': system.get('type', 'Unknown'),
+                    'id': system.get('id', 'Unknown')
                 })
         _LOGGER.debug("Found devices: %s", devices)
         return devices
 
-    async def get_ac_status(self, serial: str) -> Dict[str, Any]:
+    async def get_ac_status(self, serial: str) -> AcStatusResponse:
         """Get the current status of the AC system."""
         if not self.is_api_healthy():
             _LOGGER.warning("API is not healthy, using cached status")
-            return self.cached_status if self.cached_status else {}
+            return cast(AcStatusResponse, self.cached_status if self.cached_status else {})
 
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
         _LOGGER.debug("Fetching AC status from: %s", url)
         response = await self._make_request("GET", url)
         _LOGGER.debug("AC status response: %s", response)
         self.cached_status = response
-        return response
+        return cast(AcStatusResponse, response)
 
-    async def send_command(self, serial: str, command: Dict[str, Any]) -> Dict[str, Any]:
+    async def send_command(self, serial: str, command: CommandData) -> CommandResponse:
         """Send a command to the AC system."""
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
         _LOGGER.debug("Sending command to: %s", url)
@@ -466,7 +482,7 @@ class ActronApi:
             try:
                 response = await self._make_request("POST", url, json=command)
                 _LOGGER.debug("Command response:\n%s", json.dumps(response, indent=2))
-                return response
+                return cast(CommandResponse, response)
             except ApiError as e:
                 if (attempt < MAX_RETRIES - 1) and (e.status_code in [500, 502, 503, 504]):
                     wait_time = 2 ** attempt  # exponential backoff
@@ -498,16 +514,16 @@ class ActronApi:
         command = self.create_command("SET_ZONE_STATE", zones=modified_statuses)
         await self.send_command(self.actron_serial, command)
 
-    def get_zone_capabilities(self, zone_data: Dict[str, Any]) -> Dict[str, Any]:
+    def get_zone_capabilities(self, zone_data: Dict[str, Union[str, int, bool, float]]) -> ZoneCapabilities:
         """Extract zone capabilities from zone data.
-        
+
         Args:
             zone_data: Raw zone data from the API
-            
+
         Returns:
-            Dict containing processed zone capabilities
+            ZoneCapabilities containing processed zone capabilities
         """
-        return {
+        return cast(ZoneCapabilities, {
             "can_operate": zone_data.get("CanOperate", False),
             "exists": zone_data.get("NV_Exists", False),
             "has_temp_control": (
@@ -520,7 +536,8 @@ class ActronApi:
             ),
             "target_temp_cool": zone_data.get("TemperatureSetpoint_Cool_oC"),
             "target_temp_heat": zone_data.get("TemperatureSetpoint_Heat_oC"),
-        }
+            "peripheral_capabilities": None,
+        })
 
     async def set_zone_temperature(
         self,
@@ -530,13 +547,13 @@ class ActronApi:
         target_heat: Optional[float] = None
     ) -> None:
         """Set zone temperature with comprehensive validation and error handling.
-        
+
         Args:
             zone_index: Zero-based zone index
             temperature: Single target temperature (for non-separate mode)
             target_cool: Cooling target temperature
             target_heat: Heating target temperature
-            
+
         Raises:
             ValueError: If temperature values are invalid or missing
             IndexError: If zone_index is out of bounds
@@ -584,7 +601,7 @@ class ActronApi:
 
             await self.send_command(self.actron_serial, command)
 
-    async def initializer(self):
+    async def initializer(self) -> None:
         """Initialize the ActronApi by loading tokens and authenticating."""
         _LOGGER.debug("Initializing ActronApi")
         await self.load_tokens()
@@ -616,7 +633,7 @@ class ActronApi:
         else:
             _LOGGER.error("Could not identify target device from list of returned systems")
 
-    def create_command(self, command_type: str, **params) -> Dict[str, Any]:
+    def create_command(self, command_type: str, **params) -> CommandData:
         """Create a command based on the command type and parameters."""
         commands = {
             "ON": lambda: {
@@ -675,14 +692,14 @@ class ActronApi:
             }
             },
         }
-        return commands[command_type](**params)
+        return cast(CommandData, commands[command_type](**params))
 
-    async def set_climate_mode(self, mode: str) -> None:
+    async def set_climate_mode(self, mode: HvacModeType) -> None:
         """Set the climate mode."""
         command = self.create_command("CLIMATE_MODE", mode=mode)
         await self.send_command(self.actron_serial, command)
 
-    async def set_fan_mode(self, mode: str, continuous: Optional[bool] = None) -> None:
+    async def set_fan_mode(self, mode: FanModeType, continuous: Optional[bool] = None) -> None:
         """Set fan mode with state tracking, validation and retry logic.
 
         Args:
@@ -714,7 +731,7 @@ class ActronApi:
                 # Get current model and validate mode against capabilities
                 model = self.data["main"].get("model") if hasattr(self, 'data') else None
                 validated_mode = self.validate_fan_mode(mode, continuous)
-                
+
                 if model and validated_mode.startswith("AUTO") and model not in ADVANCE_SERIES_MODELS:
                     raise ValueError(f"AUTO fan mode not supported on model {model}")
 

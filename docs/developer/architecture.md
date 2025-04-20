@@ -6,7 +6,7 @@ This document provides a comprehensive overview of the ActronAir Neo integration
 
 The ActronAir Neo integration follows a layered architecture pattern:
 
-```
+```ascii
 ┌─────────────────────────────────────────────────────────┐
 │                  Home Assistant Core                    │
 └───────────────────────────┬─────────────────────────────┘
@@ -46,6 +46,7 @@ The API client is responsible for all communication with the ActronAir Neo cloud
 The API client is designed to be a standalone component that could potentially be used outside of the Home Assistant integration.
 
 Key classes:
+
 - `ActronNeoAPI`: Main API client class
 - `ActronNeoAuthenticationError`: Custom exception for authentication issues
 - `ActronNeoAPIError`: Custom exception for API errors
@@ -63,6 +64,7 @@ The coordinator is the central component that manages data flow between the API 
 The coordinator uses Home Assistant's `DataUpdateCoordinator` class to efficiently manage data updates and minimize API calls.
 
 Key classes:
+
 - `ActronDataCoordinator`: Main coordinator class
 - `ActronNeoData`: Data structure class
 
@@ -77,6 +79,7 @@ The config flow handles the integration setup and configuration process. It:
 - Stores configuration data
 
 Key classes:
+
 - `ActronNeoConfigFlow`: Main config flow class
 - `ActronNeoOptionsFlow`: Options flow for reconfiguration
 
@@ -92,6 +95,7 @@ The entities represent the different devices and sensors in Home Assistant:
 All entities inherit from a base entity class that provides common functionality.
 
 Key classes:
+
 - `ActronNeoClimate`: Main climate control entity
 - `ActronNeoBaseSensor`: Base class for all sensor entities
 - `ActronNeoZoneSwitch`: Zone control switch entity
@@ -155,8 +159,19 @@ The integration stores configuration in Home Assistant's configuration registry:
 - **Device information** is stored for quick startup
 - **User preferences** are stored for persistence across restarts
 
+## Development Tools
+
+The integration includes several utility tools to help with development and troubleshooting:
+
+- **API Explorer**: A command-line tool for interacting with the ActronAir Neo API
+- **API Documentation**: Detailed documentation of the API structure and endpoints
+- **Diagnostics Generator**: Tool to generate system diagnostics reports
+
+These tools are located in the `utils/` directory of the repository. See the [Utility Tools](utility_tools.md) page for more information.
+
 ## Next Steps
 
 - [API Reference](api_reference.md): Detailed documentation of the API client
 - [Contributing Guide](contributing.md): How to contribute to the integration
 - [Testing Guide](testing.md): How to test the integration
+- [Utility Tools](utility_tools.md): Tools for API exploration and diagnostics

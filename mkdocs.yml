@@ -65,6 +65,7 @@ nav:
     - Contributing: developer/contributing.md
     - Testing: developer/testing.md
     - Type System: developer/type_system.md
+    - Utility Tools: developer/utility_tools.md
   - API Documentation:
     - Authentication: api/authentication.md
     - Commands: api/commands.md

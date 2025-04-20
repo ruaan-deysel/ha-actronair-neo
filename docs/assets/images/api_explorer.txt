@@ -1,0 +1,2 @@
+This is a placeholder for the API Explorer screenshot.
+Replace this file with an actual screenshot of the API Explorer in action.

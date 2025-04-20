@@ -31,6 +31,7 @@ The ActronAir Neo Integration enables seamless control and monitoring of your Ac
 - [Contributing Guide](developer/contributing.md): How to contribute to the integration
 - [Testing Guide](developer/testing.md): How to test the integration
 - [Type System](developer/type_system.md): Information about the type system
+- [Utility Tools](developer/utility_tools.md): Tools for API exploration and diagnostics
 
 ### API Documentation
 

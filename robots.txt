@@ -1,0 +1,6 @@
+# robots.txt for https://actronair-neo.domalab.net/
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://actronair-neo.domalab.net/sitemap.xml

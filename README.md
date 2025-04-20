@@ -1,6 +1,8 @@
 
 # ActronAir Neo Integration for Home Assistant
 
+> **📚 [Visit our comprehensive documentation site](https://actronair-neo.domalab.net/)** - Complete guides, tutorials, and API reference
+
 [![HACS Integration][hacsbadge]][hacs]
 [![GitHub Last Commit](https://img.shields.io/github/last-commit/domalab/ha-actronair-neo?style=for-the-badge)](https://github.com/domalab/ha-actronair-neo/commits/main)
 [![License](https://img.shields.io/github/license/domalab/ha-actronair-neo?style=for-the-badge)](./LICENSE)
@@ -52,31 +54,15 @@ You can adjust the following options in the integration settings:
 
 - **Refresh Interval**: How often the integration should fetch updates from the ActronAir Neo API.
 
-## Documentation
-
-Comprehensive documentation is available in the `docs/` directory and can be viewed online at [domalab.github.io/ha-actronair-neo](https://domalab.github.io/ha-actronair-neo/).
-
-- **User Guide**: Installation, configuration, usage, and troubleshooting
-- **Developer Guide**: Architecture, API reference, contributing, and testing
-- **API Documentation**: Authentication, commands, queries, and responses
-
-To preview the documentation locally:
-
-```bash
-./preview_docs.sh
-```
-
-Then visit `http://localhost:8000` in your browser. The documentation is automatically built and deployed to GitHub Pages when changes are pushed to the main branch.
-
 ## Troubleshooting
 
 If you encounter any issues:
 
-1. Check that your credentials are correct.
-2. Ensure your ActronAir Neo system is online and accessible.
-3. Check the Home Assistant logs for any error messages.
-4. Refer to the [Troubleshooting Guide](docs/user/troubleshooting.md) for detailed solutions.
-5. If you encounter a bug, please report it on our [GitHub issues page](https://github.com/domalab/ha-actronair-neo/issues).
+1. **Visit our [online Troubleshooting Guide](https://actronair-neo.domalab.net/user/troubleshooting/)** for the most up-to-date solutions
+2. Check that your credentials are correct
+3. Ensure your ActronAir Neo system is online and accessible
+4. Check the Home Assistant logs for any error messages
+5. If you encounter a bug, please report it on our [GitHub issues page](https://github.com/domalab/ha-actronair-neo/issues)
 
 ## Contributing
 
@@ -85,23 +71,27 @@ Contributions to this integration are welcome. Please fork the repository and su
 ### Development Setup
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/domalab/ha-actronair-neo.git
    cd ha-actronair-neo
    ```
 
 2. Set up a virtual environment:
+
    ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
 3. Install dependencies:
+
    ```bash
    pip install -r requirements.txt
    ```
 
 4. Install development tools:
+
    ```bash
    pip install black flake8 pylint mypy pytest
    ```
@@ -109,6 +99,7 @@ Contributions to this integration are welcome. Please fork the repository and su
 ### Code Style
 
 This project uses:
+
 - Black for code formatting
 - Flake8 and Pylint for linting
 - Mypy for type checking
@@ -116,6 +107,7 @@ This project uses:
 ### Testing
 
 We encourage adding tests for new features. Run tests with:
+
 ```bash
 pytest
 ```

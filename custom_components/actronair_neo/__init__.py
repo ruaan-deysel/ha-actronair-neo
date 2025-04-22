@@ -111,12 +111,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     password = entry.data[CONF_PASSWORD]
     refresh_interval = entry.data[CONF_REFRESH_INTERVAL]
     serial_number = entry.data[CONF_SERIAL_NUMBER]
+    system_id = entry.data.get("system_id", "")
 
     session = async_get_clientsession(hass)
     api = ActronApi(username=username, password=password, session=session)
 
     try:
         await api.initializer()
+        await api.set_system(serial_number, system_id)
     except AuthenticationError as auth_err:
         _LOGGER.error("Failed to authenticate: %s", auth_err)
         raise ConfigEntryNotReady from auth_err
@@ -178,7 +180,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle configuration entry updates with safe entity cleanup.
-    
+
     This method ensures proper cleanup of entities when disabling zone control
     and maintains system stability during configuration changes.
     """

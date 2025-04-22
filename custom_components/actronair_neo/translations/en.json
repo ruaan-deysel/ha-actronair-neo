@@ -10,12 +10,20 @@
                     "refresh_interval": "Refresh Interval (seconds)",
                     "enable_zone_control": "Enable Zone Control"
                 }
+            },
+            "select_device": {
+                "title": "Select ActronAir Neo System",
+                "description": "Multiple ActronAir Neo systems found. Please select the system you want to add.",
+                "data": {
+                    "device": "System"
+                }
             }
         },
         "error": {
             "invalid_auth": "Invalid authentication",
             "cannot_connect": "Failed to connect",
             "no_devices": "No devices found on account",
+            "device_not_found": "Selected device not found",
             "unknown": "Unexpected error"
         },
         "abort": {

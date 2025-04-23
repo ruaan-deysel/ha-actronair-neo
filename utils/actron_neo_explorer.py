@@ -412,22 +412,23 @@ class ActronNeoExplorer:
             _LOGGER.debug("Tokens found, validating")
             try:
                 # This will trigger re-authentication if tokens are invalid
-                devices = await self.get_devices()
-                if not devices:
+                cached_devices = await self.get_devices()
+                if not cached_devices:
                     raise ValueError("No devices found")
             except AuthenticationError:
                 _LOGGER.warning("Stored tokens are invalid, re-authenticating")
                 await self.authenticate()
-                devices = await self.get_devices()
-                if not devices:
+                cached_devices = await self.get_devices()
+                if not cached_devices:
                     raise ValueError("No devices found")
 
         # Get devices and let user select one
         if not hasattr(self, 'actron_serial') or not self.actron_serial:
-            devices = await self.get_devices()
-            if not devices:
+            if cached_devices is None:  # Use cached devices if available
+                cached_devices = await self.get_devices()
+            if not cached_devices:
                 raise ValueError("No devices found in your ActronAir Neo account")
-            await self.select_device(devices)
+            await self.select_device(cached_devices)
 
     async def get_devices(self) -> List[Dict[str, str]]:
         """Fetch the list of devices from the API."""

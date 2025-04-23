@@ -424,7 +424,7 @@ class ActronNeoExplorer:
 
         # Get devices and let user select one
         if not hasattr(self, 'actron_serial') or not self.actron_serial:
-            if cached_devices is None:  # Use cached devices if available
+            if not cached_devices:  # Use cached devices if available
                 cached_devices = await self.get_devices()
             if not cached_devices:
                 raise ValueError("No devices found in your ActronAir Neo account")

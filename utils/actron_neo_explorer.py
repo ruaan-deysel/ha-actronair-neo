@@ -50,7 +50,7 @@ try:
     from rich.theme import Theme
     from rich.pretty import Pretty
     from rich.box import Box, ROUNDED
-    
+
     # Define custom theme
     actron_theme = Theme({
         "info": "cyan",
@@ -65,7 +65,7 @@ try:
         "button": "cyan reverse",
         "panel.border": "cyan",
     })
-    
+
     # Initialize rich console
     console = Console(theme=actron_theme)
     RICH_AVAILABLE = True
@@ -139,11 +139,11 @@ class ActronNeoExplorer:
         # Set log level
         if debug:
             _LOGGER.setLevel(logging.DEBUG)
-        
+
         # Authentication credentials
         self.username = username
         self.password = password
-        
+
         # Token management
         self.token_file = token_file_path or os.path.join(os.path.dirname(os.path.abspath(__file__)), "actron_token.json")
         self.refresh_token_value: Optional[str] = None
@@ -161,21 +161,21 @@ class ActronNeoExplorer:
 
         # Rate limiting
         self.rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
-        
+
         # Request tracking
         self._request_timestamps: list[datetime] = []
 
         # Refresh token lock
         self._refresh_lock = asyncio.Lock()
-        
+
         # Session
         self.session = None
-    
+
     async def __aenter__(self):
         # Create aiohttp session
         self.session = aiohttp.ClientSession()
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         # Close the session
         if self.session:
@@ -191,7 +191,7 @@ class ActronNeoExplorer:
                     self.access_token = data.get("access_token")
                     expires_at_str = data.get("expires_at", "2000-01-01")
                     self.token_expires_at = datetime.fromisoformat(expires_at_str)
-                    
+
                 # Verify token data is valid
                 if not self.refresh_token_value or not self.access_token or not self.token_expires_at:
                     _LOGGER.warning("Token file contains incomplete data, will authenticate from scratch")
@@ -412,17 +412,30 @@ class ActronNeoExplorer:
             _LOGGER.debug("Tokens found, validating")
             try:
                 # This will trigger re-authentication if tokens are invalid
-                await self.get_devices()
+                cached_devices = await self.get_devices()
+                if not cached_devices:
+                    raise ValueError("No devices found")
             except AuthenticationError:
                 _LOGGER.warning("Stored tokens are invalid, re-authenticating")
                 await self.authenticate()
+                cached_devices = await self.get_devices()
+                if not cached_devices:
+                    raise ValueError("No devices found")
+
+        # Get devices and let user select one
+        if not hasattr(self, 'actron_serial') or not self.actron_serial:
+            if not cached_devices:  # Use cached devices if available
+                cached_devices = await self.get_devices()
+            if not cached_devices:
+                raise ValueError("No devices found in your ActronAir Neo account")
+            await self.select_device(cached_devices)
 
     async def get_devices(self) -> List[Dict[str, str]]:
         """Fetch the list of devices from the API."""
         url = f"{API_URL}/api/v0/client/ac-systems?includeNeo=true"
         _LOGGER.info("Fetching devices from API")
         response = await self._make_request("GET", url)
-        
+
         devices = []
         if '_embedded' in response and 'ac-system' in response['_embedded']:
             for system in response['_embedded']['ac-system']:
@@ -432,27 +445,87 @@ class ActronNeoExplorer:
                     'type': system.get('type', 'Unknown'),
                     'id': system.get('id', 'Unknown')
                 })
-        
-        if devices:
-            # Store the first device by default
-            self.actron_serial = devices[0]['serial']
-            self.actron_system_id = devices[0].get('id', '')
+
+        if not devices:
+            _LOGGER.warning("No devices found")
+
+        return devices
+
+    async def select_device(self, devices: List[Dict[str, str]]) -> Dict[str, str]:
+        """Allow the user to select a device from the list."""
+        if not devices:
+            raise ValueError("No devices available to select from")
+
+        if len(devices) == 1:
+            selected_device = devices[0]
             _LOGGER.info(
-                "Using device with serial number %s and ID %s",
-                self.actron_serial,
-                self.actron_system_id
+                "Only one device found, automatically selecting %s (%s)",
+                selected_device['name'],
+                selected_device['serial']
             )
         else:
-            _LOGGER.warning("No devices found")
-            
-        return devices
+            # Display devices for selection
+            if RICH_AVAILABLE:
+                console.print("\n[title]Multiple ActronAir Neo systems found:[/title]")
+                table = Table(show_header=True, header_style="menu_header")
+                table.add_column("#", style="dim")
+                table.add_column("Name")
+                table.add_column("Serial")
+                table.add_column("Type")
+
+                for i, device in enumerate(devices):
+                    table.add_row(
+                        str(i+1),
+                        device['name'],
+                        device['serial'],
+                        device['type']
+                    )
+
+                console.print(table)
+
+                # Prompt for selection
+                selection = Prompt.ask(
+                    "[menu_header]Select a device[/menu_header]",
+                    choices=[str(i+1) for i in range(len(devices))],
+                    default="1"
+                )
+                selected_device = devices[int(selection) - 1]
+            else:
+                print("\nMultiple ActronAir Neo systems found:")
+                for i, device in enumerate(devices):
+                    print(f"{i+1}. {device['name']} ({device['serial']}) - {device['type']}")
+
+                # Prompt for selection
+                while True:
+                    try:
+                        selection = input("Select a device (enter number): ")
+                        index = int(selection) - 1
+                        if 0 <= index < len(devices):
+                            selected_device = devices[index]
+                            break
+                        else:
+                            print(f"Invalid selection. Please enter a number between 1 and {len(devices)}")
+                    except ValueError:
+                        print("Please enter a valid number")
+
+        # Set the selected device
+        self.actron_serial = selected_device['serial']
+        self.actron_system_id = selected_device.get('id', '')
+        _LOGGER.info(
+            "Using device: %s with serial number %s and ID %s",
+            selected_device['name'],
+            self.actron_serial,
+            self.actron_system_id
+        )
+
+        return selected_device
 
     async def get_ac_status(self, serial: Optional[str] = None) -> Dict[str, Any]:
         """Get the current status of the AC system."""
         serial = serial or self.actron_serial
         if not serial:
             raise ValueError("No serial number available. Call get_devices() first.")
-            
+
         url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
         _LOGGER.info("Fetching AC status")
         response = await self._make_request("GET", url)
@@ -463,7 +536,7 @@ class ActronNeoExplorer:
         serial = serial or self.actron_serial
         if not serial:
             raise ValueError("No serial number available. Call get_devices() first.")
-        
+
         if event_id:
             # Replace | with % for API requests
             event_id = event_id.replace('|', '%')
@@ -473,7 +546,7 @@ class ActronNeoExplorer:
                 url = f"{API_URL}/api/v0/client/ac-systems/events/older?serial={serial}&olderThanEventId={event_id}"
         else:
             url = f"{API_URL}/api/v0/client/ac-systems/events/latest?serial={serial}"
-        
+
         _LOGGER.info("Fetching AC events")
         response = await self._make_request("GET", url)
         return response
@@ -483,10 +556,10 @@ class ActronNeoExplorer:
         serial = serial or self.actron_serial
         if not serial:
             raise ValueError("No serial number available. Call get_devices() first.")
-            
+
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
         _LOGGER.info("Sending command: %s", json.dumps(command, indent=2))
-        
+
         response = await self._make_request("POST", url, json=command)
         return response
 
@@ -510,7 +583,7 @@ class ActronNeoExplorer:
         else:
             # Strip any continuous suffix
             mode = mode.split("+")[0].split("-")[0]
-            
+
         command = {
             "command": {
                 "UserAirconSettings.FanMode": mode,
@@ -541,8 +614,8 @@ class ActronNeoExplorer:
         return await self.send_command(command)
 
     async def set_zone_temperature(
-        self, 
-        zone_index: int, 
+        self,
+        zone_index: int,
         temperature: Optional[float] = None,
         target_cool: Optional[float] = None,
         target_heat: Optional[float] = None
@@ -565,7 +638,7 @@ class ActronNeoExplorer:
                 }
             }
             await self.send_command(cool_command)
-            
+
             # Then send heating command
             heat_command = {
                 "command": {
@@ -631,7 +704,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
                 subtitle_align="center",
                 width=70
             ))
-            
+
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[info]Fetching available devices from your account..."),
@@ -640,31 +713,31 @@ async def interactive_session(explorer: ActronNeoExplorer):
                 task = progress.add_task("Fetching...", total=None)
                 devices = await explorer.get_devices()
                 progress.update(task, completed=True)
-            
+
             if not devices:
                 console.print("[error]No devices found in your account. Please check your credentials.[/error]")
                 return
-                
-            console.print(f"[success]✓ Found {len(devices)} device(s)[/success]") 
+
+            console.print(f"[success]✓ Found {len(devices)} device(s)[/success]")
         else:
             print("\n" + "=" * 40)
             print("      ActronAir Neo Device Discovery")
             print("=" * 40)
-            
+
             print("\nFetching available devices from your account...")
             devices = await explorer.get_devices()
-            
+
             if not devices:
                 print("\n❌ No devices found in your account. Please check your credentials.")
                 return
-                
+
             print(f"\n✓ Found {len(devices)} device(s)")
-        
+
         # Set default device if there's only one
         if len(devices) == 1:
             explorer.actron_serial = devices[0]['serial']
             explorer.actron_system_id = devices[0].get('id', '')
-            
+
             if RICH_AVAILABLE:
                 device_panel = Panel(
                     f"Name: [highlight]{devices[0]['name']}[/highlight]\n" +
@@ -679,7 +752,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
                 print(f"\nUsing the only available device: {devices[0]['name']}")
                 print(f"  - Serial: {explorer.actron_serial}")
                 print(f"  - Type: {devices[0].get('type', 'Unknown')}")
-            
+
         # If multiple devices, let user select one
         else:
             if RICH_AVAILABLE:
@@ -689,34 +762,34 @@ async def interactive_session(explorer: ActronNeoExplorer):
                 table.add_column("Name", style="title")
                 table.add_column("Serial", style="info")
                 table.add_column("Type", style="menu_desc")
-                
+
                 for i, device in enumerate(devices):
                     table.add_row(
-                        f"[{i}]", 
+                        f"[{i}]",
                         device['name'],
                         device['serial'],
                         device.get('type', 'Unknown')
                     )
-                    
+
                 console.print(table)
-                
+
                 # Device selection with rich prompt
                 console.print("\n[title]Please select your ActronAir device:[/title]")
-                
+
                 # Create styled choices for selection
                 choices = {}
                 for i, device in enumerate(devices):
                     choices[str(i)] = f"[menu_item]{device['name']}[/menu_item] ([info]{device['serial']}[/info])"
-                
+
                 # Use Rich prompt with styled options
                 idx_str = Prompt.ask("Select device", choices=list(choices.keys()), default="0")
-                
+
                 try:
                     idx = int(idx_str)
                     if 0 <= idx < len(devices):
                         explorer.actron_serial = devices[idx]['serial']
                         explorer.actron_system_id = devices[idx].get('id', '')
-                        
+
                         # Show selection confirmation with a panel
                         device_panel = Panel(
                             f"[highlight]Name:[/highlight] {devices[idx]['name']}\n" +
@@ -748,7 +821,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
                     print(f"    - Type: {device.get('type', 'Unknown')}")
                     if i < len(devices) - 1:  # Add separator between devices except after the last one
                         print("    " + "-" * 30)
-                
+
                 while True:
                     try:
                         idx = int(input(f"\nSelect a device (0-{len(devices) - 1}): "))
@@ -765,7 +838,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
     except Exception as e:
         print(f"\n❌ Error retrieving devices: {e}")
         return
-    
+
     # Main interactive loop
     while True:
         if RICH_AVAILABLE:
@@ -786,13 +859,13 @@ async def interactive_session(explorer: ActronNeoExplorer):
   [menu_item]7.[/menu_item] [highlight]Set Temperature[/highlight]   - Adjust temperature setpoint
   [menu_item]8.[/menu_item] [highlight]Control Zone[/highlight]      - Enable/disable individual zones
   [menu_item]9.[/menu_item] [highlight]Send Custom Command[/highlight] - Send raw JSON commands
-  
+
 [menu_header]Diagnostics & Tools:[/menu_header]
   [menu_item]D.[/menu_item] [highlight]Generate Diagnostics[/highlight] - Create diagnostics.md for system
 
   [menu_item]0.[/menu_item] [error]Exit[/error]             - Quit the API Explorer
                 """,
-                title="ActronAir Neo API Explorer", 
+                title="ActronAir Neo API Explorer",
                 title_align="center",
                 border_style="panel.border",
                 padding=(1, 2),
@@ -807,44 +880,44 @@ async def interactive_session(explorer: ActronNeoExplorer):
             print("\nStatus & Information:")
             print("1. Get AC Status      - View current AC system status")
             print("2. Get AC Events     - Retrieve system events & history")
-            
+
             print("\nBasic Controls:")
             print("3. Turn AC On        - Power on the AC system")
             print("4. Turn AC Off       - Power off the AC system")
             print("5. Set Climate Mode  - Change between COOL, HEAT, FAN, AUTO")
             print("6. Set Fan Mode      - Change fan speed & continuous operation")
-            
+
             print("\nAdvanced Controls:")
             print("7. Set Temperature   - Adjust temperature setpoint")
             print("8. Control Zone      - Enable/disable individual zones")
             print("9. Send Custom Command - Send raw JSON commands")
-            
+
             print("\nDiagnostics & Tools:")
             print("D. Generate Diagnostics - Create diagnostics.md for system")
-            
+
             print("\n0. Exit             - Quit the API Explorer")
-            
+
             choice = input("\nEnter command (0-9, D): ")
-        
+
         try:
             if choice == "1":
                 response = await explorer.get_ac_status()
                 print("\nAC Status:")
                 explorer.pretty_print(response)
-                
+
                 # Save to file option
                 if input("\nSave this response to file? (y/n): ").lower() == 'y':
                     filename = input("Enter filename (default: ac_status.json): ") or "ac_status.json"
                     await save_response_to_file(response, filename)
-                
-                
+
+
             elif choice == "2":
                 print("\n===== AC Events =====")
                 print("1. Latest events       - Get most recent events")
                 print("2. Newer than event ID - Get events newer than a specific ID")
                 print("3. Older than event ID - Get events older than a specific ID")
                 event_choice = input("\nSelect option (1-3): ")
-                
+
                 try:
                     if event_choice == "1":
                         print("\nFetching latest events...")
@@ -854,29 +927,29 @@ async def interactive_session(explorer: ActronNeoExplorer):
                         if not event_id:
                             print("\n❌ Event ID cannot be empty")
                             continue
-                            
+
                         print(f"\nFetching events {'newer' if event_choice == '2' else 'older'} than {event_id}...")
                         response = await explorer.get_ac_events(
-                            event_id=event_id, 
+                            event_id=event_id,
                             newer=(event_choice == "2")
                         )
                     else:
                         print("\n❌ Invalid option. Please enter 1, 2, or 3.")
                         continue
-                        
+
                     print("\n✓ Events retrieved successfully")
                 except Exception as e:
                     print(f"\n❌ Error retrieving events: {e}")
                     continue
-                
+
                 print("\nAC Events:")
                 explorer.pretty_print(response)
-                
+
                 # Save to file option
                 if input("\nSave this response to file? (y/n): ").lower() == 'y':
                     filename = input("Enter filename (default: ac_events.json): ") or "ac_events.json"
                     await save_response_to_file(response, filename)
-                
+
             elif choice == "3":
                 print("\nSending command to turn AC on...")
                 try:
@@ -884,14 +957,14 @@ async def interactive_session(explorer: ActronNeoExplorer):
                     print("\n✓ AC turned on successfully")
                     print("\nCommand Response:")
                     explorer.pretty_print(response)
-                    
+
                     # Save to file option
                     if input("\nSave this response to file? (y/n): ").lower() == 'y':
                         filename = input("Enter filename (default: turn_on_response.json): ") or "turn_on_response.json"
                         await save_response_to_file(response, filename)
                 except Exception as e:
                     print(f"\n❌ Error turning AC on: {e}")
-                
+
             elif choice == "4":
                 print("\nSending command to turn AC off...")
                 try:
@@ -899,19 +972,19 @@ async def interactive_session(explorer: ActronNeoExplorer):
                     print("\n✓ AC turned off successfully")
                     print("\nCommand Response:")
                     explorer.pretty_print(response)
-                    
+
                     # Save to file option
                     if input("\nSave this response to file? (y/n): ").lower() == 'y':
                         filename = input("Enter filename (default: turn_off_response.json): ") or "turn_off_response.json"
                         await save_response_to_file(response, filename)
                 except Exception as e:
                     print(f"\n❌ Error turning AC off: {e}")
-                
+
             elif choice == "5":
                 print("\n===== Set Climate Mode =====")
                 print("Available modes: AUTO, COOL, HEAT, FAN")
                 mode = input("\nEnter mode: ").upper()
-                
+
                 if mode in ["AUTO", "COOL", "HEAT", "FAN"]:
                     print(f"\nSetting climate mode to {mode}...")
                     try:
@@ -919,7 +992,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
                         print(f"\n✓ Climate mode set to {mode} successfully")
                         print("\nCommand Response:")
                         explorer.pretty_print(response)
-                        
+
                         # Save to file option
                         if input("\nSave this response to file? (y/n): ").lower() == 'y':
                             filename = input("Enter filename (default: climate_mode_response.json): ") or "climate_mode_response.json"
@@ -928,13 +1001,13 @@ async def interactive_session(explorer: ActronNeoExplorer):
                         print(f"\n❌ Error setting climate mode: {e}")
                 else:
                     print("\n❌ Invalid mode. Please select from AUTO, COOL, HEAT, or FAN.")
-                
+
             elif choice == "6":
                 print("\n===== Set Fan Mode =====")
                 print("Available modes: AUTO, LOW, MED, HIGH")
                 mode = input("\nEnter fan mode: ").upper()
                 continuous = input("Enable continuous fan operation? (y/n): ").lower() == 'y'
-                
+
                 if mode in ["AUTO", "LOW", "MED", "HIGH"]:
                     print(f"\nSetting fan mode to {mode} (Continuous: {'Yes' if continuous else 'No'})...")
                     try:
@@ -942,7 +1015,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
                         print(f"\n✓ Fan mode set to {mode} successfully")
                         print("\nCommand Response:")
                         explorer.pretty_print(response)
-                        
+
                         # Save to file option
                         if input("\nSave this response to file? (y/n): ").lower() == 'y':
                             filename = input("Enter filename (default: fan_mode_response.json): ") or "fan_mode_response.json"
@@ -951,7 +1024,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
                         print(f"\n❌ Error setting fan mode: {e}")
                 else:
                     print("\n❌ Invalid mode. Please select from AUTO, LOW, MED, or HIGH.")
-                
+
             elif choice == "7":
                 print("\n===== Set Temperature =====")
                 try:
@@ -959,21 +1032,21 @@ async def interactive_session(explorer: ActronNeoExplorer):
                     if not temp_input:
                         print("\n❌ Temperature cannot be empty")
                         continue
-                        
+
                     temp = float(temp_input)
                     if temp < 16 or temp > 30:
                         print("\n❌ Temperature should be between 16°C and 30°C")
                         continue
-                        
+
                     mode = input("Is this for cooling mode? (y/n): ").lower()
                     is_cooling = mode == 'y'
-                    
+
                     print(f"\nSetting temperature to {temp}°C for {'cooling' if is_cooling else 'heating'} mode...")
                     response = await explorer.set_temperature(temp, is_cooling)
                     print(f"\n✓ Temperature set to {temp}°C successfully")
                     print("\nCommand Response:")
                     explorer.pretty_print(response)
-                    
+
                     # Save to file option
                     if input("\nSave this response to file? (y/n): ").lower() == 'y':
                         filename = input("Enter filename (default: temperature_response.json): ") or "temperature_response.json"
@@ -982,7 +1055,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
                     print("\n❌ Please enter a valid number for temperature")
                 except Exception as e:
                     print(f"\n❌ Error setting temperature: {e}")
-                
+
             elif choice == "8":
                 print("\n===== Control Zone =====")
                 try:
@@ -990,24 +1063,24 @@ async def interactive_session(explorer: ActronNeoExplorer):
                     if not zone_input:
                         print("\n❌ Zone index cannot be empty")
                         continue
-                        
+
                     zone = int(zone_input)
                     if not 0 <= zone <= 7:
                         print("\n❌ Zone index must be between 0 and 7")
                         continue
-                        
+
                     action = input("Enable or disable zone? (e/d): ").lower()
                     if action not in ['e', 'd']:
                         print("\n❌ Please enter 'e' to enable or 'd' to disable the zone")
                         continue
-                    
+
                     enable = action == 'e'
                     print(f"\n{'Enabling' if enable else 'Disabling'} zone {zone}...")
                     response = await explorer.set_zone_state(zone, enable)
                     print(f"\n✓ Zone {zone} {'enabled' if enable else 'disabled'} successfully")
                     print("\nCommand Response:")
                     explorer.pretty_print(response)
-                    
+
                     # Save to file option
                     if input("\nSave this response to file? (y/n): ").lower() == 'y':
                         filename = input("Enter filename (default: zone_control_response.json): ") or "zone_control_response.json"
@@ -1016,7 +1089,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
                     print("\n❌ Please enter a valid number for the zone index")
                 except Exception as e:
                     print(f"\n❌ Error controlling zone: {e}")
-                
+
             elif choice == "9":
                 print("\n===== Custom Command =====")
                 print("This allows you to send a custom JSON command to the AC system.")
@@ -1024,12 +1097,12 @@ async def interactive_session(explorer: ActronNeoExplorer):
                 print("  {\"command\":{\"UserAirconSettings.isOn\":true,\"type\":\"set-settings\"}}")
                 print("  {\"command\":{\"UserAirconSettings.Mode\":\"COOL\",\"type\":\"set-settings\"}}")
                 print("  {\"command\":{\"UserAirconSettings.FanMode\":\"LOW\",\"type\":\"set-settings\"}}")
-                
+
                 command_str = input("\nEnter JSON command: ")
                 if not command_str:
                     print("\n❌ Command cannot be empty")
                     continue
-                    
+
                 try:
                     command = json.loads(command_str)
                     print("\nSending command to AC system...")
@@ -1037,7 +1110,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
                     print("\n✓ Command sent successfully")
                     print("\nResponse:")
                     explorer.pretty_print(response)
-                    
+
                     # Save to file option
                     if input("\nSave this response to file? (y/n): ").lower() == 'y':
                         filename = input("Enter filename (default: custom_command.json): ") or f"custom_command_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -1046,7 +1119,7 @@ async def interactive_session(explorer: ActronNeoExplorer):
                     print("\n❌ Invalid JSON format. Please check your syntax.")
                 except Exception as e:
                     print(f"\n❌ Error sending command: {e}")
-                
+
             elif choice.lower() == "d":
                 print("\nGenerating diagnostics file...")
                 try:
@@ -1054,16 +1127,16 @@ async def interactive_session(explorer: ActronNeoExplorer):
                     print(f"\n✓ Diagnostics file generated successfully at {diagnostics_path}")
                 except Exception as e:
                     print(f"\n❌ Error generating diagnostics file: {e}")
-                
+
             # Exit
             elif choice == "0":
                 print("\nExiting ActronAir Neo API Explorer...")
                 break
-                
+
             # Invalid choice
             else:
                 print("\n❌ Invalid choice. Please enter a number between 0 and 9.")
-                
+
         except KeyboardInterrupt:
             print("\n\nProgram interrupted by user. Exiting...")
             break
@@ -1087,9 +1160,9 @@ async def main():
     parser.add_argument('-t', '--token-file', help='Path to token file (default: actron_token.json)')
     parser.add_argument('--docs', action='store_true', help='Show API documentation structure')
     parser.add_argument('-g', '--generate-diagnostics', action='store_true', help='Generate diagnostics.md file based on system information')
-    
+
     args = parser.parse_args()
-    
+
     # Show documentation if requested
     if args.docs:
         docs_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "actron_api_structure.md")
@@ -1105,12 +1178,12 @@ async def main():
                         padding=(1, 2),
                         width=100
                     ))
-                    
+
                     # Read and display the markdown content
                     with open(docs_path, 'r') as f:
                         md_content = f.read()
                         console.print(Markdown(md_content))
-                        
+
                     # Add a footer
                     console.print(Panel(
                         "For more details on using this explorer tool, see [highlight]README_EXPLORER.md[/highlight]",
@@ -1141,7 +1214,7 @@ async def main():
             else:
                 print("Documentation file not found. Please see README_EXPLORER.md for more information.")
         return
-    
+
     # Display welcome message
     if RICH_AVAILABLE:
         # Create a beautiful welcome header
@@ -1167,30 +1240,30 @@ You can view device status, send commands, and save responses for documentation.
         print("This tool allows you to explore the ActronAir Neo cloud API responses.")
         print("You can view device status, send commands, and save responses for documentation.")
         print("\nNote: Your credentials are only used for authentication and are never stored.\n")
-    
+
     # Prompt for credentials if not provided
     username = args.username
     password = args.password
-    
+
     if not username:
         if RICH_AVAILABLE:
             username = Prompt.ask("[info]Enter ActronAir Neo username[/info]", console=console)
         else:
             username = input("Enter ActronAir Neo username: ")
-    
+
     if not password:
         if RICH_AVAILABLE:
             console.print("[info]Enter ActronAir Neo password[/info]", end="")
         password = getpass.getpass("" if RICH_AVAILABLE else "Enter ActronAir Neo password: ")
-    
+
     if not username or not password:
         if RICH_AVAILABLE:
-            console.print(Panel("[error]Username and password are required[/error]", 
+            console.print(Panel("[error]Username and password are required[/error]",
                                 title="Error", border_style="error"))
         else:
             print("\nError: Username and password are required")
         return
-    
+
     if RICH_AVAILABLE:
         with Progress(
             SpinnerColumn(),
@@ -1202,7 +1275,7 @@ You can view device status, send commands, and save responses for documentation.
             await asyncio.sleep(0.5)
     else:
         print("\nInitializing connection to ActronAir Neo API...")
-    
+
     # Create and initialize explorer
     async with ActronNeoExplorer(
         username=username,
@@ -1212,7 +1285,7 @@ You can view device status, send commands, and save responses for documentation.
     ) as explorer:
         try:
             await explorer.initialize()
-            
+
             if RICH_AVAILABLE:
                 console.print(Panel(
                     "[success]Successfully connected to the ActronAir Neo cloud services![/success]",
@@ -1222,7 +1295,7 @@ You can view device status, send commands, and save responses for documentation.
                 ))
             else:
                 print("\n✓ Successfully authenticated to ActronAir Neo API")
-            
+
             # Handle the generate-diagnostics flag
             if args.generate_diagnostics:
                 if RICH_AVAILABLE:
@@ -1235,14 +1308,14 @@ You can view device status, send commands, and save responses for documentation.
                         task = progress.add_task("Generating...", total=None)
                         diagnostics_path = await generate_diagnostics_file(explorer)
                         progress.update(task, completed=True)
-                    
+
                     console.print(Panel(
                         f"Diagnostics file has been created at:\n[highlight]{diagnostics_path}[/highlight]",
                         title="Diagnostics Generated Successfully",
                         border_style="success",
                         padding=(1, 2)
                     ))
-                    
+
                     if Confirm.ask("Would you like to run interactive mode now?"):
                         await interactive_session(explorer)
                     else:
@@ -1251,7 +1324,7 @@ You can view device status, send commands, and save responses for documentation.
                     print("\nGenerating diagnostics.md file based on your system...")
                     diagnostics_path = await generate_diagnostics_file(explorer)
                     print(f"\n✓ Diagnostics file has been created at: {diagnostics_path}")
-                    
+
                     run_interactive = input("\nWould you like to run interactive mode now? (y/n): ").lower() == 'y'
                     if run_interactive:
                         await interactive_session(explorer)
@@ -1300,7 +1373,7 @@ You can view device status, send commands, and save responses for documentation.
                 ))
             else:
                 print(f"\n❌ An error occurred: {e}")
-        
+
         if RICH_AVAILABLE:
             console.print(Panel(
                 "Thank you for using the ActronAir Neo API Explorer\n" +
@@ -1315,7 +1388,7 @@ You can view device status, send commands, and save responses for documentation.
 
 async def save_response_to_file(response: dict, filename: str):
     """Save API response to a file in a dedicated responses directory.
-    
+
     Args:
         response: The API response data to save
         filename: The name of the file to save
@@ -1329,21 +1402,21 @@ async def save_response_to_file(response: dict, filename: str):
                 console.print(f"[info]Created responses directory at {responses_dir}[/info]")
             else:
                 print(f"Created responses directory at {responses_dir}")
-        
+
         # Add timestamp to filename for uniqueness
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         base_name, ext = os.path.splitext(filename)
         if not ext:  # Default to .json if no extension provided
             ext = ".json"
         timestamped_filename = f"{base_name}_{timestamp}{ext}"
-        
+
         # Prepare the full file path
         filepath = os.path.join(responses_dir, timestamped_filename)
-        
+
         # Save the response as JSON
         async with aiofiles.open(filepath, 'w') as f:
             await f.write(json.dumps(response, indent=2))
-        
+
         if RICH_AVAILABLE:
             console.print(Panel(
                 f"File: [highlight]{timestamped_filename}[/highlight]\n" +
@@ -1367,18 +1440,18 @@ async def save_response_to_file(response: dict, filename: str):
 
 async def generate_diagnostics_file(explorer: ActronNeoExplorer, output_path: Optional[str] = None) -> str:
     """Generate a diagnostics.md file with system-specific information.
-    
+
     Args:
         explorer: Initialized ActronNeoExplorer instance
         output_path: Optional path where to save the file (default: project root)
-        
+
     Returns:
         Path to the generated file
     """
     try:
         # Fetch required data from API
         status_data = await explorer.get_ac_status()
-        
+
         # Extract relevant system information
         last_known_state = status_data.get("lastKnownState", {})
         aircon_system = last_known_state.get("AirconSystem", {})
@@ -1393,10 +1466,10 @@ async def generate_diagnostics_file(explorer: ActronNeoExplorer, output_path: Op
         controller_model = aircon_system.get("MasterWCModel", "Unknown")
         controller_serial = aircon_system.get("MasterSerial", "Unknown")
         firmware_version = aircon_system.get("MasterWCFirmwareVersion", "Unknown")
-        
+
         # Extract indoor/outdoor unit information
         indoor_model = indoor_unit.get("NV_ModelNumber", "Unknown")
-        indoor_serial = indoor_unit.get("SerialNumber", "Unknown") 
+        indoor_serial = indoor_unit.get("SerialNumber", "Unknown")
         indoor_fw = indoor_unit.get("IndoorFW", "Unknown")
         outdoor_family = outdoor_unit.get("Family", "Unknown")
         outdoor_model = outdoor_unit.get("ModelNumber", "Unknown")
@@ -1406,19 +1479,19 @@ async def generate_diagnostics_file(explorer: ActronNeoExplorer, output_path: Op
         # Extract zone sensors information
         wireless_sensors = []
         wired_sensors = []
-        
+
         # Process sensors for each zone
         zone_data = {}
         for i, zone in enumerate(remote_zone_info):
             if i >= 8:  # Max 8 zones
                 break
-                
+
             zone_id = f"zone_{i+1}"
             zone_name = zone.get("NV_Title", f"Zone {i+1}")
-            
+
             if not zone.get("NV_Exists", False):
                 continue
-                
+
             # Add to zone data
             zone_data[zone_id] = {
                 "name": zone_name,
@@ -1426,7 +1499,7 @@ async def generate_diagnostics_file(explorer: ActronNeoExplorer, output_path: Op
                 "humidity": zone.get("LiveHumidity_pc", "Unknown"),
                 "enabled": user_settings.get("EnabledZones", [])[i] if i < len(user_settings.get("EnabledZones", [])) else False,
             }
-            
+
             # Find matching sensor in peripherals
             sensor_found = False
             for peripheral in peripherals:
@@ -1434,7 +1507,7 @@ async def generate_diagnostics_file(explorer: ActronNeoExplorer, output_path: Op
                     sensor_found = True
                     sensor_type = peripheral.get("DeviceType", "Unknown")
                     battery_level = peripheral.get("RemainingBatteryCapacity_pc")
-                    
+
                     peripheral_data = {
                         "zone_id": zone_id,
                         "zone_name": zone_name,
@@ -1446,20 +1519,20 @@ async def generate_diagnostics_file(explorer: ActronNeoExplorer, output_path: Op
                         "temperature": peripheral.get("SensorInputs", {}).get("Thermistors", {}).get("Ambient_oC", "Unknown"),
                         "humidity": peripheral.get("SensorInputs", {}).get("SHTC1", {}).get("RelativeHumidity_pc", "Unknown"),
                     }
-                    
+
                     # If it has battery level, it's a wireless sensor
                     if battery_level is not None:
                         wireless_sensors.append(peripheral_data)
                     else:
                         wired_sensors.append(peripheral_data)
-                    
+
                     # Update zone data with sensor info
                     zone_data[zone_id]["sensor_type"] = sensor_type
                     zone_data[zone_id]["sensor_serial"] = peripheral.get("SerialNumber", "Unknown")
                     zone_data[zone_id]["sensor_battery"] = battery_level
                     zone_data[zone_id]["wireless"] = battery_level is not None
                     break
-            
+
             # If no sensor found for zone, check if main controller is the sensor
             if not sensor_found:
                 for sensor in aircon_system.get("Sensors", []):
@@ -1470,7 +1543,7 @@ async def generate_diagnostics_file(explorer: ActronNeoExplorer, output_path: Op
 
         # Generate markdown content
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+
         markdown_content = f"""# ActronAir Neo Integration Diagnostics Guide
 
 This document provides information to help troubleshoot and diagnose issues with the ActronAir Neo integration for Home Assistant, particularly focusing on sensor detection, wired vs. wireless sensors, and data retrieval.
@@ -1488,7 +1561,7 @@ The following hardware information was detected from your ActronAir system:
 
 ### HVAC Equipment
 * **Indoor Unit Model**: {indoor_model}
-* **Indoor Unit Serial**: {indoor_serial} 
+* **Indoor Unit Serial**: {indoor_serial}
 * **Indoor Unit Firmware**: {indoor_fw}
 * **Outdoor Unit Family**: {outdoor_family}
 * **Outdoor Unit Serial**: {outdoor_serial}
@@ -1498,7 +1571,7 @@ The following hardware information was detected from your ActronAir system:
 
 ### Configured Zones
 """
-        
+
         # Add zone details
         if zone_data:
             for zone_id, zone in zone_data.items():
@@ -1537,7 +1610,7 @@ The following wireless sensors were detected in your system:
 """
         else:
             markdown_content += "\nNo wireless sensors detected in your system.\n"
-            
+
         # Add section for wired sensors
         markdown_content += """
 ### Wired Sensors
@@ -1553,16 +1626,16 @@ The following wired sensors were detected in your system:
 """
         else:
             markdown_content += "\nNo wired sensors detected in your system apart from the main controller.\n"
-            
+
         # Add system capabilities section
         fan_modes = user_settings.get("FanMode", "LOW").split("+")[0]
         climate_mode = user_settings.get("Mode", "COOL")
         fan_continuous = "+CONT" in user_settings.get("FanMode", "")
-        
+
         # Main controller sensor info
         main_temp = master_info.get("LiveTemp_oC", "Unknown")
         main_humidity = master_info.get("LiveHumidity_pc", "Unknown")
-            
+
         markdown_content += f"""
 ## System Capabilities and Status
 
@@ -1650,13 +1723,13 @@ When troubleshooting, verify all these fields exist in the diagnostic data.
             script_dir = os.path.dirname(os.path.abspath(__file__))
             project_root = os.path.dirname(os.path.dirname(script_dir))
             output_path = os.path.join(project_root, "diagnostics.md")
-        
+
         # Write the markdown file
         async with aiofiles.open(output_path, 'w') as f:
             await f.write(markdown_content)
-            
+
         return output_path
-    
+
     except Exception as e:
         _LOGGER.error("Error generating diagnostics file: %s", str(e), exc_info=True)
         raise ValueError(f"Failed to generate diagnostics file: {str(e)}")

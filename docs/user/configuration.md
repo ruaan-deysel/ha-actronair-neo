@@ -30,7 +30,13 @@ Fill in the following information:
 
 The integration will attempt to authenticate with the ActronAir Neo API using the provided credentials. If successful, it will discover all available air conditioning systems associated with your account.
 
-If you have multiple systems, you will be prompted to select which one you want to control.
+### System Selection
+
+If you have multiple ActronAir Neo systems linked to your account, you will be presented with a dropdown menu to select which system you want to add to Home Assistant:
+
+![System Selection](../assets/images/system_selection.png)
+
+Select the system you want to control and click **SUBMIT**. If you want to add multiple systems, you can add the integration again and select a different system each time.
 
 ## Advanced Configuration
 

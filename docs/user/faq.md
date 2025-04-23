@@ -39,7 +39,7 @@ By default, the integration updates data every 60 seconds. You can adjust this i
 
 ### Can I control multiple ActronAir Neo systems?
 
-Yes, if you have multiple systems linked to your ActronAir Neo account, the integration will discover all of them. Each system will appear as a separate climate entity in Home Assistant.
+Yes, if you have multiple systems linked to your ActronAir Neo account, the integration will detect them during setup and allow you to select which system to add. You can add each system separately to Home Assistant by adding the integration multiple times and selecting a different system each time.
 
 ### Why are some zones not appearing?
 

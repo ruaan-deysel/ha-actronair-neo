@@ -616,22 +616,17 @@ class ActronApi:
             except AuthenticationError:
                 _LOGGER.warning("Stored tokens are invalid, re-authenticating")
                 await self.authenticate()
-        await self.get_ac_systems()
         _LOGGER.debug("ActronApi initialization completed")
 
-    async def get_ac_systems(self):
-        """Get the AC systems and set the serial number and system ID."""
-        devices = await self.get_devices()
-        if devices:
-            self.actron_serial = devices[0]['serial']
-            self.actron_system_id = devices[0].get('id', '')
-            _LOGGER.info(
-                "Located serial number %s with ID of %s",
-                self.actron_serial,
-                self.actron_system_id
-            )
-        else:
-            _LOGGER.error("Could not identify target device from list of returned systems")
+    async def set_system(self, serial_number: str, system_id: str = "") -> None:
+        """Set the system to use for API calls."""
+        self.actron_serial = serial_number
+        self.actron_system_id = system_id
+        _LOGGER.info(
+            "Using system with serial number %s and ID %s",
+            self.actron_serial,
+            self.actron_system_id
+        )
 
     def create_command(self, command_type: str, **params) -> CommandData:
         """Create a command based on the command type and parameters."""

@@ -11,12 +11,20 @@
                     "refresh_interval": "config.step.user.data.refresh_interval",
                     "enable_zone_control": "config.step.user.data.enable_zone_control"
                 }
+            },
+            "select_device": {
+                "title": "config.step.select_device.title",
+                "description": "config.step.select_device.description",
+                "data": {
+                    "device": "config.step.select_device.data.device"
+                }
             }
         },
         "error": {
             "invalid_auth": "config.error.invalid_auth",
             "cannot_connect": "config.error.cannot_connect",
             "no_devices": "config.error.no_devices",
+            "device_not_found": "config.error.device_not_found",
             "unknown": "config.error.unknown"
         },
         "abort": {

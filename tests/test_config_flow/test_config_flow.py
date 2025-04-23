@@ -54,8 +54,10 @@ async def test_validate_input_success(mock_hass, mock_api, mock_devices_response
         result = await validate_input(mock_hass, user_input)
 
         # Assert
-        assert result["title"] == f"ActronAir Neo ({mock_devices_response[0]['name']})"
-        assert result["serial_number"] == mock_devices_response[0]["serial"]
+        assert result["devices"] == mock_devices_response
+        assert result["username"] == user_input[CONF_USERNAME]
+        assert result["password"] == user_input[CONF_PASSWORD]
+        assert result["refresh_interval"] == user_input[CONF_REFRESH_INTERVAL]
         mock_api.initializer.assert_called_once()
         mock_api.get_devices.assert_called_once()
 
@@ -124,8 +126,8 @@ async def test_validate_input_no_devices(mock_hass, mock_api):
 
 
 @pytest.mark.asyncio
-async def test_config_flow_step_user_success():
-    """Test the user step of the config flow with successful validation."""
+async def test_config_flow_step_user_single_device():
+    """Test the user step of the config flow with a single device."""
     # Arrange
     user_input = {
         CONF_USERNAME: "test_user",
@@ -134,15 +136,26 @@ async def test_config_flow_step_user_success():
         CONF_ENABLE_ZONE_CONTROL: False
     }
 
-    result = {
-        "title": "ActronAir Neo (Living Room AC)",
-        "serial_number": "ABC123"
+    # Mock validate_input to return a single device
+    mock_device = {
+        "serial": "ABC123",
+        "name": "Living Room AC",
+        "type": "Neo",
+        "id": "12345"
+    }
+
+    validate_result = {
+        "devices": [mock_device],
+        "username": user_input[CONF_USERNAME],
+        "password": user_input[CONF_PASSWORD],
+        "refresh_interval": user_input[CONF_REFRESH_INTERVAL],
+        "enable_zone_control": user_input[CONF_ENABLE_ZONE_CONTROL]
     }
 
     # Mock the validate_input function
     with patch(
         "custom_components.actronair_neo.config_flow.validate_input",
-        AsyncMock(return_value=result)
+        AsyncMock(return_value=validate_result)
     ):
         # Create the config flow
         flow = ActronairNeoConfigFlow()
@@ -151,13 +164,14 @@ async def test_config_flow_step_user_success():
         # Act
         result = await flow.async_step_user(user_input)
 
-        # Assert
+        # Assert - Should create entry directly with single device
         assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
-        assert result["title"] == "ActronAir Neo (Living Room AC)"
+        assert result["title"] == f"ActronAir Neo ({mock_device['name']})"
         assert result["data"][CONF_USERNAME] == user_input[CONF_USERNAME]
         assert result["data"][CONF_PASSWORD] == user_input[CONF_PASSWORD]
         assert result["data"][CONF_REFRESH_INTERVAL] == user_input[CONF_REFRESH_INTERVAL]
-        assert result["data"]["serial_number"] == "ABC123"
+        assert result["data"]["serial_number"] == mock_device["serial"]
+        assert result["data"]["system_id"] == mock_device["id"]
         assert result["options"][CONF_ENABLE_ZONE_CONTROL] == user_input[CONF_ENABLE_ZONE_CONTROL]
 
 
@@ -244,6 +258,136 @@ async def test_config_flow_step_user_unknown_error():
         assert result["type"] == data_entry_flow.FlowResultType.FORM
         assert result["errors"]["base"] == "unknown"
 
+
+@pytest.mark.asyncio
+async def test_config_flow_step_user_multiple_devices():
+    """Test the user step of the config flow with multiple devices."""
+    # Arrange
+    user_input = {
+        CONF_USERNAME: "test_user",
+        CONF_PASSWORD: "test_password",
+        CONF_REFRESH_INTERVAL: DEFAULT_REFRESH_INTERVAL,
+        CONF_ENABLE_ZONE_CONTROL: False
+    }
+
+    # Mock validate_input to return multiple devices
+    mock_devices = [
+        {
+            "serial": "ABC123",
+            "name": "Living Room AC",
+            "type": "Neo",
+            "id": "12345"
+        },
+        {
+            "serial": "DEF456",
+            "name": "Bedroom AC",
+            "type": "Neo",
+            "id": "67890"
+        }
+    ]
+
+    validate_result = {
+        "devices": mock_devices,
+        "username": user_input[CONF_USERNAME],
+        "password": user_input[CONF_PASSWORD],
+        "refresh_interval": user_input[CONF_REFRESH_INTERVAL],
+        "enable_zone_control": user_input[CONF_ENABLE_ZONE_CONTROL]
+    }
+
+    # Mock the validate_input function
+    with patch(
+        "custom_components.actronair_neo.config_flow.validate_input",
+        AsyncMock(return_value=validate_result)
+    ):
+        # Create the config flow
+        flow = ActronairNeoConfigFlow()
+        flow.hass = MagicMock()
+
+        # Act
+        result = await flow.async_step_user(user_input)
+
+        # Assert - Should show device selection form
+        assert result["type"] == data_entry_flow.FlowResultType.FORM
+        assert result["step_id"] == "select_device"
+
+@pytest.mark.asyncio
+async def test_config_flow_step_select_device():
+    """Test the device selection step of the config flow."""
+    # Arrange
+    mock_devices = [
+        {
+            "serial": "ABC123",
+            "name": "Living Room AC",
+            "type": "Neo",
+            "id": "12345"
+        },
+        {
+            "serial": "DEF456",
+            "name": "Bedroom AC",
+            "type": "Neo",
+            "id": "67890"
+        }
+    ]
+
+    user_input = {
+        "device": "DEF456"  # Select the second device
+    }
+
+    # Create the config flow and set up the state
+    flow = ActronairNeoConfigFlow()
+    flow.hass = MagicMock()
+    flow._devices = mock_devices
+    flow._username = "test_user"
+    flow._password = "test_password"
+    flow._refresh_interval = DEFAULT_REFRESH_INTERVAL
+    flow._enable_zone_control = True
+
+    # Act
+    result = await flow.async_step_select_device(user_input)
+
+    # Assert
+    assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+    assert result["title"] == "ActronAir Neo (Bedroom AC)"
+    assert result["data"][CONF_USERNAME] == "test_user"
+    assert result["data"][CONF_PASSWORD] == "test_password"
+    assert result["data"][CONF_REFRESH_INTERVAL] == DEFAULT_REFRESH_INTERVAL
+    assert result["data"]["serial_number"] == "DEF456"
+    assert result["data"]["system_id"] == "67890"
+    assert result["options"][CONF_ENABLE_ZONE_CONTROL] == True
+
+@pytest.mark.asyncio
+async def test_config_flow_step_select_device_not_found():
+    """Test the device selection step with an invalid device."""
+    # Arrange
+    mock_devices = [
+        {
+            "serial": "ABC123",
+            "name": "Living Room AC",
+            "type": "Neo",
+            "id": "12345"
+        }
+    ]
+
+    user_input = {
+        "device": "INVALID"  # Invalid device serial
+    }
+
+    # Create the config flow and set up the state
+    flow = ActronairNeoConfigFlow()
+    flow.hass = MagicMock()
+    flow._devices = mock_devices
+    flow._username = "test_user"
+    flow._password = "test_password"
+    flow._refresh_interval = DEFAULT_REFRESH_INTERVAL
+    flow._enable_zone_control = False
+
+    # Act
+    result = await flow.async_step_select_device(user_input)
+
+    # Assert - Should show form again with error
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["step_id"] == "select_device"
+    assert result["errors"]["base"] == "device_not_found"
 
 @pytest.mark.asyncio
 async def test_config_flow_step_user_show_form():

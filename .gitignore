@@ -28,10 +28,8 @@ env.bak/
 coverage/
 .coverage.*
 
-# Linting and formatting
-pylint.log
-mypy_cache/
-pytest_cache/
+# Cache directories
+.cache/
 
 # Logs
 *.log
@@ -44,7 +42,6 @@ htmlcov/
 coverage.xml
 nosetests.xml
 test-results.xml
-.pytest_cache/
 
 # Distribution / packaging
 .Python

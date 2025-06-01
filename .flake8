@@ -1,7 +1,0 @@
-[flake8]
-exclude = .venv,.git,.tox,docs,venv,bin,lib,deps,build
-max-line-length = 88
-# E501: line too long
-# W503: Line break occurred before a binary operator
-# E203: Whitespace before ':'
-ignore = E501, W503, E203

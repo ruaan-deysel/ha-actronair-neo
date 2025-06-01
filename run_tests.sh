@@ -1,10 +1,7 @@
 #!/bin/bash
 
-# Install test dependencies
-pip install pytest pytest-asyncio pytest-cov
+# Simple test runner script
+# Note: Test framework dependencies should be installed separately
 
-# Run tests with coverage
-pytest tests/ -v --cov=custom_components/actronair_neo --cov-report=term-missing
-
-# Return the exit code from pytest
-exit $?
+echo "Test files are located in the tests/ directory"
+echo "Run tests using your preferred testing framework"

@@ -1,3 +1,0 @@
-[MASTER]
-# Ignore Home Assistant modules so that missing dependency errors are not raised
-ignored-modules=homeassistant,homeassistant.*

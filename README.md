@@ -90,27 +90,9 @@ Contributions to this integration are welcome. Please fork the repository and su
    pip install -r requirements.txt
    ```
 
-4. Install development tools:
-
-   ```bash
-   pip install black flake8 pylint mypy pytest
-   ```
-
-### Code Style
-
-This project uses:
-
-- Black for code formatting
-- Flake8 and Pylint for linting
-- Mypy for type checking
-
 ### Testing
 
-We encourage adding tests for new features. Run tests with:
-
-```bash
-pytest
-```
+We encourage adding tests for new features. The test suite can be found in the `tests/` directory.
 
 ## License
 

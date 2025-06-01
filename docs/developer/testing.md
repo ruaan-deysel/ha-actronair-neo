@@ -36,57 +36,11 @@ tests/
 
 ### Prerequisites
 
-Before running tests, ensure you have the testing dependencies installed:
+Before running tests, ensure you have a testing framework installed. The test files are structured to work with standard Python testing frameworks.
 
-```bash
-pip install pytest pytest-asyncio pytest-cov
-```
+### Running Tests
 
-### Running All Tests
-
-To run all tests:
-
-```bash
-pytest
-```
-
-### Running Specific Test Files
-
-To run tests in a specific file:
-
-```bash
-pytest tests/test_api/test_api.py
-```
-
-### Running Specific Test Functions
-
-To run a specific test function:
-
-```bash
-pytest tests/test_api/test_api.py::test_authenticate_success
-```
-
-### Running Tests with Coverage
-
-To run tests with coverage reporting:
-
-```bash
-pytest --cov=custom_components.actronair_neo
-```
-
-For a more detailed coverage report:
-
-```bash
-pytest --cov=custom_components.actronair_neo --cov-report=term-missing
-```
-
-To generate an HTML coverage report:
-
-```bash
-pytest --cov=custom_components.actronair_neo --cov-report=html
-```
-
-This will create a `htmlcov` directory with the coverage report.
+The test suite is located in the `tests/` directory and includes comprehensive tests for all major components of the integration.
 
 ## Writing Tests
 
@@ -314,18 +268,7 @@ Aim for high test coverage, especially for critical components like the API clie
 
 ## Continuous Integration
 
-The integration uses GitHub Actions for continuous integration. The CI pipeline runs tests automatically on every push and pull request.
-
-### CI Workflow
-
-The CI workflow is defined in `.github/workflows/tests.yml` and includes:
-
-1. Running tests with pytest
-2. Checking code coverage
-3. Running linters (flake8, black)
-4. Running type checking (mypy)
-
-### Viewing CI Results
+The integration uses GitHub Actions for continuous integration, including HACS validation and Home Assistant compatibility checks.
 
 You can view the CI results on the GitHub Actions tab of the repository. Failed tests will be highlighted, and you can see the test output for debugging.
 

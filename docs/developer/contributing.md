@@ -66,21 +66,6 @@ Before you begin, ensure you have the following installed:
    pip install -r requirements_dev.txt
    ```
 
-### Installing Development Tools
-
-Install the development tools:
-```bash
-pip install black flake8 pylint mypy pytest pytest-asyncio pytest-cov
-```
-
-### Setting Up Pre-commit Hooks
-
-We use pre-commit hooks to ensure code quality. Install and set up pre-commit:
-```bash
-pip install pre-commit
-pre-commit install
-```
-
 ## Development Workflow
 
 ### Creating a Branch
@@ -95,16 +80,7 @@ Use a descriptive branch name that reflects the changes you're making.
 ### Making Changes
 
 1. Make your changes to the codebase
-2. Run tests to ensure your changes don't break existing functionality:
-   ```bash
-   pytest
-   ```
-3. Run linting and type checking:
-   ```bash
-   black .
-   flake8
-   mypy .
-   ```
+2. Test your changes to ensure they work as expected
 
 ### Keeping Your Branch Updated
 
@@ -116,22 +92,18 @@ git rebase upstream/main
 
 ## Code Style and Guidelines
 
-### Python Style Guide
-
-This project follows the [Black](https://black.readthedocs.io/en/stable/) code style. All code should be formatted using Black.
-
 ### Type Annotations
 
-All new code should include type annotations. We use [mypy](http://mypy-lang.org/) for type checking.
+All new code should include type annotations for better code clarity and maintainability.
 
 Example:
 ```python
 def get_temperature(sensor_id: str) -> float:
     """Get the temperature from a sensor.
-    
+
     Args:
         sensor_id: The ID of the sensor
-        
+
     Returns:
         The temperature in degrees Celsius
     """
@@ -186,15 +158,7 @@ MIN_TEMPERATURE = 16.0
 
 ### Running Tests
 
-Run the test suite with pytest:
-```bash
-pytest
-```
-
-Run tests with coverage:
-```bash
-pytest --cov=custom_components.actronair_neo
-```
+The test suite can be found in the `tests/` directory. Tests help ensure code quality and prevent regressions.
 
 ### Writing Tests
 

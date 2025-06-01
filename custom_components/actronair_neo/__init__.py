@@ -13,6 +13,7 @@ from .const import (
     CONF_REFRESH_INTERVAL,
     CONF_SERIAL_NUMBER,
     CONF_ENABLE_ZONE_CONTROL,
+    CONF_ENABLE_ZONE_ANALYTICS,
     SERVICE_FORCE_UPDATE,
     PLATFORM_CLIMATE,
     PLATFORM_SENSOR,
@@ -20,7 +21,7 @@ from .const import (
     PLATFORM_BINARY_SENSOR
 )
 from .coordinator import ActronDataCoordinator
-from .api import ActronApi, AuthenticationError, ApiError
+from .api import ActronApi, AuthenticationError, ApiError, ConfigurationError, ZoneError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -127,8 +128,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady from api_err
 
     enable_zone_control = entry.options.get(CONF_ENABLE_ZONE_CONTROL, False)
+    enable_zone_analytics = entry.options.get(CONF_ENABLE_ZONE_ANALYTICS, False)
     coordinator = ActronDataCoordinator(
-        hass, api, serial_number, refresh_interval, enable_zone_control
+        hass, api, serial_number, refresh_interval, enable_zone_control, enable_zone_analytics
     )
 
     await coordinator.async_config_entry_first_refresh()
@@ -154,16 +156,157 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
 
+    # Initialize zone management
+    await coordinator.async_initialize_zone_management()
+
     # Register services
     async def force_update(call: ServiceCall) -> None:
         """Force update of all entities."""
-        target_entities = await service.async_extract_entities(hass, call)
-        for entity in target_entities:
-            if entity.domain == PLATFORM_CLIMATE:
-                coordinator = hass.data[DOMAIN][entity.platform.config_entry.entry_id]
-                await coordinator.async_request_refresh()
+        try:
+            # Check if specific entities are targeted
+            entity_ids = call.data.get("entity_id")
+
+            if entity_ids:
+                # Handle specific entity targeting
+                if isinstance(entity_ids, str):
+                    entity_ids = [entity_ids]
+
+                # Find coordinators for the specified entities
+                updated_coordinators = set()
+                entity_registry = er.async_get(hass)
+
+                for entity_id in entity_ids:
+                    # Find which coordinator owns this entity
+                    for entry_id, coordinator in hass.data[DOMAIN].items():
+                        if isinstance(coordinator, ActronDataCoordinator):
+                            entries = er.async_entries_for_config_entry(entity_registry, entry_id)
+                            coordinator_entity_ids = [entry.entity_id for entry in entries]
+
+                            if entity_id in coordinator_entity_ids:
+                                if coordinator not in updated_coordinators:
+                                    await coordinator.async_request_refresh()
+                                    updated_coordinators.add(coordinator)
+                                    _LOGGER.info("Force update completed for device %s (entity: %s)",
+                                               coordinator.device_id, entity_id)
+                                break
+                    else:
+                        _LOGGER.warning("Entity %s not found in any ActronAir coordinator", entity_id)
+            else:
+                # No specific entities targeted, update all coordinators
+                for coordinator in hass.data[DOMAIN].values():
+                    if isinstance(coordinator, ActronDataCoordinator):
+                        await coordinator.async_request_refresh()
+                        _LOGGER.info("Force update completed for device %s", coordinator.device_id)
+
+        except Exception as err:
+            _LOGGER.error("Error during force update: %s", err)
+
+    async def create_zone_preset(call: ServiceCall) -> None:
+        """Create a zone preset from current state."""
+        device_id = call.data.get("device_id")
+        preset_name = call.data.get("name")
+        description = call.data.get("description", "")
+
+        if not device_id or not preset_name:
+            _LOGGER.error("Device ID and preset name are required")
+            return
+
+        # Find coordinator for device
+        target_coordinator = None
+        for coord in hass.data[DOMAIN].values():
+            if isinstance(coord, ActronDataCoordinator) and coord.device_id == device_id:
+                target_coordinator = coord
+                break
+
+        if not target_coordinator:
+            _LOGGER.error("Device %s not found", device_id)
+            return
+
+        # Check if zone control is enabled
+        if not target_coordinator.enable_zone_control:
+            _LOGGER.error("Zone control is not enabled for device %s. Zone presets are not available for single-zone systems.", device_id)
+            return
+
+        try:
+            await target_coordinator.async_create_zone_preset_from_current(preset_name, description)
+            _LOGGER.info("Created zone preset '%s' for device %s", preset_name, device_id)
+        except (ConfigurationError, ZoneError) as err:
+            _LOGGER.error("Failed to create zone preset: %s", err)
+
+    async def apply_zone_preset(call: ServiceCall) -> None:
+        """Apply a zone preset."""
+        device_id = call.data.get("device_id")
+        preset_name = call.data.get("name")
+
+        if not device_id or not preset_name:
+            _LOGGER.error("Device ID and preset name are required")
+            return
+
+        # Find coordinator for device
+        target_coordinator = None
+        for coord in hass.data[DOMAIN].values():
+            if isinstance(coord, ActronDataCoordinator) and coord.device_id == device_id:
+                target_coordinator = coord
+                break
+
+        if not target_coordinator:
+            _LOGGER.error("Device %s not found", device_id)
+            return
+
+        # Check if zone control is enabled
+        if not target_coordinator.enable_zone_control:
+            _LOGGER.error("Zone control is not enabled for device %s. Zone presets are not available for single-zone systems.", device_id)
+            return
+
+        try:
+            await target_coordinator.async_apply_zone_preset(preset_name)
+            _LOGGER.info("Applied zone preset '%s' for device %s", preset_name, device_id)
+        except (ConfigurationError, ZoneError) as err:
+            _LOGGER.error("Failed to apply zone preset: %s", err)
+
+    async def bulk_zone_operation(call: ServiceCall) -> None:
+        """Perform bulk zone operations."""
+        device_id = call.data.get("device_id")
+        operation = call.data.get("operation")
+        zones = call.data.get("zones", [])
+
+        if not device_id or not operation or not zones:
+            _LOGGER.error("Device ID, operation, and zones are required")
+            return
+
+        # Find coordinator for device
+        target_coordinator = None
+        for coord in hass.data[DOMAIN].values():
+            if isinstance(coord, ActronDataCoordinator) and coord.device_id == device_id:
+                target_coordinator = coord
+                break
+
+        if not target_coordinator:
+            _LOGGER.error("Device %s not found", device_id)
+            return
+
+        # Check if zone control is enabled
+        if not target_coordinator.enable_zone_control:
+            _LOGGER.error("Zone control is not enabled for device %s. Bulk zone operations are not available for single-zone systems.", device_id)
+            return
+
+        try:
+            kwargs = {}
+            if operation == "set_temperature":
+                kwargs["temperature"] = call.data.get("temperature")
+                kwargs["temp_key"] = call.data.get("temp_key", "temp_setpoint_cool")
+
+            results = await target_coordinator.async_bulk_zone_operation(operation, zones, **kwargs)
+            success_count = sum(1 for r in results if r["status"] == "success")
+            _LOGGER.info("Bulk operation '%s' completed: %d/%d zones successful",
+                        operation, success_count, len(zones))
+        except (ConfigurationError, ZoneError) as err:
+            _LOGGER.error("Failed to perform bulk zone operation: %s", err)
 
     hass.services.async_register(DOMAIN, SERVICE_FORCE_UPDATE, force_update)
+    hass.services.async_register(DOMAIN, "create_zone_preset", create_zone_preset)
+    hass.services.async_register(DOMAIN, "apply_zone_preset", apply_zone_preset)
+    hass.services.async_register(DOMAIN, "bulk_zone_operation", bulk_zone_operation)
 
     return True
 
@@ -186,7 +329,9 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """
     coordinator = hass.data[DOMAIN][entry.entry_id]
     old_enable_zone_control = coordinator.enable_zone_control
-    new_enable_zone_control = entry.options[CONF_ENABLE_ZONE_CONTROL]
+    old_enable_zone_analytics = coordinator.enable_zone_analytics
+    new_enable_zone_control = entry.options.get(CONF_ENABLE_ZONE_CONTROL, False)
+    new_enable_zone_analytics = entry.options.get(CONF_ENABLE_ZONE_ANALYTICS, False)
 
     try:
         if old_enable_zone_control and not new_enable_zone_control:

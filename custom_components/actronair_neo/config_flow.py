@@ -19,7 +19,8 @@ from .const import (
     CONF_PASSWORD,
     CONF_REFRESH_INTERVAL,
     DEFAULT_REFRESH_INTERVAL,
-    CONF_ENABLE_ZONE_CONTROL
+    CONF_ENABLE_ZONE_CONTROL,
+    CONF_ENABLE_ZONE_ANALYTICS
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_REFRESH_INTERVAL, default=DEFAULT_REFRESH_INTERVAL): int,
         vol.Optional(CONF_ENABLE_ZONE_CONTROL, default=False): bool,
+        vol.Optional(CONF_ENABLE_ZONE_ANALYTICS, default=False): bool,
     }
 )
 
@@ -50,7 +52,8 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
             "username": data[CONF_USERNAME],
             "password": data[CONF_PASSWORD],
             "refresh_interval": data.get(CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL),
-            "enable_zone_control": data.get(CONF_ENABLE_ZONE_CONTROL, False)
+            "enable_zone_control": data.get(CONF_ENABLE_ZONE_CONTROL, False),
+            "enable_zone_analytics": data.get(CONF_ENABLE_ZONE_ANALYTICS, False)
         }
     except AuthenticationError as err:
         raise InvalidAuth from err
@@ -69,6 +72,7 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._password = None
         self._refresh_interval = DEFAULT_REFRESH_INTERVAL
         self._enable_zone_control = False
+        self._enable_zone_analytics = False
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -83,6 +87,7 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._password = info["password"]
                 self._refresh_interval = info["refresh_interval"]
                 self._enable_zone_control = info["enable_zone_control"]
+                self._enable_zone_analytics = info["enable_zone_analytics"]
 
                 # If only one device is found, skip the selection step
                 if len(self._devices) == 1:
@@ -97,6 +102,7 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         },
                         options={
                             CONF_ENABLE_ZONE_CONTROL: self._enable_zone_control,
+                            CONF_ENABLE_ZONE_ANALYTICS: self._enable_zone_analytics,
                         }
                     )
 
@@ -107,7 +113,7 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
-            except Exception:
+            except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
 
@@ -137,6 +143,7 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                     options={
                         CONF_ENABLE_ZONE_CONTROL: self._enable_zone_control,
+                        CONF_ENABLE_ZONE_ANALYTICS: self._enable_zone_analytics,
                     }
                 )
             else:
@@ -185,6 +192,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_ENABLE_ZONE_CONTROL,
                         default=self._config_entry.options.get(
                             CONF_ENABLE_ZONE_CONTROL, False
+                        ),
+                    ): bool,
+                    vol.Optional(
+                        CONF_ENABLE_ZONE_ANALYTICS,
+                        default=self._config_entry.options.get(
+                            CONF_ENABLE_ZONE_ANALYTICS, False
                         ),
                     ): bool,
                 }

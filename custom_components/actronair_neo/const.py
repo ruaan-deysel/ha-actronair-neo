@@ -3,7 +3,7 @@ from typing import Final
 
 # Integration information
 DOMAIN: Final = "actronair_neo"
-VERSION: Final = "2024.12.23"
+VERSION: Final = "2025.06.02"
 
 # Configuration constants
 CONF_USERNAME: Final = "username"
@@ -11,6 +11,7 @@ CONF_PASSWORD: Final = "password"
 CONF_REFRESH_INTERVAL: Final = "refresh_interval"
 CONF_SERIAL_NUMBER: Final = "serial_number"
 CONF_ENABLE_ZONE_CONTROL: Final = "enable_zone_control"
+CONF_ENABLE_ZONE_ANALYTICS: Final = "enable_zone_analytics"
 
 # Default values
 DEFAULT_REFRESH_INTERVAL: Final = 60  # seconds
@@ -21,6 +22,10 @@ API_TIMEOUT: Final = 30  # seconds
 MAX_RETRIES: Final = 3
 MAX_REQUESTS_PER_MINUTE: Final = 20
 MIN_FAN_MODE_INTERVAL: Final = 5  # seconds between fan mode changes
+
+# Cache configuration
+DEFAULT_CACHE_TTL: Final = 30  # seconds
+CACHE_CLEANUP_INTERVAL: Final = 300  # seconds (5 minutes)
 
 # HVAC modes
 HVAC_MODE_OFF: Final = "OFF"

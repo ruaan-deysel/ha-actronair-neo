@@ -37,6 +37,7 @@ from .const import (
     ADVANCE_SERIES_MODELS,
 )
 from .coordinator import ActronDataCoordinator
+from .api import ZoneError, ConfigurationError, ApiError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -505,8 +506,20 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
             main_mode = self.coordinator.data["main"]["mode"]
             self._attr_hvac_mode = self._actron_to_ha_hvac_mode(main_mode)
             self.async_write_ha_state()
+        except ConfigurationError as err:
+            _LOGGER.warning("Configuration issue turning on zone %s: %s", self.zone_id, err)
+            # Don't re-raise configuration errors - just log and continue
+        except ZoneError as err:
+            _LOGGER.error("Zone-specific error turning on zone %s: %s", self.zone_id, err)
+            raise
+        except ApiError as err:
+            if err.is_temporary:
+                _LOGGER.warning("Temporary API error turning on zone %s: %s", self.zone_id, err)
+            else:
+                _LOGGER.error("API error turning on zone %s: %s", self.zone_id, err)
+                raise
         except Exception as err:
-            _LOGGER.error("Failed to turn on zone %s: %s", self.zone_id, err)
+            _LOGGER.error("Unexpected error turning on zone %s: %s", self.zone_id, err, exc_info=True)
             raise
 
     async def async_turn_off(self) -> None:

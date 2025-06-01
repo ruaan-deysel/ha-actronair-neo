@@ -8,7 +8,15 @@
                     "username": "Username",
                     "password": "Password",
                     "refresh_interval": "Refresh Interval (seconds)",
-                    "enable_zone_control": "Enable Zone Control"
+                    "enable_zone_control": "Enable Zone Control",
+                    "enable_zone_analytics": "Enable Zone Analytics"
+                },
+                "data_description": {
+                    "username": "Your ActronAir Neo account username",
+                    "password": "Your ActronAir Neo account password",
+                    "refresh_interval": "How often to update data from the system (30-300 seconds)",
+                    "enable_zone_control": "Create individual zone climate entities with temperature controls (requires per-zone temperature setting capability)",
+                    "enable_zone_analytics": "Create zone runtime and efficiency sensors for performance monitoring (ideal for damper-only systems)"
                 }
             },
             "select_device": {
@@ -34,10 +42,16 @@
         "step": {
             "init": {
                 "title": "ActronAir Neo Options",
-                "description": "Modify your ActronAir Neo settings",
+                "description": "Configure zone features and system settings. Zone Control creates individual climate entities, while Zone Analytics provides performance monitoring sensors.",
                 "data": {
                     "refresh_interval": "Refresh Interval (seconds)",
-                    "enable_zone_control": "Enable Zone Control"
+                    "enable_zone_control": "Enable Zone Control",
+                    "enable_zone_analytics": "Enable Zone Analytics"
+                },
+                "data_description": {
+                    "refresh_interval": "How often to update data from the system (30-300 seconds)",
+                    "enable_zone_control": "Create individual zone climate entities with temperature controls (requires per-zone temperature setting capability)",
+                    "enable_zone_analytics": "Create zone runtime and efficiency sensors for performance monitoring (ideal for damper-only systems)"
                 }
             }
         }

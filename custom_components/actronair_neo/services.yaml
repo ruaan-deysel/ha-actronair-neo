@@ -9,3 +9,97 @@ force_update:
       integration: actronair_neo
       domain: climate
   fields: {}
+
+create_zone_preset:
+  name: Create Zone Preset
+  description: >
+    Create a zone preset from the current zone configuration. This captures
+    the current state of all zones (enabled/disabled and temperature settings)
+    and saves it as a named preset that can be applied later.
+  fields:
+    device_id:
+      name: Device ID
+      description: The ActronAir device identifier
+      required: true
+      selector:
+        text:
+    name:
+      name: Preset Name
+      description: Name for the new preset
+      required: true
+      selector:
+        text:
+    description:
+      name: Description
+      description: Optional description for the preset
+      required: false
+      selector:
+        text:
+
+apply_zone_preset:
+  name: Apply Zone Preset
+  description: >
+    Apply a previously saved zone preset. This will set all zones to the
+    configuration saved in the specified preset.
+  fields:
+    device_id:
+      name: Device ID
+      description: The ActronAir device identifier
+      required: true
+      selector:
+        text:
+    name:
+      name: Preset Name
+      description: Name of the preset to apply
+      required: true
+      selector:
+        text:
+
+bulk_zone_operation:
+  name: Bulk Zone Operation
+  description: >
+    Perform operations on multiple zones simultaneously. This allows you to
+    enable, disable, or set temperatures for multiple zones at once.
+  fields:
+    device_id:
+      name: Device ID
+      description: The ActronAir device identifier
+      required: true
+      selector:
+        text:
+    operation:
+      name: Operation
+      description: The operation to perform on the zones
+      required: true
+      selector:
+        select:
+          options:
+            - "enable"
+            - "disable"
+            - "set_temperature"
+    zones:
+      name: Zone IDs
+      description: List of zone identifiers to operate on
+      required: true
+      selector:
+        object:
+    temperature:
+      name: Temperature
+      description: Target temperature (required for set_temperature operation)
+      required: false
+      selector:
+        number:
+          min: 16
+          max: 32
+          step: 0.5
+          unit_of_measurement: "°C"
+    temp_key:
+      name: Temperature Type
+      description: Type of temperature to set (cooling or heating)
+      required: false
+      default: "temp_setpoint_cool"
+      selector:
+        select:
+          options:
+            - "temp_setpoint_cool"
+            - "temp_setpoint_heat"

@@ -1,4 +1,27 @@
-"""ActronAir Neo API"""
+"""ActronAir Neo API client for Home Assistant integration.
+
+This module provides a comprehensive API client for ActronAir Neo air conditioning
+systems, featuring response caching, request deduplication, rate limiting, and
+robust error handling.
+
+Classes:
+    RateLimiter: Manages API request rate limiting with semaphore-based control.
+    ResponseCache: TTL-based response caching for API optimization.
+    ActronApi: Main API client with authentication and device management.
+
+Exceptions:
+    ApiError: General API communication errors.
+    AuthenticationError: Authentication-specific errors.
+
+Example:
+    ```python
+    async with aiohttp.ClientSession() as session:
+        api = ActronApi("user@example.com", "password", session)
+        await api.authenticate()
+        devices = await api.get_devices()
+        status = await api.get_ac_status(devices[0]["serial"])
+    ```
+"""
 
 import asyncio
 import json
@@ -33,6 +56,8 @@ from .const import (
     BASE_FAN_MODES,
     ADVANCE_FAN_MODES,
     ADVANCE_SERIES_MODELS,
+    DEFAULT_CACHE_TTL,
+    CACHE_CLEANUP_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,14 +65,60 @@ _LOGGER = logging.getLogger(__name__)
 class AuthenticationError(Exception):
     """Raised when authentication fails."""
 
+    def __init__(self, message: str, retry_after: Optional[int] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
 class ApiError(Exception):
     """Raised when an API call fails."""
-    def __init__(self, message, status_code=None):
+
+    def __init__(self, message: str, status_code: Optional[int] = None, retry_after: Optional[int] = None):
         super().__init__(message)
         self.status_code = status_code
+        self.retry_after = retry_after
 
-class RateLimitError(Exception):
+    @property
+    def is_temporary(self) -> bool:
+        """Check if this is a temporary error that might resolve with retry."""
+        return self.status_code in [429, 500, 502, 503, 504] if self.status_code else False
+
+    @property
+    def is_client_error(self) -> bool:
+        """Check if this is a client error (4xx)."""
+        return 400 <= self.status_code < 500 if self.status_code else False
+
+    @property
+    def is_server_error(self) -> bool:
+        """Check if this is a server error (5xx)."""
+        return 500 <= self.status_code < 600 if self.status_code else False
+
+class RateLimitError(ApiError):
     """Raised when rate limit is exceeded."""
+
+    def __init__(self, message: str, retry_after: Optional[int] = None):
+        super().__init__(message, status_code=429, retry_after=retry_after)
+
+class DeviceOfflineError(ApiError):
+    """Raised when device is offline or unreachable."""
+
+    def __init__(self, message: str, device_id: str):
+        super().__init__(message, status_code=503)
+        self.device_id = device_id
+
+class ConfigurationError(Exception):
+    """Raised when there's a configuration issue."""
+
+    def __init__(self, message: str, config_key: Optional[str] = None):
+        super().__init__(message)
+        self.config_key = config_key
+
+class ZoneError(Exception):
+    """Raised when there's a zone-specific error."""
+
+    def __init__(self, message: str, zone_id: Optional[str] = None, zone_index: Optional[int] = None):
+        super().__init__(message)
+        self.zone_id = zone_id
+        self.zone_index = zone_index
 
 class RateLimiter:
     """Rate limiter to prevent overwhelming the API."""
@@ -75,6 +146,70 @@ class RateLimiter:
     def release(self):
         """Release the acquired slot."""
         self.semaphore.release()
+
+
+class ResponseCache:
+    """Response cache with TTL for API optimization."""
+
+    def __init__(self, default_ttl: timedelta = timedelta(seconds=30)):
+        """Initialize response cache.
+
+        Args:
+            default_ttl: Default time-to-live for cached responses
+        """
+        self._cache: Dict[str, tuple[Any, datetime]] = {}
+        self._default_ttl = default_ttl
+        self._lock = asyncio.Lock()
+
+    async def get(self, key: str, ttl: Optional[timedelta] = None) -> Optional[Any]:
+        """Get cached response if still valid.
+
+        Args:
+            key: Cache key
+            ttl: Custom TTL, uses default if None
+
+        Returns:
+            Cached response or None if expired/missing
+        """
+        async with self._lock:
+            if key not in self._cache:
+                return None
+
+            data, timestamp = self._cache[key]
+            cache_ttl = ttl or self._default_ttl
+
+            if datetime.now() - timestamp > cache_ttl:
+                del self._cache[key]
+                return None
+
+            return data
+
+    async def set(self, key: str, value: Any) -> None:
+        """Set cached response.
+
+        Args:
+            key: Cache key
+            value: Response data to cache
+        """
+        async with self._lock:
+            self._cache[key] = (value, datetime.now())
+
+    async def clear(self) -> None:
+        """Clear all cached responses."""
+        async with self._lock:
+            self._cache.clear()
+
+    async def cleanup_expired(self) -> None:
+        """Remove expired entries from cache."""
+        async with self._lock:
+            now = datetime.now()
+            expired_keys = [
+                key for key, (_, timestamp) in self._cache.items()
+                if now - timestamp > self._default_ttl
+            ]
+            for key in expired_keys:
+                del self._cache[key]
+
 
 class ActronApi:
     """ActronAir Neo API class."""
@@ -115,8 +250,12 @@ class ActronApi:
         self.last_successful_request: Optional[datetime] = None
         self.cached_status: Optional[dict] = None
 
-        # Rate limiting
+        # Rate limiting and caching
         self.rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
+        self.response_cache = ResponseCache(default_ttl=timedelta(seconds=DEFAULT_CACHE_TTL))
+
+        # Request deduplication
+        self._pending_requests: Dict[str, asyncio.Future] = {}
 
         # Document the rate limiting strategy
         _LOGGER.debug(
@@ -139,14 +278,14 @@ class ActronApi:
         # Refresh token lock
         self._refresh_lock = asyncio.Lock()
 
-    def _get_model_series_capabilities(self, model: str) -> set[str]:
+    def _get_model_series_capabilities(self, model: str) -> frozenset[str]:
         """Determine supported fan modes based on model series.
 
         Args:
             model: The model number of the AC unit
 
         Returns:
-            Set of supported fan modes for this model series
+            Frozenset of supported fan modes for this model series
         """
         model_base = model.split('-')[0] if '-' in model else model
 
@@ -219,8 +358,12 @@ class ActronApi:
                     data = json.loads(await f.read())
                     self.refresh_token_value = data.get("refresh_token")
                     self.access_token = data.get("access_token")
-                    expires_at_str = data.get("expires_at", "2000-01-01")
-                    self.token_expires_at = datetime.fromisoformat(expires_at_str)
+                    expires_at_str = data.get("expires_at")
+                    if expires_at_str:
+                        self.token_expires_at = datetime.fromisoformat(expires_at_str)
+                    else:
+                        # If no expiry time, set to past to force refresh
+                        self.token_expires_at = datetime(2000, 1, 1)
                 _LOGGER.debug("Tokens loaded successfully")
             else:
                 _LOGGER.debug("No token file found, will authenticate from scratch")
@@ -268,7 +411,8 @@ class ActronApi:
                 await self._get_refresh_token()
             await self._get_access_token()
         except AuthenticationError:
-            _LOGGER.warning("Failed to authenticate with refresh token, trying to get a new one")
+            _LOGGER.info("Authentication token expired, automatically refreshing credentials. This is normal operation and requires no user action.")
+            _LOGGER.debug("Failed to authenticate with refresh token, trying to get a new one")
             await self._get_refresh_token()
             await self._get_access_token()
         _LOGGER.debug("Authentication process completed")
@@ -295,7 +439,16 @@ class ActronApi:
             await self.save_tokens()
             _LOGGER.info("New refresh token obtained and saved")
         except Exception as e:
-            _LOGGER.error("Failed to get new refresh token: %s", str(e))
+            error_msg = str(e).lower()
+            if "invalid_grant" in error_msg or "400" in error_msg:
+                _LOGGER.warning("ActronAir credentials need to be refreshed. The integration will automatically retry authentication. If this persists, check your username and password in the integration configuration.")
+                _LOGGER.debug("Failed to get new refresh token (credential issue): %s", str(e))
+            elif "timeout" in error_msg or "connection" in error_msg:
+                _LOGGER.info("Temporary connection issue with ActronAir servers. The integration will automatically retry. No user action required.")
+                _LOGGER.debug("Failed to get new refresh token (connection issue): %s", str(e))
+            else:
+                _LOGGER.error("Unable to authenticate with ActronAir servers. Please check your internet connection and integration configuration. Error: %s", str(e))
+                _LOGGER.debug("Failed to get new refresh token (unknown error): %s", str(e))
             raise AuthenticationError(f"Failed to get new refresh token: {str(e)}") from e
 
     async def _get_access_token(self) -> None:
@@ -323,10 +476,22 @@ class ActronApi:
             await self.save_tokens()
             _LOGGER.info("New access token obtained and valid until: %s", self.token_expires_at)
         except AuthenticationError as e:
-            _LOGGER.error("Authentication failed: %s", e)
+            error_msg = str(e).lower()
+            if "invalid_grant" in error_msg:
+                _LOGGER.info("Authentication token expired, automatically refreshing credentials. This is normal operation and requires no user action.")
+                _LOGGER.debug("Authentication failed (token expired): %s", e)
+            else:
+                _LOGGER.warning("Authentication issue detected. The integration will automatically retry. If this persists, check your ActronAir account credentials.")
+                _LOGGER.debug("Authentication failed: %s", e)
             raise
         except Exception as e:
-            _LOGGER.error("Failed to get new access token: %s", e)
+            error_msg = str(e).lower()
+            if "timeout" in error_msg or "connection" in error_msg:
+                _LOGGER.info("Temporary connection issue with ActronAir servers. The integration will automatically retry. No user action required.")
+                _LOGGER.debug("Failed to get new access token (connection issue): %s", e)
+            else:
+                _LOGGER.warning("Unable to refresh authentication token. The integration will automatically retry. If this persists, restart the integration.")
+                _LOGGER.debug("Failed to get new access token: %s", e)
             raise AuthenticationError(f"Failed to get new access token: {e}") from e
 
     MAX_REFRESH_RETRIES = 3
@@ -348,7 +513,9 @@ class ActronApi:
                 await self._get_access_token()
                 return
             except AuthenticationError as e:
-                _LOGGER.warning(
+                if attempt == 0:
+                    _LOGGER.info("Authentication token refresh in progress. This is normal operation and requires no user action.")
+                _LOGGER.debug(
                     "Token refresh failed (attempt %s/%s): %s",
                     attempt + 1, self.MAX_REFRESH_RETRIES, e
                 )
@@ -357,16 +524,18 @@ class ActronApi:
                         self.REFRESH_RETRY_DELAY * (2 ** attempt)
                     )  # Exponential backoff
                 else:
-                    _LOGGER.error(
-                        "All token refresh attempts failed. Attempting to re-authenticate."
+                    _LOGGER.warning(
+                        "Multiple authentication attempts failed. Trying fresh authentication with your credentials."
                     )
+                    _LOGGER.debug("All token refresh attempts failed. Attempting to re-authenticate.")
                     await self.clear_tokens()
                     try:
                         await self._get_refresh_token()
                         await self._get_access_token()
                         return
                     except AuthenticationError as auth_err:
-                        _LOGGER.error("Re-authentication failed: %s", auth_err)
+                        _LOGGER.error("Unable to authenticate with ActronAir servers. Please verify your username and password in the integration configuration, check your internet connection, and ensure your ActronAir account is active. If the problem persists, try restarting Home Assistant.")
+                        _LOGGER.debug("Re-authentication failed: %s", auth_err)
                         raise
         raise AuthenticationError("Failed to refresh token and re-authentication failed")
 
@@ -408,23 +577,81 @@ class ActronApi:
                             self.last_successful_request = datetime.now()
                             return response_json if 'response_json' in locals() else response_text
                         elif response.status == 401 and auth_required:
-                            _LOGGER.warning("Token expired, refreshing...")
+                            _LOGGER.info("Authentication token expired, automatically refreshing credentials. This is normal operation and requires no user action.")
+                            _LOGGER.debug("Token expired, refreshing...")
                             await self.refresh_access_token()
                             continue
-                        else:
-                            _LOGGER.error(
-                                "API request failed: %s, %s", response.status, response_text
+                        elif response.status == 429:
+                            # Rate limit exceeded
+                            retry_after = int(response.headers.get('Retry-After', 60))
+                            _LOGGER.warning("Rate limit exceeded, retry after %s seconds", retry_after)
+                            self.error_count += 1
+                            raise RateLimitError(
+                                f"Rate limit exceeded, retry after {retry_after} seconds",
+                                retry_after=retry_after
                             )
+                        elif response.status == 503:
+                            # Service unavailable - could be device offline
+                            _LOGGER.warning("Service unavailable: %s", response_text)
+                            self.error_count += 1
+                            if "device" in response_text.lower() or "offline" in response_text.lower():
+                                raise DeviceOfflineError(
+                                    f"Device appears to be offline: {response_text}",
+                                    device_id=getattr(self, 'actron_serial', 'unknown')
+                                )
+                            raise ApiError(
+                                f"Service unavailable: {response_text}",
+                                status_code=response.status,
+                                retry_after=30
+                            )
+                        elif 400 <= response.status < 500:
+                            # Client error - don't retry
+                            if response.status == 400 and "invalid_grant" in response_text.lower():
+                                _LOGGER.info("Authentication credentials expired, automatically refreshing. This is normal operation and requires no user action.")
+                                _LOGGER.debug("Client error (invalid_grant): %s, %s", response.status, response_text)
+                            elif response.status == 403:
+                                _LOGGER.warning("Access denied by ActronAir servers. Please check your account permissions and ensure your ActronAir account is active.")
+                                _LOGGER.debug("Client error (forbidden): %s, %s", response.status, response_text)
+                            elif response.status == 404:
+                                _LOGGER.warning("ActronAir device or endpoint not found. This may indicate a temporary server issue or device configuration problem.")
+                                _LOGGER.debug("Client error (not found): %s, %s", response.status, response_text)
+                            else:
+                                _LOGGER.warning("Communication issue with ActronAir servers (error %s). The integration will continue to retry automatically.", response.status)
+                                _LOGGER.debug("Client error: %s, %s", response.status, response_text)
                             self.error_count += 1
                             raise ApiError(
-                                f"API request failed: {response.status}, {response_text}",
+                                f"Client error: {response.status}, {response_text}",
+                                status_code=response.status
+                            )
+                        elif 500 <= response.status < 600:
+                            # Server error - retry with backoff
+                            _LOGGER.warning("Server error: %s, %s", response.status, response_text)
+                            self.error_count += 1
+                            if attempt < MAX_RETRIES - 1:
+                                wait_time = min(5 * (2 ** attempt), 60)  # Cap at 60 seconds
+                                _LOGGER.info("Retrying in %s seconds due to server error", wait_time)
+                                await asyncio.sleep(wait_time)
+                                continue
+                            raise ApiError(
+                                f"Server error after {MAX_RETRIES} attempts: {response.status}, {response_text}",
+                                status_code=response.status
+                            )
+                        else:
+                            # Unexpected status code
+                            _LOGGER.error("Unexpected status code: %s, %s", response.status, response_text)
+                            self.error_count += 1
+                            raise ApiError(
+                                f"Unexpected status code: {response.status}, {response_text}",
                                 status_code=response.status
                             )
 
                 except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-                    _LOGGER.error("Request error on attempt %s: %s", attempt + 1, err)
+                    if attempt == 0:
+                        _LOGGER.info("Temporary connection issue with ActronAir servers. The integration will automatically retry. No user action required.")
+                    _LOGGER.debug("Request error on attempt %s: %s", attempt + 1, err)
                     self.error_count += 1
                     if attempt == MAX_RETRIES - 1:
+                        _LOGGER.warning("Unable to connect to ActronAir servers after multiple attempts. Please check your internet connection. The integration will continue to retry automatically.")
                         raise ApiError(
                             f"Request failed after {MAX_RETRIES} attempts: {err}"
                         ) from err
@@ -459,21 +686,73 @@ class ActronApi:
         _LOGGER.debug("Found devices: %s", devices)
         return devices
 
-    async def get_ac_status(self, serial: str) -> AcStatusResponse:
-        """Get the current status of the AC system."""
+    async def get_ac_status(self, serial: str, use_cache: bool = True) -> AcStatusResponse:
+        """Get the current status of the AC system with optional caching.
+
+        Args:
+            serial: Device serial number
+            use_cache: Whether to use response caching (default: True)
+
+        Returns:
+            AC status response data
+        """
+        # Check API health first
         if not self.is_api_healthy():
             _LOGGER.warning("API is not healthy, using cached status")
             return cast(AcStatusResponse, self.cached_status if self.cached_status else {})
 
-        url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
-        _LOGGER.debug("Fetching AC status from: %s", url)
-        response = await self._make_request("GET", url)
-        _LOGGER.debug("AC status response: %s", response)
-        self.cached_status = response
-        return cast(AcStatusResponse, response)
+        # Try cache first if enabled
+        cache_key = f"ac_status_{serial}"
+        if use_cache:
+            cached_response = await self.response_cache.get(cache_key)
+            if cached_response is not None:
+                _LOGGER.debug("Using cached AC status for %s", serial)
+                return cast(AcStatusResponse, cached_response)
+
+        # Check for pending request (deduplication)
+        request_key = f"get_ac_status_{serial}"
+        if request_key in self._pending_requests:
+            _LOGGER.debug("Waiting for pending AC status request for %s", serial)
+            try:
+                response = await self._pending_requests[request_key]
+                return cast(AcStatusResponse, response)
+            except Exception:
+                # If pending request failed, continue with new request
+                pass
+
+        # Create new request future
+        future = asyncio.Future()
+        self._pending_requests[request_key] = future
+
+        try:
+            # Fetch from API
+            url = f"{API_URL}/api/v0/client/ac-systems/status/latest?serial={serial}"
+            _LOGGER.debug("Fetching AC status from: %s", url)
+            response = await self._make_request("GET", url)
+            _LOGGER.debug("AC status response: %s", response)
+
+            # Update both caches
+            self.cached_status = response
+            if use_cache:
+                await self.response_cache.set(cache_key, response)
+
+            # Complete the future for other waiting requests
+            if not future.done():
+                future.set_result(response)
+
+            return cast(AcStatusResponse, response)
+
+        except Exception as e:
+            # Fail the future for other waiting requests
+            if not future.done():
+                future.set_exception(e)
+            raise
+        finally:
+            # Clean up pending request
+            self._pending_requests.pop(request_key, None)
 
     async def send_command(self, serial: str, command: CommandData) -> CommandResponse:
-        """Send a command to the AC system."""
+        """Send a command to the AC system and invalidate cache."""
         url = f"{API_URL}/api/v0/client/ac-systems/cmds/send?serial={serial}"
         _LOGGER.debug("Sending command to: %s", url)
         _LOGGER.debug("Command payload:\n%s", json.dumps(command, indent=2))
@@ -482,6 +761,10 @@ class ActronApi:
             try:
                 response = await self._make_request("POST", url, json=command)
                 _LOGGER.debug("Command response:\n%s", json.dumps(response, indent=2))
+
+                # Invalidate cache after successful command to ensure fresh data
+                await self._invalidate_status_cache(serial)
+
                 return cast(CommandResponse, response)
             except ApiError as e:
                 if (attempt < MAX_RETRIES - 1) and (e.status_code in [500, 502, 503, 504]):
@@ -501,9 +784,46 @@ class ActronApi:
 
         raise ApiError(f"Failed to send command after {MAX_RETRIES} attempts")
 
-    async def get_zone_statuses(self) -> List[bool]:
-        """Get the current status of all zones."""
-        status = await self.get_ac_status(self.actron_serial)
+    async def _invalidate_status_cache(self, serial: str) -> None:
+        """Invalidate cached status data after commands.
+
+        Args:
+            serial: Device serial number
+        """
+        cache_key = f"ac_status_{serial}"
+        # Remove from response cache
+        async with self.response_cache._lock:
+            if cache_key in self.response_cache._cache:
+                del self.response_cache._cache[cache_key]
+
+        # Clear legacy cached status
+        self.cached_status = None
+        _LOGGER.debug("Invalidated status cache for %s", serial)
+
+    async def clear_all_caches(self) -> None:
+        """Clear all cached data."""
+        await self.response_cache.clear()
+        self.cached_status = None
+        _LOGGER.debug("Cleared all API caches")
+
+    async def cleanup_expired_cache(self) -> None:
+        """Clean up expired cache entries."""
+        await self.response_cache.cleanup_expired()
+        _LOGGER.debug("Cleaned up expired cache entries")
+
+    async def get_zone_statuses(self, cached_status: Optional[AcStatusResponse] = None) -> List[bool]:
+        """Get the current status of all zones.
+
+        Args:
+            cached_status: Optional pre-fetched status to avoid duplicate API calls
+
+        Returns:
+            List of zone enabled states
+        """
+        if cached_status is not None:
+            status = cached_status
+        else:
+            status = await self.get_ac_status(self.actron_serial)
         return status['lastKnownState']['UserAirconSettings']['EnabledZones']
 
     async def set_zone_state(self, zone_index: int, enable: bool) -> None:
@@ -614,7 +934,8 @@ class ActronApi:
                 # This will trigger re-authentication if tokens are invalid
                 await self.get_devices()
             except AuthenticationError:
-                _LOGGER.warning("Stored tokens are invalid, re-authenticating")
+                _LOGGER.info("Stored authentication tokens have expired, automatically refreshing credentials. This is normal operation and requires no user action.")
+                _LOGGER.debug("Stored tokens are invalid, re-authenticating")
                 await self.authenticate()
         _LOGGER.debug("ActronApi initialization completed")
 

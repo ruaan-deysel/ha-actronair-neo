@@ -9,7 +9,15 @@
                     "username": "config.step.user.data.username",
                     "password": "config.step.user.data.password",
                     "refresh_interval": "config.step.user.data.refresh_interval",
-                    "enable_zone_control": "config.step.user.data.enable_zone_control"
+                    "enable_zone_control": "config.step.user.data.enable_zone_control",
+                    "enable_zone_analytics": "config.step.user.data.enable_zone_analytics"
+                },
+                "data_description": {
+                    "username": "config.step.user.data_description.username",
+                    "password": "config.step.user.data_description.password",
+                    "refresh_interval": "config.step.user.data_description.refresh_interval",
+                    "enable_zone_control": "config.step.user.data_description.enable_zone_control",
+                    "enable_zone_analytics": "config.step.user.data_description.enable_zone_analytics"
                 }
             },
             "select_device": {
@@ -38,7 +46,13 @@
                 "description": "options.step.init.description",
                 "data": {
                     "refresh_interval": "options.step.init.data.refresh_interval",
-                    "enable_zone_control": "options.step.init.data.enable_zone_control"
+                    "enable_zone_control": "options.step.init.data.enable_zone_control",
+                    "enable_zone_analytics": "options.step.init.data.enable_zone_analytics"
+                },
+                "data_description": {
+                    "refresh_interval": "options.step.init.data_description.refresh_interval",
+                    "enable_zone_control": "options.step.init.data_description.enable_zone_control",
+                    "enable_zone_analytics": "options.step.init.data_description.enable_zone_analytics"
                 }
             }
         }

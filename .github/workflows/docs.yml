@@ -49,7 +49,6 @@ jobs:
           touch site/.nojekyll
           cp ads.txt site/
           cp robots.txt site/
-          echo "actronair-neo.domalab.net" > site/CNAME
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

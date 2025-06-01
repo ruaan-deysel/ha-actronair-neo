@@ -1,7 +1,7 @@
 
 # ActronAir Neo Integration for Home Assistant
 
-> **📚 [Visit our comprehensive documentation site](https://actronair-neo.domalab.net/)** - Complete guides, tutorials, and API reference
+> **📚 [Visit our comprehensive documentation site](https://domalab.github.io/ha-actronair-neo/)** - Complete guides, tutorials, and API reference
 
 [![HACS Integration][hacsbadge]][hacs]
 [![GitHub Last Commit](https://img.shields.io/github/last-commit/domalab/ha-actronair-neo?style=for-the-badge)](https://github.com/domalab/ha-actronair-neo/commits/main)
@@ -58,7 +58,7 @@ You can adjust the following options in the integration settings:
 
 If you encounter any issues:
 
-1. **Visit our [online Troubleshooting Guide](https://actronair-neo.domalab.net/user/troubleshooting/)** for the most up-to-date solutions
+1. **Visit our [online Troubleshooting Guide](https://domalab.github.io/ha-actronair-neo/user/troubleshooting/)** for the most up-to-date solutions
 2. Check that your credentials are correct
 3. Ensure your ActronAir Neo system is online and accessible
 4. Check the Home Assistant logs for any error messages

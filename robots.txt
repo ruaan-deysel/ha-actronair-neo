@@ -1,6 +1,6 @@
-# robots.txt for https://actronair-neo.domalab.net/
+# robots.txt for https://domalab.github.io/ha-actronair-neo/
 User-agent: *
 Allow: /
 
 # Sitemap location
-Sitemap: https://actronair-neo.domalab.net/sitemap.xml
+Sitemap: https://domalab.github.io/ha-actronair-neo/sitemap.xml

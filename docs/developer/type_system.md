@@ -177,11 +177,7 @@ ZoneList = List[ActronNeoZoneInfo]
 
 ## Type Checking
 
-The integration uses mypy for static type checking. To run type checking:
-
-```bash
-mypy custom_components/actronair_neo
-```
+The integration uses type annotations throughout the codebase to ensure type safety and improve code quality.
 
 ### Common Type Issues and Solutions
 

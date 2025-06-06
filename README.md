@@ -3,9 +3,9 @@
 
 > **📚 [Visit our comprehensive documentation site](https://domalab.github.io/ha-actronair-neo/)** - Complete guides, tutorials, and API reference
 
-[![HACS Integration](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
-[![GitHub Last Commit](https://img.shields.io/github/last-commit/domalab/ha-actronair-neo?style=for-the-badge)](https://github.com/domalab/ha-actronair-neo/commits/main)
-[![License](https://img.shields.io/github/license/domalab/ha-actronair-neo?style=for-the-badge)](./LICENSE)
+[![HACS Integration](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
+[![GitHub Last Commit](https://img.shields.io/github/last-commit/domalab/ha-actronair-neo)](https://github.com/domalab/ha-actronair-neo/commits/main)
+[![License](https://img.shields.io/github/license/domalab/ha-actronair-neo)](./LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/domalab/ha-actronair-neo)
 
 The ActronAir Neo Integration enables seamless control and monitoring of your ActronAir Neo air conditioning system directly from Home Assistant. With this integration, you can automate climate control, monitor indoor and outdoor temperatures, and adjust settings based on real-time data, all from one central location.

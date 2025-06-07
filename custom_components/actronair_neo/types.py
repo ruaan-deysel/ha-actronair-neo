@@ -36,6 +36,7 @@ class ZoneData(TypedDict):
     peripheral_type: Optional[str]
     last_connection: Optional[str]
     connection_state: Optional[str]
+    damper_position: Optional[int]
 
 
 class MainData(TypedDict):

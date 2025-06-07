@@ -55,6 +55,9 @@ async def async_setup_entry(
             entities.append(ActronZoneRuntimeSensor(coordinator, zone_id))
             entities.append(ActronZoneEfficiencySensor(coordinator, zone_id))
 
+    # Add consolidated zone damper diagnostic sensor
+    entities.append(ActronZoneDamperDiagnosticSensor(coordinator))
+
     async_add_entities(entities)
 
 class ActronSensorBase(CoordinatorEntity, SensorEntity):
@@ -223,6 +226,101 @@ class ActronZoneSensor(ActronEntityBase, SensorEntity):
             return {}
 
 
+class ActronZoneDamperDiagnosticSensor(ActronEntityBase, SensorEntity):
+    """Consolidated zone damper positions diagnostic sensor."""
+
+    def __init__(self, coordinator: ActronDataCoordinator) -> None:
+        """Initialize the zone damper diagnostic sensor."""
+        super().__init__(
+            coordinator,
+            "sensor",
+            "Zone Damper Positions",
+            is_diagnostic=True
+        )
+        self._attr_native_unit_of_measurement = None
+        self._attr_state_class = None
+        self._attr_icon = "mdi:valve"
+
+    @property
+    def native_value(self) -> str:
+        """Return summary of damper positions."""
+        try:
+            zones = self.coordinator.data.get('zones', {})
+            open_dampers = []
+            total_zones = 0
+
+            for zone_id, zone_data in zones.items():
+                total_zones += 1
+                damper_position = zone_data.get('damper_position', 0)
+                if damper_position > 0:
+                    open_dampers.append(f"{zone_data.get('name', zone_id)}: {damper_position}%")
+
+            if not open_dampers:
+                return f"All Closed ({total_zones} zones)"
+            elif len(open_dampers) == 1:
+                return f"1 Open: {open_dampers[0]}"
+            else:
+                return f"{len(open_dampers)} Open of {total_zones}"
+
+        except (KeyError, TypeError):
+            return "Unknown"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return all zone damper positions and statuses."""
+        try:
+            zones = self.coordinator.data.get('zones', {})
+            attributes = {}
+
+            # Individual zone damper data
+            for zone_id, zone_data in zones.items():
+                zone_name = zone_data.get('name', zone_id)
+                damper_position = zone_data.get('damper_position', 0)
+
+                # Determine damper status
+                if damper_position == 0:
+                    damper_status = "Closed"
+                elif damper_position >= 90:
+                    damper_status = "Fully Open"
+                elif damper_position >= 50:
+                    damper_status = "Mostly Open"
+                elif damper_position >= 25:
+                    damper_status = "Partially Open"
+                else:
+                    damper_status = "Mostly Closed"
+
+                # Add zone-specific attributes
+                attributes[f"{zone_name.lower().replace(' ', '_')}_position"] = f"{damper_position}%"
+                attributes[f"{zone_name.lower().replace(' ', '_')}_status"] = damper_status
+                attributes[f"{zone_name.lower().replace(' ', '_')}_airflow_active"] = "Yes" if (
+                    damper_position > 0 and zone_data.get('is_enabled', False)
+                ) else "No"
+
+            # Summary statistics
+            positions = [zone_data.get('damper_position', 0) for zone_data in zones.values()]
+            open_count = sum(1 for pos in positions if pos > 0)
+            avg_position = sum(positions) / len(positions) if positions else 0
+            zones_with_airflow = sum(
+                1 for zone_data in zones.values()
+                if zone_data.get('damper_position', 0) > 0 and zone_data.get('is_enabled', False)
+            )
+
+            attributes.update({
+                "total_zones": str(len(zones)),
+                "open_dampers": str(open_count),
+                "closed_dampers": str(len(zones) - open_count),
+                "average_position": f"{avg_position:.1f}%",
+                "max_position": f"{max(positions) if positions else 0}%",
+                "zones_with_airflow": str(zones_with_airflow),
+            })
+
+            return attributes
+
+        except (KeyError, TypeError) as ex:
+            _LOGGER.error("Error getting damper diagnostic attributes: %s", str(ex))
+            return {"error": "Failed to retrieve damper data"}
+
+
 class ActronZoneRuntimeSensor(ActronSensorBase):
     """Zone runtime sensor for analytics."""
 
@@ -384,11 +482,24 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
                 "quiet_mode_active": main_data.get("quiet_mode", False),
                 "away_mode_active": main_data.get("away_mode", False),
 
-                # Live Performance Data
+                # Live Performance Data (Enhanced for GitHub Issue #16)
                 "compressor_running": live_aircon.get("SystemOn", False),
                 "compressor_capacity": f"{live_aircon.get('CompressorCapacity', 0)}%",
+                "compressor_usage": live_aircon.get('CompressorCapacity', 0),  # Raw percentage for automations
                 "fan_running": live_aircon.get("AmRunningFan", False),
                 "fan_speed": f"{live_aircon.get('FanRPM', 0)} RPM",
+                "fan_speed_rpm": live_aircon.get('FanRPM', 0),  # Raw RPM for automations
+                "current_fan_speed": live_aircon.get('FanRPM', 0),  # Alias for user request
+
+                # Power and Electrical Data (GitHub Issue #16)
+                "compressor_power": self._format_power_value(live_aircon.get("OutdoorUnit", {}).get("CompPower", 0)),
+                "supply_voltage": f"{live_aircon.get('OutdoorUnit', {}).get('SupplyVoltage_Vac', 0):.1f} VAC",
+                "supply_current": f"{live_aircon.get('OutdoorUnit', {}).get('SuppyCurrentRMS_A', 0):.1f} A",
+                "supply_power": self._format_power_value(live_aircon.get("OutdoorUnit", {}).get("SuppyPowerRMS_W", 0)),
+                "system_capacity": f"{last_known_state.get('AirconSystem', {}).get('OutdoorUnit', {}).get('Capacity_kW', 0)} kW",
+
+                # Air Volume Data (if available)
+                "air_volume": f"{last_known_state.get('UserAirconSettings', {}).get('VFT', {}).get('Airflow', 0):.1f} m³/h" if last_known_state.get('UserAirconSettings', {}).get('VFT', {}).get('Supported', False) else "Not Supported",
 
                 # Live Temperature Readings
                 "indoor_temperature": self._format_temperature(main_data.get("indoor_temp")),
@@ -415,6 +526,15 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
                 "error_details": str(err)
             }
 
+    def _format_power_value(self, power_value: float) -> str:
+        """Format power value with appropriate units."""
+        if power_value == 0:
+            return "0 W"
+        elif power_value >= 1000:
+            return f"{power_value / 1000:.1f} kW"
+        else:
+            return f"{power_value:.0f} W"
+
 
 class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
     """Enhanced connectivity sensor with signal quality and connection health."""
@@ -437,15 +557,46 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
         """Return the connectivity status."""
         try:
             raw_data = self.coordinator.data.get("raw_data", {})
+
+            # Primary indicator: device online status and recent API activity
+            device_online = raw_data.get("isOnline", False)
+            last_contact = raw_data.get("timeSinceLastContact", "Unknown")
+
+            # Secondary indicator: cloud connection state
             last_known_state = raw_data.get("lastKnownState", {})
 
-            cloud_status = last_known_state.get("Cloud", {})
+            # Get the device-specific section (e.g., "<22H09780>")
+            device_section = None
+            for key, value in last_known_state.items():
+                if key.startswith("<") and key.endswith(">"):
+                    device_section = value
+                    break
+
+            if not device_section:
+                # Fallback to old structure if device section not found
+                device_section = last_known_state
+
+            cloud_status = device_section.get("Cloud", {})
             connection_state = cloud_status.get("ConnectionState", "Unknown")
 
-            if connection_state == "Connected":
-                return "Online"
+            # Determine status based on multiple indicators
+            if device_online and self.coordinator.last_update_success:
+                # Device is online and we have recent successful updates
+                if connection_state == "Connected":
+                    return "Online"
+                elif connection_state == "Unknown":
+                    return "Online (Cloud Status Unknown)"
+                else:
+                    return f"Online (Cloud: {connection_state})"
+            elif device_online:
+                # Device reports online but we may have update issues
+                return f"Online (Limited Connectivity)"
             else:
-                return f"Offline ({connection_state})"
+                # Device appears offline
+                if connection_state != "Unknown":
+                    return f"Offline ({connection_state})"
+                else:
+                    return "Offline"
 
         except (KeyError, TypeError):
             return "Unknown"
@@ -481,8 +632,19 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
 
-            system_status = last_known_state.get("SystemStatus_Local", {})
-            cloud_status = last_known_state.get("Cloud", {})
+            # Get the device-specific section (e.g., "<22H09780>")
+            device_section = None
+            for key, value in last_known_state.items():
+                if key.startswith("<") and key.endswith(">"):
+                    device_section = value
+                    break
+
+            if not device_section:
+                # Fallback to old structure if device section not found
+                device_section = last_known_state
+
+            system_status = device_section.get("SystemStatus_Local", {})
+            cloud_status = device_section.get("Cloud", {})
             wifi_info = system_status.get("WiFi", {})
 
             # WiFi signal analysis
@@ -500,7 +662,7 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
                 "wifi_signal_strength": wifi_signal["strength"],
                 "wifi_signal_quality": wifi_signal["quality"],
                 "wifi_signal_bars": wifi_signal["bars"],
-                "wifi_channel": wifi_info.get("RFChannel", "Unknown"),
+                "wifi_channel": str(wifi_info.get("RFChannel", "Unknown")),
                 "wifi_firmware": wifi_info.get("FirmwareVersion", "Unknown"),
 
                 # Connection Statistics

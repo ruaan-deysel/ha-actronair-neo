@@ -481,6 +481,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                         ),
                         "temp_setpoint_cool": capabilities.get("target_temp_cool"),
                         "temp_setpoint_heat": capabilities.get("target_temp_heat"),
+                        # Zone damper position (0-100 scale)
+                        "damper_position": zone.get("ZonePosition"),
                         # Initialize peripheral data
                         "battery_level": None,
                         "signal_strength": None,

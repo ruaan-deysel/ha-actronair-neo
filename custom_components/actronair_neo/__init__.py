@@ -22,6 +22,7 @@ from .const import (
 )
 from .coordinator import ActronDataCoordinator
 from .api import ActronApi, AuthenticationError, ApiError, ConfigurationError, ZoneError
+from . import repairs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -307,6 +308,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_register(DOMAIN, "create_zone_preset", create_zone_preset)
     hass.services.async_register(DOMAIN, "apply_zone_preset", apply_zone_preset)
     hass.services.async_register(DOMAIN, "bulk_zone_operation", bulk_zone_operation)
+
+    # Schedule repairs check
+    hass.async_create_task(repairs.async_check_issues(hass, entry))
 
     return True
 

@@ -1,0 +1,238 @@
+name: 🔧 System Compatibility Request
+description: Request support for ActronAir systems or report compatibility issues
+title: "[Compatibility] System: "
+labels: ["compatibility", "enhancement"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # 🔧 System Compatibility Request
+
+        Thank you for helping us improve ActronAir system compatibility! This template is for reporting **compatibility issues or requesting support for ActronAir systems** that aren't working with the integration.
+
+        ## 📋 When to use this template:
+        - ✅ Your ActronAir system is not working with the integration
+        - ✅ You have an ActronAir system that's not Neo but want to try the integration
+        - ✅ The integration doesn't recognize your system configuration
+        - ✅ You want to help us expand compatibility
+
+        ## ❌ When NOT to use this template:
+        - 🚫 **Bug reports**: Your system was working but now has issues → Use "Bug Report" template
+        - 🚫 **Feature requests**: Adding new features to working systems → Use "Feature Request" template
+        - 🚫 **Configuration help**: Need help setting up a working system → Check [documentation](https://domalab.github.io/ha-actronair-neo/)
+
+  - type: input
+    id: system_model
+    attributes:
+      label: 🌡️ ActronAir System Model
+      description: "Your ActronAir system model/series (e.g., Neo, Platinum, Classic)"
+      placeholder: "ActronAir Neo"
+    validations:
+      required: true
+
+  - type: input
+    id: system_name
+    attributes:
+      label: 🏷️ System Name/Series
+      description: "Full system name as shown on documentation or controller"
+      placeholder: "ActronAir Neo Touch Controller"
+    validations:
+      required: true
+
+  - type: input
+    id: controller_model
+    attributes:
+      label: 📱 Controller Model
+      description: "Model of your ActronAir controller/interface"
+      placeholder: "Neo Touch Controller, Wall Controller, etc."
+    validations:
+      required: true
+
+  - type: input
+    id: firmware_version
+    attributes:
+      label: 🔧 System Firmware Version
+      description: "Current firmware version (check controller display if available)"
+      placeholder: "v2.1.0 or Unknown"
+    validations:
+      required: false
+
+  - type: input
+    id: installation_info
+    attributes:
+      label: 🏠 Installation Information
+      description: "When was your ActronAir system installed?"
+      placeholder: "December 2024, 2-3 years ago, etc."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: connectivity_check
+    attributes:
+      label: 🌐 System Connectivity Verification
+      description: "Please confirm your ActronAir system's connectivity"
+      options:
+        - label: "System controller is connected to my local WiFi network"
+          required: true
+        - label: "I can access the system through the ActronAir app/web interface"
+          required: false
+        - label: "System appears in my router's connected devices list"
+          required: false
+        - label: "System supports network communication (has WiFi/Ethernet capability)"
+          required: true
+
+  - type: textarea
+    id: integration_attempt
+    attributes:
+      label: 🔍 Integration Setup Attempt
+      description: "What happened when you tried to set up the ActronAir Neo integration?"
+      placeholder: |
+        - Auto-discovery: Did the system appear in Home Assistant integrations?
+        - Manual setup: What error messages did you receive?
+        - Credentials: Did you try your ActronAir app username/password?
+        - Network: Can you access the system's web interface directly?
+      render: markdown
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: troubleshooting_confirmation
+    attributes:
+      label: 📊 Troubleshooting Confirmation
+      description: "Have you followed the troubleshooting steps from our documentation?"
+      options:
+        - label: "I have read the [troubleshooting guide](https://domalab.github.io/ha-actronair-neo/user/troubleshooting/)"
+          required: true
+        - label: "I have verified my ActronAir app credentials work correctly"
+          required: true
+        - label: "I have checked my network connectivity to the ActronAir system"
+          required: false
+        - label: "I have tried restarting both Home Assistant and the ActronAir system"
+          required: false
+
+  - type: textarea
+    id: system_information
+    attributes:
+      label: 📋 System Information
+      description: |
+        **Please provide details about your ActronAir system configuration**
+
+        **Include information about**:
+        - Number of zones in your system
+        - Indoor and outdoor unit models (if known)
+        - Controller type and version
+        - Any special features (heating, cooling, humidity control)
+      placeholder: |
+        **System Configuration:**
+        - 4 zones (Living, Kitchen, Bedroom 1, Bedroom 2)
+        - Indoor unit: [Model if known]
+        - Outdoor unit: [Model if known]
+        - Controller: Neo Touch Controller
+        - Features: Heating, Cooling, Zone control
+
+        **Network Details:**
+        - Controller IP: 192.168.1.100
+        - Can access web interface: Yes/No
+        - ActronAir app works: Yes/No
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: system_modes_testing
+    attributes:
+      label: 🔄 System Mode Testing
+      description: |
+        **Optional but helpful**: Information about different system modes and their behavior.
+
+        **Please test and describe**:
+        - Different climate modes (heating, cooling, auto, fan only)
+        - Zone control behavior
+        - Temperature and fan speed changes
+        - Any special features or modes
+      placeholder: |
+        **Heating Mode:**
+        - Set to 24°C heating via ActronAir app
+        - System responds correctly: Yes/No
+        - All zones heat up: Yes/No
+
+        **Cooling Mode:**
+        - Set to 20°C cooling via ActronAir app
+        - System responds correctly: Yes/No
+        - Individual zone control works: Yes/No
+
+        **Zone Control:**
+        - Can control individual zones: Yes/No
+        - Zone names: Living Room, Bedroom 1, etc.
+      render: markdown
+    validations:
+      required: false
+
+  - type: textarea
+    id: error_messages
+    attributes:
+      label: ⚠️ Error Messages
+      description: "Any error messages from Home Assistant logs or the ActronAir app"
+      placeholder: |
+        Home Assistant logs:
+        ```
+        2024-12-11 10:30:00 ERROR (MainThread) [custom_components.actronair_neo] ...
+        ```
+
+        ActronAir app errors:
+        ```
+        Connection timeout, Unable to connect to system, etc.
+        ```
+      render: markdown
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_info
+    attributes:
+      label: 📝 Additional Information
+      description: "Any other relevant information about your ActronAir system or setup"
+      placeholder: |
+        - Special features your system has (e.g., humidity control, advanced zoning, smart sensors)
+        - Any custom configurations or modifications
+        - Network setup details (VLANs, firewalls, etc.)
+        - Previous attempts to integrate with Home Assistant
+        - Other smart home integrations that work with your system
+      render: markdown
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution_willingness
+    attributes:
+      label: 🤝 Contribution Willingness
+      description: "How would you like to help with improving compatibility?"
+      options:
+        - label: "I'm willing to test development versions of the integration"
+        - label: "I can provide additional system information if needed"
+        - label: "I'm available for troubleshooting and debugging sessions"
+        - label: "I have programming experience and could help with code development"
+
+  - type: markdown
+    attributes:
+      value: |
+        ## 📚 Helpful Resources
+
+        - **📖 Documentation**: [ActronAir Neo Integration Docs](https://domalab.github.io/ha-actronair-neo/)
+        - **🤖 AI Assistant**: [DeepWiki AI Help](https://deepwiki.com/domalab/ha-actronair-neo)
+        - **🔧 Troubleshooting**: [Troubleshooting Guide](https://domalab.github.io/ha-actronair-neo/user/troubleshooting/)
+        - **💬 Community**: [Home Assistant Community Forum](https://community.home-assistant.io/)
+
+        ## ⏱️ What Happens Next?
+
+        1. **Review**: We'll review your ActronAir system information
+        2. **Analysis**: We'll analyze the system compatibility and communication methods
+        3. **Investigation**: We'll investigate potential solutions for your system type
+        4. **Testing**: You may be asked to test development versions or provide additional information
+        5. **Implementation**: If feasible, compatibility improvements will be included in future releases
+
+        **Note**: ActronAir systems vary significantly in their network capabilities and API access. Not all systems may be compatible due to firmware limitations or lack of network connectivity.
+
+        Thank you for helping us improve ActronAir system compatibility! 🙏

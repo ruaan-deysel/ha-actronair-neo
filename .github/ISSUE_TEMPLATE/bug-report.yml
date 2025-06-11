@@ -1,0 +1,152 @@
+name: 🐛 Bug Report
+description: Report a bug or issue with the ActronAir Neo integration
+title: "[Bug] "
+labels: ["bug"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # 🐛 Bug Report
+
+        Thank you for reporting a bug! This template is for issues with the **ActronAir Neo integration** that are not working correctly.
+
+        ## 📋 When to use this template:
+        - ✅ Your ActronAir Neo system was working before but now has issues
+        - ✅ The integration loads but some features don't work correctly
+        - ✅ You're getting error messages in Home Assistant logs
+        - ✅ Climate controls, sensors, or zones are not responding properly
+
+        ## ❌ When NOT to use this template:
+        - 🚫 **Configuration Help**: Need help setting up the integration → Check [documentation](https://domalab.github.io/ha-actronair-neo/)
+        - 🚫 **Feature Requests**: Want new features for the integration → Use "Feature Request" template
+
+  - type: input
+    id: system_model
+    attributes:
+      label: 🌡️ ActronAir System Model
+      description: "Your ActronAir Neo system model/series"
+      placeholder: "ActronAir Neo, ActronAir Platinum, etc."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: bug_category
+    attributes:
+      label: 🏷️ Bug Category
+      description: "What type of issue are you experiencing?"
+      options:
+        - "System not discovered/detected"
+        - "Connection issues (login failures, timeouts)"
+        - "Incorrect temperature/humidity readings"
+        - "Climate controls not working (mode, temperature, fan speed)"
+        - "Zone controls not responding"
+        - "Sensor data not updating"
+        - "Integration fails to load"
+        - "Authentication/credential issues"
+        - "Home Assistant crashes/errors"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: bug_description
+    attributes:
+      label: 📝 Bug Description
+      description: "Clear description of what's wrong and what you expected to happen"
+      placeholder: |
+        **What's happening:**
+        The temperature control doesn't work - when I change the target temperature in HA, the ActronAir system doesn't respond.
+
+        **What should happen:**
+        The ActronAir system should adjust to the new target temperature set in Home Assistant.
+
+        **When did this start:**
+        After updating to version X.X.X or after system restart
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction_steps
+    attributes:
+      label: 🔄 Steps to Reproduce
+      description: "Step-by-step instructions to reproduce the issue"
+      placeholder: |
+        1. Open Home Assistant
+        2. Go to the ActronAir Neo climate entity
+        3. Change target temperature from 22°C to 24°C
+        4. Observe that the system doesn't respond or change temperature
+      render: markdown
+    validations:
+      required: true
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: 📦 Integration Version
+      description: "Version of the ActronAir Neo integration"
+      placeholder: "v1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: 🏠 Home Assistant Version
+      description: "Your Home Assistant version"
+      placeholder: "2024.12.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 📋 Relevant Logs
+      description: |
+        Home Assistant logs related to the issue. Enable debug logging first:
+
+        ```yaml
+        logger:
+          logs:
+            custom_components.actronair_neo: debug
+        ```
+      placeholder: |
+        ```
+        2024-12-11 10:30:00 ERROR (MainThread) [custom_components.actronair_neo] ...
+        ```
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: 📝 Additional Context
+      description: "Any other relevant information"
+      placeholder: |
+        - ActronAir system details (zones, outdoor unit model, etc.)
+        - Network setup details
+        - Recent changes to your setup
+        - Workarounds you've tried
+        - Screenshots if applicable
+      render: markdown
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: ✅ Checklist
+      description: "Please confirm you have done the following:"
+      options:
+        - label: "I have read the [troubleshooting guide](https://domalab.github.io/ha-actronair-neo/user/troubleshooting/)"
+          required: true
+        - label: "I have searched existing issues to make sure this isn't a duplicate"
+          required: true
+        - label: "I have tried restarting Home Assistant"
+          required: false
+        - label: "I have verified my ActronAir Neo credentials are correct"
+          required: false
+        - label: "I have enabled debug logging and included relevant logs"
+          required: false

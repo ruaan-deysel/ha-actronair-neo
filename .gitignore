@@ -91,3 +91,6 @@ coverage.xml
 # Home Assistant configuration
 config/*
 !config/configuration.yaml
+
+# ActronAir API tokens (contains sensitive authentication data)
+utils/actron_token.json

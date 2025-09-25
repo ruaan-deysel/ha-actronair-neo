@@ -1004,9 +1004,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             )
             raise ZoneError(f"Zone {zone_id} not found", zone_id=zone_id)
 
-        if not zone_data.get("is_enabled", False):
-            _LOGGER.error("Cannot set temperature for disabled zone %s", zone_id)
-            raise ZoneError(f"Zone {zone_id} is not enabled", zone_id=zone_id)
+        # Note: We allow setting temperature for disabled zones as the ActronAir API
+        # supports this and it's useful for pre-setting temperatures before enabling zones
 
         # Validate temperature range
         if not (MIN_TEMP <= temperature <= MAX_TEMP):

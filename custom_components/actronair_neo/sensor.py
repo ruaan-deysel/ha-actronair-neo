@@ -416,23 +416,35 @@ class ActronZoneRuntimeSensor(ActronSensorBase):
         }
 
 
-class ActronZoneEfficiencySensor(ActronSensorBase):
+class ActronZoneEfficiencySensor(CoordinatorEntity, SensorEntity):
     """Zone efficiency sensor for analytics."""
+
+    _ATTR_HAS_ENTITY_NAME: Final = True
 
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
         """Initialize the zone efficiency sensor."""
+        super().__init__(coordinator)
         zone_data = coordinator.data["zones"][zone_id]
         zone_name = zone_data["name"]
-        super().__init__(
-            coordinator,
-            f"sensor_zone_{zone_name.lower().replace(' ', '_')}_efficiency",
-            f"{zone_name} Efficiency",
-        )
+
         self.zone_id = zone_id
-        self._attr_device_class = None  # Override temperature device class from base
+        self._attr_device_class = None  # Explicitly set to None for percentage sensors
+        self._attr_name = f"{zone_name} Efficiency"
+        self._attr_unique_id = f"{coordinator.device_id}_sensor_zone_{zone_name.lower().replace(' ', '_')}_efficiency"
         self._attr_native_unit_of_measurement = "%"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:gauge"
+
+    @property
+    def device_info(self):
+        """Return device information about this entity."""
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.device_id)},
+            "name": "ActronAir Neo",
+            "manufacturer": "ActronAir",
+            "model": self.coordinator.data["main"]["model"],
+            "sw_version": self.coordinator.data["main"]["firmware_version"],
+        }
 
     @property
     def native_value(self) -> float | None:

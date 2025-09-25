@@ -429,6 +429,7 @@ class ActronZoneEfficiencySensor(ActronSensorBase):
             f"{zone_name} Efficiency",
         )
         self.zone_id = zone_id
+        self._attr_device_class = None  # Override temperature device class from base
         self._attr_native_unit_of_measurement = "%"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:gauge"

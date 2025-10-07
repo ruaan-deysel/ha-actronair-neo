@@ -1,11 +1,12 @@
 """The ActronAir Neo integration."""
+
 import logging
-from homeassistant.config_entries import ConfigEntry # type: ignore
-from homeassistant.core import HomeAssistant, ServiceCall # type: ignore
-from homeassistant.helpers import service # type: ignore
-from homeassistant.helpers.aiohttp_client import async_get_clientsession # type: ignore
-from homeassistant.exceptions import ConfigEntryNotReady # type: ignore
-from homeassistant.helpers import entity_registry as er # type: ignore
+from homeassistant.config_entries import ConfigEntry  # type: ignore
+from homeassistant.core import HomeAssistant, ServiceCall  # type: ignore
+from homeassistant.helpers import service  # type: ignore
+from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore
+from homeassistant.exceptions import ConfigEntryNotReady  # type: ignore
+from homeassistant.helpers import entity_registry as er  # type: ignore
 from .const import (
     DOMAIN,
     CONF_USERNAME,
@@ -13,12 +14,11 @@ from .const import (
     CONF_REFRESH_INTERVAL,
     CONF_SERIAL_NUMBER,
     CONF_ENABLE_ZONE_CONTROL,
-    CONF_ENABLE_ZONE_ANALYTICS,
     SERVICE_FORCE_UPDATE,
     PLATFORM_CLIMATE,
     PLATFORM_SENSOR,
     PLATFORM_SWITCH,
-    PLATFORM_BINARY_SENSOR
+    PLATFORM_BINARY_SENSOR,
 )
 from .coordinator import ActronDataCoordinator
 from .api import ActronApi, AuthenticationError, ApiError, ConfigurationError, ZoneError
@@ -30,10 +30,13 @@ PLATFORMS: list[str] = [
     PLATFORM_CLIMATE,
     PLATFORM_SENSOR,
     PLATFORM_SWITCH,
-    PLATFORM_BINARY_SENSOR
+    PLATFORM_BINARY_SENSOR,
 ]
 
-async def async_migrate_entities(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+
+async def async_migrate_entities(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> None:
     """Migrate old entity IDs to new entity IDs."""
     entity_registry = er.async_get(hass)
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
@@ -69,8 +72,8 @@ async def async_migrate_entities(hass: HomeAssistant, config_entry: ConfigEntry)
     }
 
     # Add zone entity mappings
-    for zone_id, zone_data in coordinator.data['zones'].items():
-        zone_name = zone_data['name'].lower().replace(' ', '_')
+    for zone_id, zone_data in coordinator.data["zones"].items():
+        zone_name = zone_data["name"].lower().replace(" ", "_")
         # Climate entities
         migration_mappings[f"{coordinator.device_id}_zone_{zone_id}"] = (
             f"{coordinator.device_id}_climate_zone_{zone_name}"
@@ -99,10 +102,9 @@ async def async_migrate_entities(hass: HomeAssistant, config_entry: ConfigEntry)
                     )
                 except er.HomeAssistantError as ex:
                     _LOGGER.error(
-                        "Error migrating entity %s: %s",
-                        entry.entity_id,
-                        str(ex)
+                        "Error migrating entity %s: %s", entry.entity_id, str(ex)
                     )
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up ActronAir Neo from a config entry."""
@@ -129,9 +131,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady from api_err
 
     enable_zone_control = entry.options.get(CONF_ENABLE_ZONE_CONTROL, False)
-    enable_zone_analytics = entry.options.get(CONF_ENABLE_ZONE_ANALYTICS, False)
     coordinator = ActronDataCoordinator(
-        hass, api, serial_number, refresh_interval, enable_zone_control, enable_zone_analytics
+        hass,
+        api,
+        serial_number,
+        refresh_interval,
+        enable_zone_control,
     )
 
     await coordinator.async_config_entry_first_refresh()
@@ -180,24 +185,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     # Find which coordinator owns this entity
                     for entry_id, coordinator in hass.data[DOMAIN].items():
                         if isinstance(coordinator, ActronDataCoordinator):
-                            entries = er.async_entries_for_config_entry(entity_registry, entry_id)
-                            coordinator_entity_ids = [entry.entity_id for entry in entries]
+                            entries = er.async_entries_for_config_entry(
+                                entity_registry, entry_id
+                            )
+                            coordinator_entity_ids = [
+                                entry.entity_id for entry in entries
+                            ]
 
                             if entity_id in coordinator_entity_ids:
                                 if coordinator not in updated_coordinators:
                                     await coordinator.async_request_refresh()
                                     updated_coordinators.add(coordinator)
-                                    _LOGGER.info("Force update completed for device %s (entity: %s)",
-                                               coordinator.device_id, entity_id)
+                                    _LOGGER.info(
+                                        "Force update completed for device %s (entity: %s)",
+                                        coordinator.device_id,
+                                        entity_id,
+                                    )
                                 break
                     else:
-                        _LOGGER.warning("Entity %s not found in any ActronAir coordinator", entity_id)
+                        _LOGGER.warning(
+                            "Entity %s not found in any ActronAir coordinator",
+                            entity_id,
+                        )
             else:
                 # No specific entities targeted, update all coordinators
                 for coordinator in hass.data[DOMAIN].values():
                     if isinstance(coordinator, ActronDataCoordinator):
                         await coordinator.async_request_refresh()
-                        _LOGGER.info("Force update completed for device %s", coordinator.device_id)
+                        _LOGGER.info(
+                            "Force update completed for device %s",
+                            coordinator.device_id,
+                        )
 
         except Exception as err:
             _LOGGER.error("Error during force update: %s", err)
@@ -215,7 +233,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Find coordinator for device
         target_coordinator = None
         for coord in hass.data[DOMAIN].values():
-            if isinstance(coord, ActronDataCoordinator) and coord.device_id == device_id:
+            if (
+                isinstance(coord, ActronDataCoordinator)
+                and coord.device_id == device_id
+            ):
                 target_coordinator = coord
                 break
 
@@ -225,12 +246,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Check if zone control is enabled
         if not target_coordinator.enable_zone_control:
-            _LOGGER.error("Zone control is not enabled for device %s. Zone presets are not available for single-zone systems.", device_id)
+            _LOGGER.error(
+                "Zone control is not enabled for device %s. Zone presets are not available for single-zone systems.",
+                device_id,
+            )
             return
 
         try:
-            await target_coordinator.async_create_zone_preset_from_current(preset_name, description)
-            _LOGGER.info("Created zone preset '%s' for device %s", preset_name, device_id)
+            await target_coordinator.async_create_zone_preset_from_current(
+                preset_name, description
+            )
+            _LOGGER.info(
+                "Created zone preset '%s' for device %s", preset_name, device_id
+            )
         except (ConfigurationError, ZoneError) as err:
             _LOGGER.error("Failed to create zone preset: %s", err)
 
@@ -246,7 +274,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Find coordinator for device
         target_coordinator = None
         for coord in hass.data[DOMAIN].values():
-            if isinstance(coord, ActronDataCoordinator) and coord.device_id == device_id:
+            if (
+                isinstance(coord, ActronDataCoordinator)
+                and coord.device_id == device_id
+            ):
                 target_coordinator = coord
                 break
 
@@ -256,12 +287,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Check if zone control is enabled
         if not target_coordinator.enable_zone_control:
-            _LOGGER.error("Zone control is not enabled for device %s. Zone presets are not available for single-zone systems.", device_id)
+            _LOGGER.error(
+                "Zone control is not enabled for device %s. Zone presets are not available for single-zone systems.",
+                device_id,
+            )
             return
 
         try:
             await target_coordinator.async_apply_zone_preset(preset_name)
-            _LOGGER.info("Applied zone preset '%s' for device %s", preset_name, device_id)
+            _LOGGER.info(
+                "Applied zone preset '%s' for device %s", preset_name, device_id
+            )
         except (ConfigurationError, ZoneError) as err:
             _LOGGER.error("Failed to apply zone preset: %s", err)
 
@@ -278,7 +314,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Find coordinator for device
         target_coordinator = None
         for coord in hass.data[DOMAIN].values():
-            if isinstance(coord, ActronDataCoordinator) and coord.device_id == device_id:
+            if (
+                isinstance(coord, ActronDataCoordinator)
+                and coord.device_id == device_id
+            ):
                 target_coordinator = coord
                 break
 
@@ -288,7 +327,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Check if zone control is enabled
         if not target_coordinator.enable_zone_control:
-            _LOGGER.error("Zone control is not enabled for device %s. Bulk zone operations are not available for single-zone systems.", device_id)
+            _LOGGER.error(
+                "Zone control is not enabled for device %s. Bulk zone operations are not available for single-zone systems.",
+                device_id,
+            )
             return
 
         try:
@@ -297,10 +339,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 kwargs["temperature"] = call.data.get("temperature")
                 kwargs["temp_key"] = call.data.get("temp_key", "temp_setpoint_cool")
 
-            results = await target_coordinator.async_bulk_zone_operation(operation, zones, **kwargs)
+            results = await target_coordinator.async_bulk_zone_operation(
+                operation, zones, **kwargs
+            )
             success_count = sum(1 for r in results if r["status"] == "success")
-            _LOGGER.info("Bulk operation '%s' completed: %d/%d zones successful",
-                        operation, success_count, len(zones))
+            _LOGGER.info(
+                "Bulk operation '%s' completed: %d/%d zones successful",
+                operation,
+                success_count,
+                len(zones),
+            )
         except (ConfigurationError, ZoneError) as err:
             _LOGGER.error("Failed to perform bulk zone operation: %s", err)
 
@@ -314,6 +362,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     return True
 
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -325,6 +374,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     return unload_ok
 
+
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle configuration entry updates with safe entity cleanup.
 
@@ -333,9 +383,7 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """
     coordinator = hass.data[DOMAIN][entry.entry_id]
     old_enable_zone_control = coordinator.enable_zone_control
-    old_enable_zone_analytics = coordinator.enable_zone_analytics
     new_enable_zone_control = entry.options.get(CONF_ENABLE_ZONE_CONTROL, False)
-    new_enable_zone_analytics = entry.options.get(CONF_ENABLE_ZONE_ANALYTICS, False)
 
     try:
         if old_enable_zone_control and not new_enable_zone_control:
@@ -357,11 +405,14 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
         # Reload the config entry to apply changes
         await hass.config_entries.async_reload(entry.entry_id)
-        _LOGGER.info("Successfully updated zone control setting to: %s", new_enable_zone_control)
+        _LOGGER.info(
+            "Successfully updated zone control setting to: %s", new_enable_zone_control
+        )
 
     except Exception as err:
         _LOGGER.error("Error updating zone control setting: %s", err)
         raise
+
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry."""

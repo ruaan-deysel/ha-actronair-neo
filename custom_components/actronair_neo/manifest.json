@@ -10,6 +10,6 @@
   "issue_tracker": "https://github.com/domalab/ha-actronair-neo/issues",
   "requirements": ["aiofiles"],
   "ssdp": [],
-  "version": "2025.9.5",
+  "version": "2025.10.2",
   "zeroconf": []
 }

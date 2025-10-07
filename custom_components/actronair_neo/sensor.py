@@ -31,6 +31,115 @@ from .base_entity import ActronEntityBase
 _LOGGER = logging.getLogger(__name__)
 
 
+def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
+    """
+    Determine if the outdoor unit supports power consumption monitoring.
+
+    Power monitoring requires hardware support (current/voltage sensors) in the
+    outdoor unit. Fixed Speed Classic units with basic controllers typically
+    don't have this capability, while VSD units with advanced controllers do.
+
+    Args:
+        coordinator: The ActronDataCoordinator instance
+
+    Returns:
+        True if power monitoring is supported, False otherwise
+    """
+    try:
+        # Get outdoor unit information from raw API data (more reliable during setup)
+        raw_data = coordinator.data.get("raw_data", {})
+        last_known_state = raw_data.get("lastKnownState", {})
+
+        # Get the first key (serial number) from lastKnownState
+        if not last_known_state:
+            _LOGGER.warning(
+                "No lastKnownState data available for power monitoring check"
+            )
+            return False
+
+        # Get the actual data (it's nested under the serial number key)
+        serial_key = next(iter(last_known_state.keys()))
+        system_data = last_known_state.get(serial_key, {})
+
+        aircon_system = system_data.get("AirconSystem", {})
+        outdoor_unit_info = aircon_system.get("OutdoorUnit", {})
+
+        family = outdoor_unit_info.get("Family", "")
+        ctrl_board_type = outdoor_unit_info.get("CtrlBoardType", "")
+
+        # Fixed Speed Classic units with Type 100 controllers don't support power monitoring
+        # These units lack the necessary current transformers and voltage sensing circuitry
+        if "Fixed Speed" in family and "Type 100" in ctrl_board_type:
+            _LOGGER.info(
+                "Power monitoring not supported: Fixed Speed unit with Type 100 controller "
+                "(Family: %s, Controller: %s)",
+                family,
+                ctrl_board_type,
+            )
+            return False
+
+        # Additional runtime check: Verify if power fields are actually populated
+        # This catches cases where the API fields exist but hardware doesn't provide data
+        live_aircon = system_data.get("LiveAircon", {})
+        outdoor_unit_live = live_aircon.get("OutdoorUnit", {})
+
+        comp_power = outdoor_unit_live.get("CompPower", 0)
+        supply_voltage = outdoor_unit_live.get("SupplyVoltage_Vac", 0.0)
+        supply_current = outdoor_unit_live.get("SupplyCurrentRMS_A", 0.0)
+        compressor_on = outdoor_unit_live.get("CompressorOn", False)
+
+        # If compressor is running but all power fields are zero, hardware doesn't support it
+        if (
+            compressor_on
+            and comp_power == 0
+            and supply_voltage == 0.0
+            and supply_current == 0.0
+        ):
+            _LOGGER.info(
+                "Power monitoring not supported: Compressor running but all power fields are zero "
+                "(Family: %s, Controller: %s)",
+                family,
+                ctrl_board_type,
+            )
+            return False
+
+        # If any power field has a non-zero value, power monitoring is supported
+        if comp_power > 0 or supply_voltage > 0 or supply_current > 0:
+            _LOGGER.info(
+                "Power monitoring supported: Active power data detected "
+                "(CompPower: %s W, Voltage: %s V, Current: %s A)",
+                comp_power,
+                supply_voltage,
+                supply_current,
+            )
+            return True
+
+        # If we can't determine definitively, check for VSD indicators
+        # VSD units typically support power monitoring
+        if "VSD" in family or "Variable Speed" in family:
+            _LOGGER.info(
+                "Power monitoring likely supported: VSD/Variable Speed unit detected "
+                "(Family: %s)",
+                family,
+            )
+            return True
+
+        # Default to False for safety - don't create sensors if unsure
+        _LOGGER.info(
+            "Power monitoring support unknown, defaulting to disabled "
+            "(Family: %s, Controller: %s)",
+            family,
+            ctrl_board_type,
+        )
+        return False
+
+    except (KeyError, TypeError, AttributeError) as err:
+        _LOGGER.warning(
+            "Error checking power monitoring support: %s - defaulting to disabled", err
+        )
+        return False
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -45,20 +154,57 @@ async def async_setup_entry(
         ActronSystemDiagnosticSensor(coordinator),
         ActronConnectivitySensor(coordinator),
         ActronPerformanceSensor(coordinator),
-        # Power usage sensors for energy dashboard
-        ActronCompressorPowerSensor(coordinator),
-        ActronCompressorEnergySensor(coordinator),
     ]
+
+    # Only add power sensors if hardware supports power monitoring
+    if _supports_power_monitoring(coordinator):
+        # Get outdoor unit info from raw data for logging
+        raw_data = coordinator.data.get("raw_data", {})
+        last_known_state = raw_data.get("lastKnownState", {})
+        if last_known_state:
+            serial_key = next(iter(last_known_state.keys()))
+            system_data = last_known_state.get(serial_key, {})
+            aircon_system = system_data.get("AirconSystem", {})
+            outdoor_unit_info = aircon_system.get("OutdoorUnit", {})
+        else:
+            outdoor_unit_info = {}
+
+        _LOGGER.info(
+            "Adding power monitoring sensors for device %s (Family: %s, Controller: %s)",
+            coordinator.device_id,
+            outdoor_unit_info.get("Family", "Unknown"),
+            outdoor_unit_info.get("CtrlBoardType", "Unknown"),
+        )
+        entities.extend(
+            [
+                ActronCompressorPowerSensor(coordinator),
+                ActronCompressorEnergySensor(coordinator),
+            ]
+        )
+    else:
+        # Get outdoor unit info from raw data for logging
+        raw_data = coordinator.data.get("raw_data", {})
+        last_known_state = raw_data.get("lastKnownState", {})
+        if last_known_state:
+            serial_key = next(iter(last_known_state.keys()))
+            system_data = last_known_state.get(serial_key, {})
+            aircon_system = system_data.get("AirconSystem", {})
+            outdoor_unit_info = aircon_system.get("OutdoorUnit", {})
+        else:
+            outdoor_unit_info = {}
+
+        _LOGGER.info(
+            "Skipping power monitoring sensors for device %s - hardware does not support power measurement "
+            "(Family: %s, Controller: %s). Consider using external power monitoring hardware.",
+            coordinator.device_id,
+            outdoor_unit_info.get("Family", "Unknown"),
+            outdoor_unit_info.get("CtrlBoardType", "Unknown"),
+        )
 
     # Add zone sensors
     for zone_id, zone_data in coordinator.data["zones"].items():
         _LOGGER.debug("Adding zone sensor for %s: %s", zone_id, zone_data)
         entities.append(ActronZoneSensor(coordinator, zone_id))
-
-        # Add zone analytics sensors if zone analytics is enabled
-        if coordinator.enable_zone_analytics:
-            entities.append(ActronZoneRuntimeSensor(coordinator, zone_id))
-            entities.append(ActronZoneEfficiencySensor(coordinator, zone_id))
 
     # Add consolidated zone damper diagnostic sensor
     entities.append(ActronZoneDamperDiagnosticSensor(coordinator))
@@ -373,106 +519,6 @@ class ActronZoneDamperDiagnosticSensor(ActronEntityBase, SensorEntity):
         except (KeyError, TypeError) as ex:
             _LOGGER.error("Error getting damper diagnostic attributes: %s", str(ex))
             return {"error": "Failed to retrieve damper data"}
-
-
-class ActronZoneRuntimeSensor(ActronSensorBase):
-    """Zone runtime sensor for analytics."""
-
-    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
-        """Initialize the zone runtime sensor."""
-        zone_data = coordinator.data["zones"][zone_id]
-        zone_name = zone_data["name"]
-        super().__init__(
-            coordinator,
-            f"sensor_zone_{zone_name.lower().replace(' ', '_')}_runtime",
-            f"{zone_name} Runtime",
-        )
-        self.zone_id = zone_id
-        self._attr_device_class = SensorDeviceClass.DURATION
-        self._attr_native_unit_of_measurement = "h"
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_icon = "mdi:timer-outline"
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the zone runtime in hours."""
-        if not self.coordinator.zone_analytics_manager:
-            return None
-        stats = self.coordinator.zone_analytics_manager.get_zone_stats(self.zone_id)
-        return round(stats.total_runtime_hours, 2)
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return additional state attributes."""
-        if not self.coordinator.zone_analytics_manager:
-            return None
-        stats = self.coordinator.zone_analytics_manager.get_zone_stats(self.zone_id)
-        from datetime import datetime
-
-        return {
-            "daily_average_hours": round(stats.get_daily_runtime(datetime.now()), 2),
-            "on_off_cycles": stats.on_off_cycles,
-            "setpoint_changes": stats.setpoint_changes,
-        }
-
-
-class ActronZoneEfficiencySensor(CoordinatorEntity, SensorEntity):
-    """Zone efficiency sensor for analytics."""
-
-    _ATTR_HAS_ENTITY_NAME: Final = True
-
-    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
-        """Initialize the zone efficiency sensor."""
-        super().__init__(coordinator)
-        zone_data = coordinator.data["zones"][zone_id]
-        zone_name = zone_data["name"]
-
-        self.zone_id = zone_id
-        self._attr_device_class = None  # Explicitly set to None for percentage sensors
-        self._attr_name = f"{zone_name} Efficiency"
-        self._attr_unique_id = f"{coordinator.device_id}_sensor_zone_{zone_name.lower().replace(' ', '_')}_efficiency"
-        self._attr_native_unit_of_measurement = "%"
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:gauge"
-
-    @property
-    def device_info(self):
-        """Return device information about this entity."""
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.device_id)},
-            "name": "ActronAir Neo",
-            "manufacturer": "ActronAir",
-            "model": self.coordinator.data["main"]["model"],
-            "sw_version": self.coordinator.data["main"]["firmware_version"],
-        }
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the zone efficiency score."""
-        if not self.coordinator.zone_analytics_manager:
-            return None
-        stats = self.coordinator.zone_analytics_manager.get_zone_stats(self.zone_id)
-        return round(stats.efficiency_score, 1)
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return additional state attributes."""
-        if not self.coordinator.zone_analytics_manager:
-            return None
-
-        report = self.coordinator.zone_analytics_manager.get_zone_performance_report(
-            self.zone_id
-        )
-        if report.get("status") != "ok":
-            return None
-
-        return {
-            "performance_rating": report.get("performance_rating"),
-            "temperature_trend": report.get("temperature_trend", {}).get("status"),
-            "recent_daily_average": round(
-                report.get("recent_daily_average_hours", 0), 2
-            ),
-        }
 
 
 class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):

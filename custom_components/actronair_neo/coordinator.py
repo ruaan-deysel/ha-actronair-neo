@@ -42,7 +42,6 @@ from .const import (
     MAX_TEMP,
 )
 from .zone_presets import ZonePresetManager
-from .zone_analytics import ZoneAnalyticsManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,7 +56,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         device_id: str,
         update_interval: int,
         enable_zone_control: bool,
-        enable_zone_analytics: bool | None = None,
     ) -> None:
         """Initialize the data coordinator.
 
@@ -67,7 +65,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             device_id: Unique identifier for the device
             update_interval: Update interval in seconds
             enable_zone_control: Whether zone control is enabled
-            enable_zone_analytics: Whether zone analytics is enabled
         """
         super().__init__(
             hass,
@@ -78,13 +75,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         self.api = api
         self.device_id = device_id
         self.enable_zone_control = enable_zone_control
-        # Backward compatibility: if zone_analytics is not explicitly set,
-        # default to the same value as zone_control for existing installations
-        self.enable_zone_analytics = (
-            enable_zone_analytics
-            if enable_zone_analytics is not None
-            else enable_zone_control
-        )
         self.last_data = None
 
         # Fan mode control attributes
@@ -98,7 +88,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         # Enhanced zone management
         self.zone_preset_manager = ZonePresetManager(hass, device_id)
-        self.zone_analytics_manager = ZoneAnalyticsManager(hass, device_id)
 
         # Performance optimization: data processing cache
         self._parsed_data_cache: Optional[CoordinatorData] = None
@@ -317,9 +306,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             # Update internal state
             self._continuous_fan = main_data["fan_continuous"]
 
-            # Update zone analytics
-            await self._update_zone_analytics(zones)
-
             # Construct the final result
             result: CoordinatorData = {
                 "main": main_data,
@@ -352,9 +338,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             _LOGGER.debug(
                 "Using cached parsed data (cache hit #%d)", self._cache_hit_count
             )
-            # Still update zone analytics with current data
-            if self._parsed_data_cache.get("zones"):
-                await self._update_zone_analytics(self._parsed_data_cache["zones"])
             return self._parsed_data_cache
 
         # Parse data using existing method
@@ -614,9 +597,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             if self._cache_hit_count + self._cache_miss_count > 1000:
                 self._cache_hit_count = 0
                 self._cache_miss_count = 0
-
-            # Trigger zone analytics cleanup
-            await self.zone_analytics_manager.async_save()
 
             self._last_memory_cleanup = now
             _LOGGER.debug("Performed periodic memory cleanup")
@@ -1164,7 +1144,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "has_parsed_cache": self._parsed_data_cache is not None,
             "last_cache_cleanup": self._last_cache_cleanup,
             "last_memory_cleanup": self._last_memory_cleanup,
-            "zone_analytics_enabled": self.zone_analytics_manager is not None,
             "zone_preset_count": len(self.zone_preset_manager.get_all_presets())
             if self.zone_preset_manager
             else 0,
@@ -1172,28 +1151,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     # Enhanced Zone Management Methods
 
-    async def _update_zone_analytics(self, zones: Dict[str, ZoneData]) -> None:
-        """Update zone analytics with current data.
-
-        Args:
-            zones: Current zone data
-        """
-        try:
-            for zone_id, zone_data in zones.items():
-                await self.zone_analytics_manager.async_record_zone_data(
-                    zone_id=zone_id,
-                    temperature=zone_data.get("temp"),
-                    setpoint=zone_data.get("setpoint"),
-                    is_enabled=zone_data.get("is_enabled", False),
-                )
-        except Exception as err:
-            _LOGGER.debug("Failed to update zone analytics: %s", err)
-
     async def async_initialize_zone_management(self) -> None:
         """Initialize zone management components."""
         try:
             await self.zone_preset_manager.async_load()
-            await self.zone_analytics_manager.async_load()
             _LOGGER.debug("Zone management initialized for device %s", self.device_id)
         except Exception as err:
             _LOGGER.error("Failed to initialize zone management: %s", err)
@@ -1323,25 +1284,6 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         await self.async_request_refresh()
         _LOGGER.info("Bulk operation '%s' completed on %d zones", operation, len(zones))
         return results
-
-    def get_zone_analytics_summary(self) -> Dict[str, Any]:
-        """Get zone analytics summary.
-
-        Returns:
-            Zone analytics summary
-        """
-        return self.zone_analytics_manager.get_system_summary()
-
-    def get_zone_performance_report(self, zone_id: str) -> Dict[str, Any]:
-        """Get detailed performance report for a zone.
-
-        Args:
-            zone_id: Zone identifier
-
-        Returns:
-            Zone performance report
-        """
-        return self.zone_analytics_manager.get_zone_performance_report(zone_id)
 
     def _convert_damper_position(self, api_position: int | None) -> int:
         """Convert damper position from API scale (0-20) to percentage scale (0-100).

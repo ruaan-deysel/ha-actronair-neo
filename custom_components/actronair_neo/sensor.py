@@ -61,11 +61,28 @@ def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
         serial_key = next(iter(last_known_state.keys()))
         system_data = last_known_state.get(serial_key, {})
 
+        _LOGGER.debug(
+            "Power monitoring check - serial_key: %s, has system_data: %s",
+            serial_key,
+            bool(system_data),
+        )
+
         aircon_system = system_data.get("AirconSystem", {})
         outdoor_unit_info = aircon_system.get("OutdoorUnit", {})
 
+        _LOGGER.debug(
+            "Power monitoring check - outdoor_unit_info keys: %s",
+            list(outdoor_unit_info.keys()) if outdoor_unit_info else "None",
+        )
+
         family = outdoor_unit_info.get("Family", "")
         ctrl_board_type = outdoor_unit_info.get("CtrlBoardType", "")
+
+        _LOGGER.debug(
+            "Power monitoring check - Family: '%s', Controller: '%s'",
+            family,
+            ctrl_board_type,
+        )
 
         # Fixed Speed Classic units with Type 100 controllers don't support power monitoring
         # These units lack the necessary current transformers and voltage sensing circuitry
@@ -1010,7 +1027,16 @@ class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
         try:
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
-            live_aircon = last_known_state.get("LiveAircon", {})
+
+            # Get device serial to access the correct data path
+            device_serial = self.coordinator.data.get("main", {}).get("serial_number")
+            if not device_serial:
+                _LOGGER.warning("No device serial number available for power sensor")
+                return None
+
+            # Access data through the serial number key (e.g., "<SERIALNUMBER>")
+            system_data = last_known_state.get(f"<{device_serial.upper()}>", {})
+            live_aircon = system_data.get("LiveAircon", {})
 
             # Check if compressor is running
             compressor_running = live_aircon.get("SystemOn", False)
@@ -1039,7 +1065,15 @@ class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
         try:
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
-            live_aircon = last_known_state.get("LiveAircon", {})
+
+            # Get device serial to access the correct data path
+            device_serial = self.coordinator.data.get("main", {}).get("serial_number")
+            if not device_serial:
+                return {"error": "No device serial number available"}
+
+            # Access data through the serial number key (e.g., "<SERIALNUMBER>")
+            system_data = last_known_state.get(f"<{device_serial.upper()}>", {})
+            live_aircon = system_data.get("LiveAircon", {})
             outdoor_unit = live_aircon.get("OutdoorUnit", {})
 
             return {
@@ -1080,7 +1114,16 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
             # Get current power reading
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
-            live_aircon = last_known_state.get("LiveAircon", {})
+
+            # Get device serial to access the correct data path
+            device_serial = self.coordinator.data.get("main", {}).get("serial_number")
+            if not device_serial:
+                _LOGGER.warning("No device serial number available for energy sensor")
+                return None
+
+            # Access data through the serial number key (e.g., "<SERIALNUMBER>")
+            system_data = last_known_state.get(f"<{device_serial.upper()}>", {})
+            live_aircon = system_data.get("LiveAircon", {})
 
             # Check if compressor is running
             compressor_running = live_aircon.get("SystemOn", False)
@@ -1130,8 +1173,15 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
         try:
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
-            live_aircon = last_known_state.get("LiveAircon", {})
-            outdoor_unit = live_aircon.get("OutdoorUnit", {})
+
+            # Get device serial to access the correct data path
+            device_serial = self.coordinator.data.get("main", {}).get("serial_number")
+            if not device_serial:
+                return {"error": "No device serial number available"}
+
+            # Access data through the serial number key (e.g., "<SERIALNUMBER>")
+            system_data = last_known_state.get(f"<{device_serial.upper()}>", {})
+            live_aircon = system_data.get("LiveAircon", {})
 
             return {
                 "current_power_w": self._last_power,

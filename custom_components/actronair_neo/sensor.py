@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from homeassistant.components.sensor import (  # type: ignore
@@ -11,22 +12,25 @@ from homeassistant.components.sensor import (  # type: ignore
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry  # type: ignore
-from homeassistant.const import UnitOfTemperature, UnitOfPower, UnitOfEnergy  # type: ignore
+from homeassistant.const import (  # type: ignore
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 from homeassistant.helpers.typing import StateType  # type: ignore
 from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
 
+from .base_entity import ActronEntityBase
 from .const import (
-    DOMAIN,
     ATTR_BATTERY_LEVEL,
+    ATTR_LAST_UPDATED,
     ATTR_ZONE_NAME,
     ATTR_ZONE_TYPE,
-    ATTR_SIGNAL_STRENGTH,
-    ATTR_LAST_UPDATED,
+    DOMAIN,
 )
 from .coordinator import ActronDataCoordinator
-from .base_entity import ActronEntityBase
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,6 +48,7 @@ def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
 
     Returns:
         True if power monitoring is supported, False otherwise
+
     """
     try:
         # Get outdoor unit information from raw API data (more reliable during setup)
@@ -84,8 +89,9 @@ def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
             ctrl_board_type,
         )
 
-        # Fixed Speed Classic units with Type 100 controllers don't support power monitoring
-        # These units lack the necessary current transformers and voltage sensing circuitry
+        # Fixed Speed Classic units with Type 100 controllers don't support
+        # power monitoring. These units lack the necessary current transformers
+        # and voltage sensing circuitry
         if "Fixed Speed" in family and "Type 100" in ctrl_board_type:
             _LOGGER.info(
                 "Power monitoring not supported: Fixed Speed unit with Type 100 controller "
@@ -95,8 +101,9 @@ def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
             )
             return False
 
-        # Additional runtime check: Verify if power fields are actually populated
-        # This catches cases where the API fields exist but hardware doesn't provide data
+        # Additional runtime check: Verify if power fields are populated
+        # This catches cases where API fields exist but hardware doesn't
+        # provide data
         live_aircon = system_data.get("LiveAircon", {})
         outdoor_unit_live = live_aircon.get("OutdoorUnit", {})
 
@@ -105,7 +112,8 @@ def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
         supply_current = outdoor_unit_live.get("SupplyCurrentRMS_A", 0.0)
         compressor_on = outdoor_unit_live.get("CompressorOn", False)
 
-        # If compressor is running but all power fields are zero, hardware doesn't support it
+        # If compressor is running but all power fields are zero,
+        # hardware doesn't support it
         if (
             compressor_on
             and comp_power == 0
@@ -113,8 +121,8 @@ def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
             and supply_current == 0.0
         ):
             _LOGGER.info(
-                "Power monitoring not supported: Compressor running but all power fields are zero "
-                "(Family: %s, Controller: %s)",
+                "Power monitoring not supported: Compressor running but all "
+                "power fields are zero (Family: %s, Controller: %s)",
                 family,
                 ctrl_board_type,
             )
@@ -211,8 +219,9 @@ async def async_setup_entry(
             outdoor_unit_info = {}
 
         _LOGGER.info(
-            "Skipping power monitoring sensors for device %s - hardware does not support power measurement "
-            "(Family: %s, Controller: %s). Consider using external power monitoring hardware.",
+            "Skipping power monitoring sensors for device %s - hardware does "
+            "not support power measurement (Family: %s, Controller: %s). "
+            "Consider using external power monitoring hardware.",
             coordinator.device_id,
             outdoor_unit_info.get("Family", "Unknown"),
             outdoor_unit_info.get("CtrlBoardType", "Unknown"),
@@ -295,7 +304,7 @@ class ActronZoneSensor(ActronEntityBase, SensorEntity):
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
-    def _format_signal_strength(self, signal: int | float | None) -> str:
+    def _format_signal_strength(self, signal: float | None) -> str:
         """Format signal strength with quality rating."""
         if not isinstance(signal, (int, float)):
             return "Unknown"
@@ -384,7 +393,8 @@ class ActronZoneSensor(ActronEntityBase, SensorEntity):
                         peripheral_data["RemainingBatteryCapacity_pc"],
                     )
 
-                # Use peripheral data for additional attributes if zone data doesn't have them
+                # Use peripheral data for additional attributes if zone data
+                # doesn't have them
                 if ATTR_ZONE_TYPE not in attributes and "DeviceType" in peripheral_data:
                     attributes[ATTR_ZONE_TYPE] = peripheral_data["DeviceType"]
                 if (
@@ -462,10 +472,9 @@ class ActronZoneDamperDiagnosticSensor(ActronEntityBase, SensorEntity):
 
             if not open_dampers:
                 return f"All Closed ({total_zones} zones)"
-            elif len(open_dampers) == 1:
+            if len(open_dampers) == 1:
                 return f"1 Open: {open_dampers[0]}"
-            else:
-                return f"{len(open_dampers)} Open of {total_zones}"
+            return f"{len(open_dampers)} Open of {total_zones}"
 
         except (KeyError, TypeError):
             return "Unknown"
@@ -559,8 +568,7 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
             if main_data.get("is_on", False):
                 mode = main_data.get("mode", "Unknown").title()
                 return f"Running ({mode})"
-            else:
-                return "Standby"
+            return "Standby"
         except (KeyError, TypeError):
             return "Unknown"
 
@@ -575,10 +583,9 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
 
         if days > 0:
             return f"{days}d {hours}h {minutes}m"
-        elif hours > 0:
+        if hours > 0:
             return f"{hours}h {minutes}m"
-        else:
-            return f"{minutes}m"
+        return f"{minutes}m"
 
     def _format_temperature(self, value: Any) -> str:
         """Format temperature value."""
@@ -679,10 +686,9 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
         """Format power value with appropriate units."""
         if power_value == 0:
             return "0 W"
-        elif power_value >= 1000:
+        if power_value >= 1000:
             return f"{power_value / 1000:.1f} kW"
-        else:
-            return f"{power_value:.0f} W"
+        return f"{power_value:.0f} W"
 
 
 class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
@@ -706,7 +712,6 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
 
             # Primary indicator: device online status and recent API activity
             device_online = raw_data.get("isOnline", False)
-            last_contact = raw_data.get("timeSinceLastContact", "Unknown")
 
             # Secondary indicator: cloud connection state
             last_known_state = raw_data.get("lastKnownState", {})
@@ -730,24 +735,21 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
                 # Device is online and we have recent successful updates
                 if connection_state == "Connected":
                     return "Online"
-                elif connection_state == "Unknown":
+                if connection_state == "Unknown":
                     return "Online (Cloud Status Unknown)"
-                else:
-                    return f"Online (Cloud: {connection_state})"
-            elif device_online:
+                return f"Online (Cloud: {connection_state})"
+            if device_online:
                 # Device reports online but we may have update issues
-                return f"Online (Limited Connectivity)"
-            else:
-                # Device appears offline
-                if connection_state != "Unknown":
-                    return f"Offline ({connection_state})"
-                else:
-                    return "Offline"
+                return "Online (Limited Connectivity)"
+            # Device appears offline
+            if connection_state != "Unknown":
+                return f"Offline ({connection_state})"
+            return "Offline"
 
         except (KeyError, TypeError):
             return "Unknown"
 
-    def _format_wifi_signal(self, signal: int | float | None) -> dict[str, str]:
+    def _format_wifi_signal(self, signal: float | None) -> dict[str, str]:
         """Format WiFi signal strength with quality rating."""
         if not isinstance(signal, (int, float)):
             return {"strength": "Unknown", "quality": "Unknown", "bars": "0/4"}
@@ -848,10 +850,9 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
 
         if days > 0:
             return f"{days}d {hours}h"
-        elif hours > 0:
+        if hours > 0:
             return f"{hours}h {minutes}m"
-        else:
-            return f"{minutes}m"
+        return f"{minutes}m"
 
 
 class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
@@ -879,8 +880,7 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
             if live_aircon.get("SystemOn", False):
                 capacity = live_aircon.get("CompressorCapacity", 0)
                 return float(capacity) if capacity is not None else 0.0
-            else:
-                return 0.0
+            return 0.0
 
         except (KeyError, TypeError, ValueError):
             return None
@@ -902,8 +902,7 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
             power = float(value)
             if power >= 1000:
                 return f"{power / 1000:.1f} kW"
-            else:
-                return f"{power:.0f} W"
+            return f"{power:.0f} W"
         except (ValueError, TypeError):
             return str(value)
 
@@ -917,12 +916,11 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
 
         if compressor_on and fan_running:
             return "Active Cooling/Heating"
-        elif fan_running:
+        if fan_running:
             return "Fan Only"
-        elif compressor_on:
+        if compressor_on:
             return "Compressor Only"
-        else:
-            return "System On (Idle)"
+        return "System On (Idle)"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -1141,15 +1139,14 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
                 )
 
             # Calculate energy using trapezoidal integration
-            from datetime import datetime
-
-            current_time = datetime.now()
+            current_time = datetime.now(UTC)
 
             if self._last_update is not None:
                 # Calculate time difference in hours
                 time_diff = (current_time - self._last_update).total_seconds() / 3600.0
 
-                # Use trapezoidal rule for integration (average of current and last power * time)
+                # Use trapezoidal rule for integration
+                # (average of current and last power * time)
                 if time_diff > 0 and time_diff < 1.0:  # Ignore large gaps (> 1 hour)
                     avg_power = (current_power + self._last_power) / 2.0
                     energy_increment = (

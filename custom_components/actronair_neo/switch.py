@@ -1,19 +1,20 @@
 """Support for ActronAir Neo switches."""
 from __future__ import annotations
+
+import asyncio
 import datetime
 import logging
-import asyncio
 from typing import Any
 
-from homeassistant.components.switch import SwitchEntity # type: ignore
-from homeassistant.config_entries import ConfigEntry # type: ignore
-from homeassistant.core import HomeAssistant # type: ignore
-from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
-from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: ignore
+from homeassistant.components.switch import SwitchEntity  # type: ignore
+from homeassistant.config_entries import ConfigEntry  # type: ignore
+from homeassistant.core import HomeAssistant  # type: ignore
+from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
+from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
 
+from .base_entity import ActronEntityBase
 from .const import DOMAIN, ICON_ZONE
 from .coordinator import ActronDataCoordinator
-from .base_entity import ActronEntityBase
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ async def async_setup_entry(
     ]
 
     # Add zone switches
-    for zone_id, _ in coordinator.data['zones'].items():
+    for zone_id, _ in coordinator.data["zones"].items():
         entities.append(ActronZoneSwitch(coordinator, zone_id))
 
     async_add_entities(entities)
@@ -119,8 +120,8 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
         try:
             # Get current fan mode and strip any existing suffixes
             current_mode = self.coordinator.data["main"].get("fan_mode", "")
-            base_mode = current_mode.split('+')[0] if '+' in current_mode else current_mode
-            base_mode = base_mode.split('-')[0] if '-' in base_mode else base_mode
+            base_mode = current_mode.split("+")[0] if "+" in current_mode else current_mode
+            base_mode = base_mode.split("-")[0] if "-" in base_mode else base_mode
 
             # Validate base mode
             valid_modes = ["LOW", "MED", "HIGH", "AUTO"]
@@ -158,8 +159,8 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
         try:
             # Get current fan mode and strip continuous suffix
             current_mode = self.coordinator.data["main"].get("fan_mode", "")
-            base_mode = current_mode.split('+')[0] if '+' in current_mode else current_mode
-            base_mode = base_mode.split('-')[0] if '-' in base_mode else base_mode
+            base_mode = current_mode.split("+")[0] if "+" in current_mode else current_mode
+            base_mode = base_mode.split("-")[0] if "-" in base_mode else base_mode
 
             # Validate base mode
             valid_modes = ["LOW", "MED", "HIGH", "AUTO"]
@@ -196,7 +197,7 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         current_mode = self.coordinator.data["main"].get("fan_mode", "")
-        base_mode = current_mode.split('+')[0] if '+' in current_mode else current_mode
+        base_mode = current_mode.split("+")[0] if "+" in current_mode else current_mode
 
         return {
             "base_fan_mode": base_mode,
@@ -209,16 +210,16 @@ class ActronZoneSwitch(ActronEntityBase, SwitchEntity):
 
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
         """Initialize the zone switch."""
-        zone_name = coordinator.data['zones'][zone_id]['name']
+        zone_name = coordinator.data["zones"][zone_id]["name"]
         super().__init__(coordinator, "switch", f"Zone {zone_name}")
         self.zone_id = zone_id
-        self.zone_index = int(zone_id.split('_')[1]) - 1
+        self.zone_index = int(zone_id.split("_")[1]) - 1
         self._attr_icon = ICON_ZONE
 
     @property
     def is_on(self) -> bool:
         """Return true if the zone is enabled."""
-        return self.coordinator.data['zones'][self.zone_id]['is_enabled']
+        return self.coordinator.data["zones"][self.zone_id]["is_enabled"]
 
     async def async_turn_on(self) -> None:
         """Turn the zone on."""

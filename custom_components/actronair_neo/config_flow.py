@@ -6,21 +6,20 @@ import logging
 from typing import Any
 
 import voluptuous as vol  # type: ignore
-
 from homeassistant import config_entries  # type: ignore
 from homeassistant.core import HomeAssistant, callback  # type: ignore
 from homeassistant.data_entry_flow import FlowResult  # type: ignore
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.helpers import aiohttp_client  # type: ignore
 
-from .api import ActronApi, AuthenticationError, ApiError
+from .api import ActronApi, ApiError, AuthenticationError
 from .const import (
-    DOMAIN,
-    CONF_USERNAME,
+    CONF_ENABLE_ZONE_CONTROL,
     CONF_PASSWORD,
     CONF_REFRESH_INTERVAL,
+    CONF_USERNAME,
     DEFAULT_REFRESH_INTERVAL,
-    CONF_ENABLE_ZONE_CONTROL,
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,7 +38,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     """Validate the user input allows us to connect."""
     session = aiohttp_client.async_get_clientsession(hass)
     api = ActronApi(
-        username=data[CONF_USERNAME], password=data[CONF_PASSWORD], session=session
+        username=data[CONF_USERNAME],
+        password=data[CONF_PASSWORD],
+        session=session,
+        config_path=hass.config.config_dir,
     )
 
     try:
@@ -153,8 +155,7 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_ENABLE_ZONE_CONTROL: self._enable_zone_control,
                     },
                 )
-            else:
-                errors["base"] = "device_not_found"
+            errors["base"] = "device_not_found"
 
         # Create a schema with a dropdown of available devices
         device_schema = vol.Schema(

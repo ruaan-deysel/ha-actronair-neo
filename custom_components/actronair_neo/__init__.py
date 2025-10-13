@@ -1,28 +1,30 @@
 """The ActronAir Neo integration."""
 
 import logging
+
 from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.core import HomeAssistant, ServiceCall  # type: ignore
-from homeassistant.helpers import service  # type: ignore
-from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore
 from homeassistant.exceptions import ConfigEntryNotReady  # type: ignore
 from homeassistant.helpers import entity_registry as er  # type: ignore
+from homeassistant.helpers import service  # type: ignore
+from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore
+
+from . import repairs
+from .api import ActronApi, ApiError, AuthenticationError, ConfigurationError, ZoneError
 from .const import (
-    DOMAIN,
-    CONF_USERNAME,
+    CONF_ENABLE_ZONE_CONTROL,
     CONF_PASSWORD,
     CONF_REFRESH_INTERVAL,
     CONF_SERIAL_NUMBER,
-    CONF_ENABLE_ZONE_CONTROL,
-    SERVICE_FORCE_UPDATE,
+    CONF_USERNAME,
+    DOMAIN,
+    PLATFORM_BINARY_SENSOR,
     PLATFORM_CLIMATE,
     PLATFORM_SENSOR,
     PLATFORM_SWITCH,
-    PLATFORM_BINARY_SENSOR,
+    SERVICE_FORCE_UPDATE,
 )
 from .coordinator import ActronDataCoordinator
-from .api import ActronApi, AuthenticationError, ApiError, ConfigurationError, ZoneError
-from . import repairs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -118,7 +120,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     system_id = entry.data.get("system_id", "")
 
     session = async_get_clientsession(hass)
-    api = ActronApi(username=username, password=password, session=session)
+    api = ActronApi(
+        username=username,
+        password=password,
+        session=session,
+        config_path=hass.config.config_dir,
+    )
 
     try:
         await api.initializer()
@@ -376,7 +383,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle configuration entry updates with safe entity cleanup.
+    """
+    Handle configuration entry updates with safe entity cleanup.
 
     This method ensures proper cleanup of entities when disabling zone control
     and maintains system stability during configuration changes.

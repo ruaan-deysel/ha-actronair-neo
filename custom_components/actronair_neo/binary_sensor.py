@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Final
+from typing import Any
 
 from homeassistant.components.binary_sensor import (  # type: ignore
-    BinarySensorEntity,
     BinarySensorDeviceClass,
+    BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
@@ -14,9 +14,9 @@ from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
 
+from .base_entity import ActronEntityBase
 from .const import DOMAIN
 from .coordinator import ActronDataCoordinator
-from .base_entity import ActronEntityBase
 
 _LOGGER = logging.getLogger(__name__)
 

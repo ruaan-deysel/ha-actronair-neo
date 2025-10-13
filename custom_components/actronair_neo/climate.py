@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
 import logging
+from typing import Any
 
 from homeassistant.components.climate import (  # type: ignore
     ClimateEntity,
@@ -11,10 +11,10 @@ from homeassistant.components.climate import (  # type: ignore
     HVACMode,
 )
 from homeassistant.components.climate.const import (  # type: ignore
+    FAN_AUTO,
+    FAN_HIGH,
     FAN_LOW,
     FAN_MEDIUM,
-    FAN_HIGH,
-    FAN_AUTO,
 )
 from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.const import (  # type: ignore
@@ -22,23 +22,22 @@ from homeassistant.const import (  # type: ignore
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant  # type: ignore
-from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 from homeassistant.helpers import entity_registry as er  # type: ignore
+from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
+from .api import ApiError, ConfigurationError, ZoneError
 from .base_entity import ActronEntityBase
-
 from .const import (
-    DOMAIN,
-    MIN_TEMP,
-    MAX_TEMP,
-    BASE_FAN_MODES,
-    BASE_FAN_MODE_ORDER,
     ADVANCE_FAN_MODES,
-    ADVANCED_FAN_MODE_ORDER,
     ADVANCE_SERIES_MODELS,
+    ADVANCED_FAN_MODE_ORDER,
+    BASE_FAN_MODE_ORDER,
+    BASE_FAN_MODES,
+    DOMAIN,
+    MAX_TEMP,
+    MIN_TEMP,
 )
 from .coordinator import ActronDataCoordinator
-from .api import ZoneError, ConfigurationError, ApiError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -152,7 +151,7 @@ class ActronClimate(ActronEntityBase, ClimateEntity):
         """Return the temperature we try to reach."""
         if self.hvac_mode == HVACMode.COOL:
             return self.coordinator.data["main"]["temp_setpoint_cool"]
-        elif self.hvac_mode == HVACMode.HEAT:
+        if self.hvac_mode == HVACMode.HEAT:
             return self.coordinator.data["main"]["temp_setpoint_heat"]
         return None
 
@@ -404,14 +403,14 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
             if self._has_separate_targets:
                 if main_mode == "COOL":
                     return zone_data["temp_setpoint_cool"]
-                elif main_mode == "HEAT":
+                if main_mode == "HEAT":
                     return zone_data["temp_setpoint_heat"]
-                elif main_mode == "AUTO":
+                if main_mode == "AUTO":
                     # In auto mode, return based on current compressor state
                     compressor_state = self.coordinator.data["main"]["compressor_state"]
                     if compressor_state == "COOL":
                         return zone_data["temp_setpoint_cool"]
-                    elif compressor_state == "HEAT":
+                    if compressor_state == "HEAT":
                         return zone_data["temp_setpoint_heat"]
             else:
                 # Single target mode

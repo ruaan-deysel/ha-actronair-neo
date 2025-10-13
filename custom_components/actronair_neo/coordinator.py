@@ -1,45 +1,47 @@
 """Coordinator for the ActronAir Neo integration."""
 
 import asyncio
-from datetime import timedelta
 import datetime
-from typing import Any, Dict, Optional, Union, cast, List
 import logging
+from datetime import timedelta
+from typing import Any, cast
 
-from homeassistant.core import HomeAssistant  # type: ignore
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed  # type: ignore
-from homeassistant.exceptions import ConfigEntryAuthFailed  # type: ignore
 from homeassistant.components.climate.const import HVACMode  # type: ignore
+from homeassistant.core import HomeAssistant  # type: ignore
+from homeassistant.exceptions import ConfigEntryAuthFailed  # type: ignore
+from homeassistant.helpers.update_coordinator import (  # type: ignore
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
 
 from .api import (
     ActronApi,
     ApiError,
     AuthenticationError,
-    RateLimitError,
-    DeviceOfflineError,
     ConfigurationError,
+    DeviceOfflineError,
+    RateLimitError,
     ZoneError,
 )
-from .types import (
-    CoordinatorData,
-    ZoneData,
-    MainData,
-    AcStatusResponse,
-    FanModeType,
-    PeripheralData,
-    ZoneCapabilities,
-)
 from .const import (
+    ADVANCE_FAN_MODES,
     DOMAIN,
+    FAN_MODE_SUFFIX_CONT,
     MAX_RETRIES,
+    MAX_TEMP,
     MAX_ZONES,
     MIN_FAN_MODE_INTERVAL,
-    VALID_FAN_MODES,
-    FAN_MODE_SUFFIX_CONT,
-    ADVANCE_FAN_MODES,
-    NEO_SERIES_WC,
     MIN_TEMP,
-    MAX_TEMP,
+    NEO_SERIES_WC,
+    VALID_FAN_MODES,
+)
+from .types import (
+    AcStatusResponse,
+    CoordinatorData,
+    FanModeType,
+    MainData,
+    PeripheralData,
+    ZoneData,
 )
 from .zone_presets import ZonePresetManager
 
@@ -57,7 +59,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         update_interval: int,
         enable_zone_control: bool,
     ) -> None:
-        """Initialize the data coordinator.
+        """
+        Initialize the data coordinator.
 
         Args:
             hass: HomeAssistant instance
@@ -65,6 +68,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             device_id: Unique identifier for the device
             update_interval: Update interval in seconds
             enable_zone_control: Whether zone control is enabled
+
         """
         super().__init__(
             hass,
@@ -84,22 +88,23 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         self._min_fan_mode_interval = MIN_FAN_MODE_INTERVAL
 
         # Cache management
-        self._last_cache_cleanup: Optional[datetime.datetime] = None
+        self._last_cache_cleanup: datetime.datetime | None = None
 
         # Enhanced zone management
         self.zone_preset_manager = ZonePresetManager(hass, device_id)
 
         # Performance optimization: data processing cache
-        self._parsed_data_cache: Optional[CoordinatorData] = None
-        self._raw_data_hash: Optional[int] = None
+        self._parsed_data_cache: CoordinatorData | None = None
+        self._raw_data_hash: int | None = None
 
         # Memory optimization: track cache sizes and cleanup
         self._cache_hit_count = 0
         self._cache_miss_count = 0
-        self._last_memory_cleanup: Optional[datetime.datetime] = None
+        self._last_memory_cleanup: datetime.datetime | None = None
 
     def validate_fan_mode(self, mode: str, continuous: bool = False) -> str:
-        """Validate and format fan mode.
+        """
+        Validate and format fan mode.
 
         Args:
             mode: The fan mode to validate (LOW, MED, HIGH, AUTO)
@@ -110,6 +115,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         Raises:
             ValueError: If fan mode is invalid
+
         """
         try:
             # Get supported modes from coordinator data
@@ -155,7 +161,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     def _validate_fan_mode_response(
         self, requested_mode: str, continuous: bool, actual_mode: str
     ) -> bool:
-        """Validate that the fan mode was set correctly.
+        """
+        Validate that the fan mode was set correctly.
 
         Args:
             requested_mode: The requested fan mode
@@ -164,6 +171,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         Returns:
             bool: True if the mode was set correctly
+
         """
         base_requested = requested_mode.split("+")[0].split("-")[0].upper()
         base_actual = actual_mode.split("+")[0].split("-")[0].upper()
@@ -261,17 +269,16 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             if err.is_temporary and self.last_data:
                 _LOGGER.warning("Temporary API error, using cached data: %s", err)
                 return self.last_data
-            elif err.is_client_error:
+            if err.is_client_error:
                 _LOGGER.error("Client error (configuration issue): %s", err)
                 if self.last_data:
                     return self.last_data
                 raise UpdateFailed(f"Configuration error: {err}") from err
-            else:
-                _LOGGER.error("API error: %s", err)
-                if self.last_data:
-                    _LOGGER.warning("Using cached coordinator data due to API error")
-                    return self.last_data
-                raise UpdateFailed(f"API communication error: {err}") from err
+            _LOGGER.error("API error: %s", err)
+            if self.last_data:
+                _LOGGER.warning("Using cached coordinator data due to API error")
+                return self.last_data
+            raise UpdateFailed(f"API communication error: {err}") from err
 
         except Exception as err:
             _LOGGER.error("Unexpected error occurred: %s", err, exc_info=True)
@@ -281,7 +288,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
     async def _parse_data(self, data: AcStatusResponse) -> CoordinatorData:
-        """Parse the data from the API into a format suitable for the climate entity.
+        """
+        Parse the data from the API into a format suitable for the climate entity.
 
         Args:
             data: Raw API response data
@@ -291,6 +299,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         Raises:
             UpdateFailed: If parsing fails
+
         """
         try:
             # Extract main data sections for easier access
@@ -320,13 +329,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Failed to parse API response: {e}") from e
 
     async def _parse_data_optimized(self, data: AcStatusResponse) -> CoordinatorData:
-        """Parse data with performance optimizations and caching.
+        """
+        Parse data with performance optimizations and caching.
 
         Args:
             data: Raw API response data
 
         Returns:
             Parsed coordinator data
+
         """
         # Calculate hash of raw data for change detection
         raw_data_str = str(sorted(data.items()) if isinstance(data, dict) else data)
@@ -358,13 +369,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         return parsed_data
 
     def _extract_data_sections(self, last_known_state: dict) -> dict:
-        """Extract and organize data sections from API response.
+        """
+        Extract and organize data sections from API response.
 
         Args:
             last_known_state: The lastKnownState section from API response
 
         Returns:
             Dictionary with organized data sections
+
         """
         return {
             "user_aircon_settings": last_known_state.get("UserAirconSettings", {}),
@@ -382,13 +395,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         }
 
     async def _parse_main_data(self, data_sections: dict) -> MainData:
-        """Parse main system data from API response sections.
+        """
+        Parse main system data from API response sections.
 
         Args:
             data_sections: Organized data sections from API response
 
         Returns:
             MainData structure with parsed main system information
+
         """
         user_aircon_settings = data_sections["user_aircon_settings"]
         master_info = data_sections["master_info"]
@@ -457,16 +472,18 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         return main_data
 
-    async def _parse_zones_data(self, data_sections: dict) -> Dict[str, ZoneData]:
-        """Parse zone data from API response sections.
+    async def _parse_zones_data(self, data_sections: dict) -> dict[str, ZoneData]:
+        """
+        Parse zone data from API response sections.
 
         Args:
             data_sections: Organized data sections from API response
 
         Returns:
             Dictionary of zone data indexed by zone_id
+
         """
-        zones: Dict[str, ZoneData] = {}
+        zones: dict[str, ZoneData] = {}
         remote_zone_info = data_sections["remote_zone_info"]
         peripherals = data_sections["peripherals"]
         user_aircon_settings = data_sections["user_aircon_settings"]
@@ -554,7 +571,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                                     zone_data["capabilities"] = updated_capabilities
                                 break
 
-                    zones[zone_id] = cast(ZoneData, zone_data)
+                    zones[zone_id] = cast("ZoneData", zone_data)
 
         return zones
 
@@ -601,8 +618,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             self._last_memory_cleanup = now
             _LOGGER.debug("Performed periodic memory cleanup")
 
-    def _validate_fan_modes(self, modes: Any) -> List[str]:
-        """Validate and normalize supported fan modes.
+    def _validate_fan_modes(self, modes: Any) -> list[str]:
+        """
+        Validate and normalize supported fan modes.
 
         Note on Actron Quirks:
         - NV_SupportedFanModes is a bitmap where:
@@ -739,7 +757,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Returning default modes due to error: %s", default_modes)
             return default_modes
 
-    def get_zone_peripheral(self, zone_id: str) -> Optional[PeripheralData]:
+    def get_zone_peripheral(self, zone_id: str) -> PeripheralData | None:
         """Get peripheral data for a specific zone by matching serial numbers."""
         try:
             zone_index = int(zone_id.split("_")[1]) - 1
@@ -777,7 +795,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             for peripheral in peripherals:
                 peripheral_serial = peripheral.get("SerialNumber", "")
                 if peripheral_serial == zone_serial:
-                    return cast(PeripheralData, peripheral)
+                    return cast("PeripheralData", peripheral)
 
             return None
         except (KeyError, ValueError, IndexError) as ex:
@@ -786,7 +804,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             )
             return None
 
-    def get_zone_last_updated(self, zone_id: str) -> Optional[str]:
+    def get_zone_last_updated(self, zone_id: str) -> str | None:
         """Get last update time for a specific zone."""
         try:
             peripheral_data = self.get_zone_peripheral(zone_id)
@@ -830,9 +848,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise
 
     async def set_fan_mode(
-        self, mode: FanModeType, continuous: Optional[bool] = None
+        self, mode: FanModeType, continuous: bool | None = None
     ) -> None:
-        """Set fan mode with state tracking, validation and retry logic.
+        """
+        Set fan mode with state tracking, validation and retry logic.
 
         Args:
             mode: The fan mode to set (LOW, MED, HIGH, AUTO)
@@ -842,6 +861,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             ApiError: If communication with the API fails
             ValueError: If the fan mode is invalid
             RateLimitError: If too many requests are made in a short period
+
         """
         try:
             # If continuous is not specified, maintain current state
@@ -906,11 +926,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                                 )
                                 await asyncio.sleep(2**attempt)  # Exponential backoff
                                 continue
-                            else:
-                                _LOGGER.error(
-                                    "Failed to set continuous mode after %d attempts",
-                                    MAX_RETRIES,
-                                )
+                            _LOGGER.error(
+                                "Failed to set continuous mode after %d attempts",
+                                MAX_RETRIES,
+                            )
 
                         _LOGGER.info("Successfully set fan mode to: %s", validated_mode)
                         break
@@ -949,7 +968,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_zone_temperature(
         self, zone_id: str, temperature: float, temp_key: str
     ) -> None:
-        """Set temperature for a specific zone with comprehensive validation.
+        """
+        Set temperature for a specific zone with comprehensive validation.
 
         Args:
             zone_id: Identifier for the zone
@@ -960,6 +980,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             ZoneError: If zone-specific validation fails
             ConfigurationError: If zone control is disabled
             ApiError: If API communication fails
+
         """
         if not self.enable_zone_control:
             _LOGGER.error(
@@ -1025,11 +1046,14 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             )
             raise
 
-    async def set_zone_state(self, zone_id: Union[str, int], enable: bool) -> None:
-        """Set zone state.
+    async def set_zone_state(self, zone_id: str | int, enable: bool) -> None:
+        """
+        Set zone state.
+
         Args:
             zone_id: Either a zone ID string (e.g. 'zone_1') or direct zone index (0-7)
             enable: True to enable zone, False to disable
+
         """
         try:
             # Handle both string zone_id and direct integer index
@@ -1114,10 +1138,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Cleaned up expired cache entries")
 
     def get_cache_stats(self) -> dict:
-        """Get cache statistics for monitoring.
+        """
+        Get cache statistics for monitoring.
 
         Returns:
             Dictionary with cache statistics
+
         """
         return {
             "api_health": self.api.is_api_healthy(),
@@ -1128,10 +1154,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         }
 
     def get_performance_stats(self) -> dict:
-        """Get performance statistics for monitoring.
+        """
+        Get performance statistics for monitoring.
 
         Returns:
             Dictionary with performance statistics
+
         """
         total_requests = self._cache_hit_count + self._cache_miss_count
         cache_hit_rate = (self._cache_hit_count / max(1, total_requests)) * 100
@@ -1162,7 +1190,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def async_create_zone_preset_from_current(
         self, name: str, description: str = ""
     ) -> None:
-        """Create a zone preset from current zone states.
+        """
+        Create a zone preset from current zone states.
 
         Args:
             name: Preset name
@@ -1170,6 +1199,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         Raises:
             ConfigurationError: If preset creation fails
+
         """
         if not self.last_data:
             raise ConfigurationError("No zone data available")
@@ -1188,13 +1218,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Created zone preset '%s' from current state", name)
 
     async def async_apply_zone_preset(self, preset_name: str) -> None:
-        """Apply a zone preset.
+        """
+        Apply a zone preset.
 
         Args:
             preset_name: Name of preset to apply
 
         Raises:
             ConfigurationError: If preset not found or application fails
+
         """
         preset = self.zone_preset_manager.get_preset(preset_name)
         if not preset:
@@ -1232,9 +1264,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Applied zone preset '%s'", preset_name)
 
     async def async_bulk_zone_operation(
-        self, operation: str, zones: List[str], **kwargs
+        self, operation: str, zones: list[str], **kwargs
     ) -> None:
-        """Perform bulk operations on multiple zones.
+        """
+        Perform bulk operations on multiple zones.
 
         Args:
             operation: Operation type ('enable', 'disable', 'set_temperature')
@@ -1244,6 +1277,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         Raises:
             ConfigurationError: If zone control disabled or invalid operation
             ZoneError: If zone operation fails
+
         """
         if not self.enable_zone_control:
             raise ConfigurationError("Zone control is not enabled")
@@ -1286,7 +1320,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         return results
 
     def _convert_damper_position(self, api_position: int | None) -> int:
-        """Convert damper position from API scale (0-20) to percentage scale (0-100).
+        """
+        Convert damper position from API scale (0-20) to percentage scale (0-100).
 
         The ActronAir Neo API returns damper positions in a 0-20 scale, but Home Assistant
         expects percentage values (0-100). This method converts the API value to the correct
@@ -1297,6 +1332,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         Returns:
             Damper position as percentage (0-100), or 0 if input is None/invalid
+
         """
         if api_position is None:
             return 0

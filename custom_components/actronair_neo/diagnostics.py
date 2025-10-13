@@ -1,21 +1,21 @@
 """Diagnostics support for ActronAir Neo."""
 from __future__ import annotations
 
-from typing import Any
 import logging
 from datetime import datetime
+from typing import Any
 
-from homeassistant.config_entries import ConfigEntry # type: ignore
-from homeassistant.core import HomeAssistant # type: ignore
-from homeassistant.components.diagnostics import async_redact_data # type: ignore
-from homeassistant.util import dt as dt_util # type: ignore
+from homeassistant.components.diagnostics import async_redact_data  # type: ignore
+from homeassistant.config_entries import ConfigEntry  # type: ignore
+from homeassistant.core import HomeAssistant  # type: ignore
+from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 TO_REDACT = {
-    "username", "password", "devices", "unique_id", 
+    "username", "password", "devices", "unique_id",
     "MAC", "mac", "serial", "id", "ip_address", "MACAddress"
 }
 

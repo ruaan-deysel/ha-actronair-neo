@@ -7,8 +7,11 @@ from typing import Any
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er, device_registry as dr
-from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue, async_delete_issue
+from homeassistant.helpers.issue_registry import (
+    IssueSeverity,
+    async_create_issue,
+    async_delete_issue,
+)
 
 from .const import DOMAIN
 from .coordinator import ActronDataCoordinator
@@ -166,7 +169,7 @@ class ConfigurationMigrationRepairFlow(RepairsFlow):
 async def async_check_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Check for common issues and create repair notifications."""
     coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
-    
+
     # Check API authentication status
     if coordinator.api.error_count > 5:
         async_create_issue(
@@ -227,7 +230,7 @@ async def async_check_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_health_check(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
     """Perform comprehensive health check."""
     coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
-    
+
     health_status = {
         "overall_status": "healthy",
         "issues": [],
@@ -262,7 +265,7 @@ async def async_health_check(hass: HomeAssistant, entry: ConfigEntry) -> dict[st
         if zone_data.get("signal_strength") is not None and zone_data["signal_strength"] < -70:
             health_status["issues"].append({
                 "type": "poor_signal",
-                "severity": "warning", 
+                "severity": "warning",
                 "message": f"Zone {zone_data.get('name', zone_id)} has poor signal: {zone_data['signal_strength']} dBm",
                 "recommendation": "Check sensor placement and remove obstructions"
             })

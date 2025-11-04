@@ -1,5 +1,5 @@
 {
-    "name": "domalab/ha-actronair-neo",
+    "name": "ruaan-deysel/ha-actronair-neo",
     "image": "mcr.microsoft.com/devcontainers/python:3.13",
     "postCreateCommand": "scripts/setup",
     "forwardPorts": [

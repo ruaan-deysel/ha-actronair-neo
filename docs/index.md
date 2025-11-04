@@ -51,9 +51,9 @@ If you're a developer looking to contribute to the integration, start with the [
 If you encounter any issues or have questions, please:
 
 1. Check the [Troubleshooting Guide](user/troubleshooting.md) and [FAQ](user/faq.md)
-2. Search for existing issues on the [GitHub repository](https://github.com/domalab/ha-actronair-neo/issues)
+2. Search for existing issues on the [GitHub repository](https://github.com/ruaan-deysel/ha-actronair-neo/issues)
 3. Open a new issue if your problem isn't already reported
 
 ## License
 
-This integration is released under the Apache License. See the [LICENSE](https://github.com/domalab/ha-actronair-neo/blob/main/LICENSE) file for details.
+This integration is released under the Apache License. See the [LICENSE](https://github.com/ruaan-deysel/ha-actronair-neo/blob/main/LICENSE) file for details.

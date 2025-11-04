@@ -19,7 +19,7 @@ body:
         - ✅ Climate controls, sensors, or zones are not responding properly
 
         ## ❌ When NOT to use this template:
-        - 🚫 **Configuration Help**: Need help setting up the integration → Check [documentation](https://domalab.github.io/ha-actronair-neo/)
+        - 🚫 **Configuration Help**: Need help setting up the integration → Check [documentation](https://ruaan-deysel.github.io/ha-actronair-neo/)
         - 🚫 **Feature Requests**: Want new features for the integration → Use "Feature Request" template
 
   - type: input
@@ -140,7 +140,7 @@ body:
       label: ✅ Checklist
       description: "Please confirm you have done the following:"
       options:
-        - label: "I have read the [troubleshooting guide](https://domalab.github.io/ha-actronair-neo/user/troubleshooting/)"
+        - label: "I have read the [troubleshooting guide](https://ruaan-deysel.github.io/ha-actronair-neo/user/troubleshooting/)"
           required: true
         - label: "I have searched existing issues to make sure this isn't a duplicate"
           required: true

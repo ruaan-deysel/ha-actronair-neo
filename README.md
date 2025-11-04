@@ -1,12 +1,12 @@
 
 # ActronAir Neo Integration for Home Assistant
 
-> **📚 [Visit our comprehensive documentation site](https://domalab.github.io/ha-actronair-neo/)** - Complete guides, tutorials, and API reference
+> **📚 [Visit our comprehensive documentation site](https://ruaan-deysel.github.io/ha-actronair-neo/)** - Complete guides, tutorials, and API reference
 
 [![HACS Integration](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
-[![GitHub Last Commit](https://img.shields.io/github/last-commit/domalab/ha-actronair-neo)](https://github.com/domalab/ha-actronair-neo/commits/main)
-[![License](https://img.shields.io/github/license/domalab/ha-actronair-neo)](./LICENSE)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/domalab/ha-actronair-neo)
+[![GitHub Last Commit](https://img.shields.io/github/last-commit/ruaan-deysel/ha-actronair-neo)](https://github.com/ruaan-deysel/ha-actronair-neo/commits/main)
+[![License](https://img.shields.io/github/license/ruaan-deysel/ha-actronair-neo)](./LICENSE)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ruaan-deysel/ha-actronair-neo)
 
 The ActronAir Neo Integration enables seamless control and monitoring of your ActronAir Neo air conditioning system directly from Home Assistant. With this integration, you can automate climate control, monitor indoor and outdoor temperatures, and adjust settings based on real-time data, all from one central location.
 
@@ -22,7 +22,7 @@ The ActronAir Neo Integration enables seamless control and monitoring of your Ac
 
 ### HACS (Recommended)
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=domalab&repository=ha-actronair-neo&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ruaan-deysel&repository=ha-actronair-neo&category=integration)
 
 ### Manual
 
@@ -59,11 +59,11 @@ You can adjust the following options in the integration settings:
 
 If you encounter any issues:
 
-1. **Visit our [online Troubleshooting Guide](https://domalab.github.io/ha-actronair-neo/user/troubleshooting/)** for the most up-to-date solutions
+1. **Visit our [online Troubleshooting Guide](https://ruaan-deysel.github.io/ha-actronair-neo/user/troubleshooting/)** for the most up-to-date solutions
 2. Check that your credentials are correct
 3. Ensure your ActronAir Neo system is online and accessible
 4. Check the Home Assistant logs for any error messages
-5. If you encounter a bug, please report it on our [GitHub issues page](https://github.com/domalab/ha-actronair-neo/issues)
+5. If you encounter a bug, please report it on our [GitHub issues page](https://github.com/ruaan-deysel/ha-actronair-neo/issues)
 
 ## Contributing
 
@@ -74,7 +74,7 @@ Contributions to this integration are welcome. Please fork the repository and su
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/domalab/ha-actronair-neo.git
+   git clone https://github.com/ruaan-deysel/ha-actronair-neo.git
    cd ha-actronair-neo
    ```
 

@@ -21,7 +21,7 @@ body:
         ## ❌ When NOT to use this template:
         - 🚫 **Bug reports**: Your system was working but now has issues → Use "Bug Report" template
         - 🚫 **Feature requests**: Adding new features to working systems → Use "Feature Request" template
-        - 🚫 **Configuration help**: Need help setting up a working system → Check [documentation](https://domalab.github.io/ha-actronair-neo/)
+        - 🚫 **Configuration help**: Need help setting up a working system → Check [documentation](https://ruaan-deysel.github.io/ha-actronair-neo/)
 
   - type: input
     id: system_model
@@ -103,7 +103,7 @@ body:
       label: 📊 Troubleshooting Confirmation
       description: "Have you followed the troubleshooting steps from our documentation?"
       options:
-        - label: "I have read the [troubleshooting guide](https://domalab.github.io/ha-actronair-neo/user/troubleshooting/)"
+        - label: "I have read the [troubleshooting guide](https://ruaan-deysel.github.io/ha-actronair-neo/user/troubleshooting/)"
           required: true
         - label: "I have verified my ActronAir app credentials work correctly"
           required: true
@@ -220,9 +220,9 @@ body:
       value: |
         ## 📚 Helpful Resources
 
-        - **📖 Documentation**: [ActronAir Neo Integration Docs](https://domalab.github.io/ha-actronair-neo/)
-        - **🤖 AI Assistant**: [DeepWiki AI Help](https://deepwiki.com/domalab/ha-actronair-neo)
-        - **🔧 Troubleshooting**: [Troubleshooting Guide](https://domalab.github.io/ha-actronair-neo/user/troubleshooting/)
+        - **📖 Documentation**: [ActronAir Neo Integration Docs](https://ruaan-deysel.github.io/ha-actronair-neo/)
+        - **🤖 AI Assistant**: [DeepWiki AI Help](https://deepwiki.com/ruaan-deysel/ha-actronair-neo)
+        - **🔧 Troubleshooting**: [Troubleshooting Guide](https://ruaan-deysel.github.io/ha-actronair-neo/user/troubleshooting/)
         - **💬 Community**: [Home Assistant Community Forum](https://community.home-assistant.io/)
 
         ## ⏱️ What Happens Next?

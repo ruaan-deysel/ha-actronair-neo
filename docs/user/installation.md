@@ -29,13 +29,13 @@ The Home Assistant Community Store (HACS) provides an easy way to install and up
 
 You can also use this button to directly open the repository in HACS:
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=domalab&repository=ha-actronair-neo&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ruaan-deysel&repository=ha-actronair-neo&category=integration)
 
 ### Method 2: Manual Installation
 
 If you prefer to install the integration manually:
 
-1. Download the latest release from the [GitHub repository](https://github.com/domalab/ha-actronair-neo)
+1. Download the latest release from the [GitHub repository](https://github.com/ruaan-deysel/ha-actronair-neo)
 2. Extract the contents
 3. Copy the `custom_components/actronair_neo` folder to your Home Assistant's `custom_components` directory
 4. Restart Home Assistant
@@ -43,7 +43,7 @@ If you prefer to install the integration manually:
 ```bash
 # Example commands for manual installation
 cd /tmp
-wget https://github.com/domalab/ha-actronair-neo/archive/refs/heads/main.zip
+wget https://github.com/ruaan-deysel/ha-actronair-neo/archive/refs/heads/main.zip
 unzip main.zip
 cp -r ha-actronair-neo-main/custom_components/actronair_neo /path/to/your/homeassistant/custom_components/
 ```

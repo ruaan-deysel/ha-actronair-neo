@@ -125,4 +125,4 @@ Yes, see the [API Reference](../api/authentication.md) for detailed information 
 
 ## Still Have Questions?
 
-If your question isn't answered here, check the [Troubleshooting Guide](troubleshooting.md) or open an issue on the [GitHub repository](https://github.com/domalab/ha-actronair-neo/issues).
+If your question isn't answered here, check the [Troubleshooting Guide](troubleshooting.md) or open an issue on the [GitHub repository](https://github.com/ruaan-deysel/ha-actronair-neo/issues).

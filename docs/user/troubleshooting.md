@@ -172,7 +172,7 @@ If you've tried the troubleshooting steps and still have issues:
    - Steps to reproduce the issue
 
 2. Report the issue on GitHub:
-   - Go to the [GitHub Issues page](https://github.com/domalab/ha-actronair-neo/issues)
+   - Go to the [GitHub Issues page](https://github.com/ruaan-deysel/ha-actronair-neo/issues)
    - Click "New Issue"
    - Provide a clear description and the information gathered above
 

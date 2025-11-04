@@ -1,14 +1,14 @@
 blank_issues_enabled: false
 contact_links:
   - name: 📚 Documentation
-    url: https://domalab.github.io/ha-actronair-neo/
+    url: https://ruaan-deysel.github.io/ha-actronair-neo/
     about: Read the comprehensive documentation for the ActronAir Neo integration
   - name: 🤖 AI Documentation Assistant
-    url: https://deepwiki.com/domalab/ha-actronair-neo
+    url: https://deepwiki.com/ruaan-deysel/ha-actronair-neo
     about: Get AI-powered help with documentation and troubleshooting
   - name: 💬 Community Forum
     url: https://community.home-assistant.io/
     about: Ask questions and get help from the Home Assistant community
   - name: 🔧 Troubleshooting Guide
-    url: https://domalab.github.io/ha-actronair-neo/user/troubleshooting/
+    url: https://ruaan-deysel.github.io/ha-actronair-neo/user/troubleshooting/
     about: Follow the troubleshooting steps for common issues

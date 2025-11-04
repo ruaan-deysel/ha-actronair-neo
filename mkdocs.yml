@@ -1,8 +1,8 @@
 site_name: ActronAir Neo Integration
 site_description: Documentation for the ActronAir Neo integration for Home Assistant
 site_author: Ruaan Deysel
-site_url: https://domalab.github.io/ha-actronair-neo/
-repo_url: https://github.com/domalab/ha-actronair-neo
+site_url: https://ruaan-deysel.github.io/ha-actronair-neo/
+repo_url: https://github.com/ruaan-deysel/ha-actronair-neo
 edit_uri: edit/main/docs/
 
 theme:
@@ -72,11 +72,11 @@ nav:
     - Queries: api/queries.md
     - Responses: api/responses.md
   - Project:
-    - Changelog: https://github.com/domalab/ha-actronair-neo/blob/main/CHANGELOG.md
+    - Changelog: https://github.com/ruaan-deysel/ha-actronair-neo/blob/main/CHANGELOG.md
 
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/domalab/ha-actronair-neo
+      link: https://github.com/ruaan-deysel/ha-actronair-neo
   version:
     provider: mike

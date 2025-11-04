@@ -38,7 +38,7 @@ Before you begin, ensure you have the following installed:
    ```
 3. Add the upstream repository as a remote:
    ```bash
-   git remote add upstream https://github.com/domalab/ha-actronair-neo.git
+   git remote add upstream https://github.com/ruaan-deysel/ha-actronair-neo.git
    ```
 
 ## Development Environment
@@ -234,7 +234,7 @@ git commit -m "Add feature: detailed description of the change"
    git push origin feature/your-feature-name
    ```
 
-2. Go to the [original repository](https://github.com/domalab/ha-actronair-neo) and create a pull request
+2. Go to the [original repository](https://github.com/ruaan-deysel/ha-actronair-neo) and create a pull request
 
 3. Fill in the pull request template with:
    - A clear title

@@ -1,6 +1,0 @@
-# robots.txt for https://ruaan-deysel.github.io/ha-actronair-neo/
-User-agent: *
-Allow: /
-
-# Sitemap location
-Sitemap: https://ruaan-deysel.github.io/ha-actronair-neo/sitemap.xml

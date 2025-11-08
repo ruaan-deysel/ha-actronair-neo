@@ -57,7 +57,7 @@ You can adjust the following options in the integration settings:
 
 If you encounter any issues:
 
-1. Check the [Docs](/docs)
+1. Check the [Docs](docs/index.md)
 2. Check that your credentials are correct
 3. Ensure your ActronAir Neo system is online and accessible
 4. Check the Home Assistant logs for any error messages

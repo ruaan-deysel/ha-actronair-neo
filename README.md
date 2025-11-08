@@ -1,8 +1,6 @@
 
 # ActronAir Neo Integration for Home Assistant
 
-> **📚 [Visit our comprehensive documentation site](https://ruaan-deysel.github.io/ha-actronair-neo/)** - Complete guides, tutorials, and API reference
-
 [![HACS Integration](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub Last Commit](https://img.shields.io/github/last-commit/ruaan-deysel/ha-actronair-neo)](https://github.com/ruaan-deysel/ha-actronair-neo/commits/main)
 [![License](https://img.shields.io/github/license/ruaan-deysel/ha-actronair-neo)](./LICENSE)
@@ -59,7 +57,7 @@ You can adjust the following options in the integration settings:
 
 If you encounter any issues:
 
-1. **Visit our [online Troubleshooting Guide](https://ruaan-deysel.github.io/ha-actronair-neo/user/troubleshooting/)** for the most up-to-date solutions
+1. Check the [Docs](/docs)
 2. Check that your credentials are correct
 3. Ensure your ActronAir Neo system is online and accessible
 4. Check the Home Assistant logs for any error messages

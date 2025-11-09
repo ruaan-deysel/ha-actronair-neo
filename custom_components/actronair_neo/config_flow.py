@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol  # type: ignore
 from homeassistant import config_entries  # type: ignore
 from homeassistant.core import HomeAssistant, callback  # type: ignore
-from homeassistant.data_entry_flow import FlowResult  # type: ignore
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.helpers import aiohttp_client  # type: ignore
 
@@ -21,6 +20,9 @@ from .const import (
     DEFAULT_REFRESH_INTERVAL,
     DOMAIN,
 )
+
+if TYPE_CHECKING:
+    from homeassistant.data_entry_flow import FlowResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,7 +50,8 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         await api.initializer()
         devices = await api.get_devices()
         if not devices:
-            raise CannotConnect("No devices found")
+            msg = "No devices found"
+            raise CannotConnect(msg)
 
         # Return all devices for selection
         return {
@@ -71,7 +74,7 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the config flow."""
         self._devices = []
         self._username = None

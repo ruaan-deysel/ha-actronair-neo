@@ -1,18 +1,22 @@
 """Zone preset management for ActronAir Neo integration."""
+
 from __future__ import annotations
 
 import json
 import logging
 import os
 from datetime import datetime, time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .api import ConfigurationError
 
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
 _LOGGER = logging.getLogger(__name__)
+
 
 class ZonePreset:
     """Represents a zone preset configuration."""
@@ -23,10 +27,10 @@ class ZonePreset:
         zones: dict[str, dict[str, Any]],
         description: str = "",
         created_at: datetime | None = None,
-    ):
+    ) -> None:
         """
         Initialize zone preset.
-        
+
         Args:
             name: Preset name
             zones: Zone configurations {zone_id: {enabled: bool, temp_cool: float, temp_heat: float}}
@@ -65,6 +69,7 @@ class ZonePreset:
             created_at=created_at,
         )
 
+
 class ZoneSchedule:
     """Represents a zone schedule entry."""
 
@@ -76,10 +81,10 @@ class ZoneSchedule:
         time_end: time,
         days: list[int],  # 0=Monday, 6=Sunday
         enabled: bool = True,
-    ):
+    ) -> None:
         """
         Initialize zone schedule.
-        
+
         Args:
             name: Schedule name
             preset_name: Name of preset to apply
@@ -136,13 +141,14 @@ class ZoneSchedule:
             return self.time_start <= now <= self.time_end
         return now >= self.time_start or now <= self.time_end
 
+
 class ZonePresetManager:
     """Manages zone presets and schedules."""
 
-    def __init__(self, hass: HomeAssistant, device_id: str):
+    def __init__(self, hass: HomeAssistant, device_id: str) -> None:
         """
         Initialize preset manager.
-        
+
         Args:
             hass: Home Assistant instance
             device_id: Device identifier
@@ -175,17 +181,21 @@ class ZonePresetManager:
 
                 _LOGGER.debug(
                     "Loaded %d presets and %d schedules for device %s",
-                    len(self._presets), len(self._schedules), self.device_id
+                    len(self._presets),
+                    len(self._schedules),
+                    self.device_id,
                 )
         except Exception as err:
-            _LOGGER.error("Failed to load zone presets: %s", err)
+            _LOGGER.exception("Failed to load zone presets: %s", err)
 
     async def async_save(self) -> None:
         """Save presets and schedules to storage."""
         try:
             data = {
                 "presets": [preset.to_dict() for preset in self._presets.values()],
-                "schedules": [schedule.to_dict() for schedule in self._schedules.values()],
+                "schedules": [
+                    schedule.to_dict() for schedule in self._schedules.values()
+                ],
             }
 
             with open(self._storage_file, "w") as f:
@@ -193,7 +203,7 @@ class ZonePresetManager:
 
             _LOGGER.debug("Saved zone presets for device %s", self.device_id)
         except Exception as err:
-            _LOGGER.error("Failed to save zone presets: %s", err)
+            _LOGGER.exception("Failed to save zone presets: %s", err)
 
     async def async_create_preset(
         self,
@@ -203,18 +213,19 @@ class ZonePresetManager:
     ) -> None:
         """
         Create a new zone preset.
-        
+
         Args:
             name: Preset name
             zones: Zone configurations
             description: Optional description
-            
+
         Raises:
             ConfigurationError: If preset name already exists
 
         """
         if name in self._presets:
-            raise ConfigurationError(f"Preset '{name}' already exists")
+            msg = f"Preset '{name}' already exists"
+            raise ConfigurationError(msg)
 
         preset = ZonePreset(name, zones, description)
         self._presets[name] = preset
@@ -225,20 +236,22 @@ class ZonePresetManager:
     async def async_delete_preset(self, name: str) -> None:
         """
         Delete a zone preset.
-        
+
         Args:
             name: Preset name
-            
+
         Raises:
             ConfigurationError: If preset doesn't exist
 
         """
         if name not in self._presets:
-            raise ConfigurationError(f"Preset '{name}' not found")
+            msg = f"Preset '{name}' not found"
+            raise ConfigurationError(msg)
 
         # Remove any schedules using this preset
         schedules_to_remove = [
-            schedule_name for schedule_name, schedule in self._schedules.items()
+            schedule_name
+            for schedule_name, schedule in self._schedules.items()
             if schedule.preset_name == name
         ]
 
@@ -269,7 +282,7 @@ class ZonePresetManager:
     ) -> None:
         """
         Create a new zone schedule.
-        
+
         Args:
             name: Schedule name
             preset_name: Name of preset to apply
@@ -277,16 +290,18 @@ class ZonePresetManager:
             time_end: End time
             days: List of weekdays
             enabled: Whether schedule is active
-            
+
         Raises:
             ConfigurationError: If schedule name exists or preset not found
 
         """
         if name in self._schedules:
-            raise ConfigurationError(f"Schedule '{name}' already exists")
+            msg = f"Schedule '{name}' already exists"
+            raise ConfigurationError(msg)
 
         if preset_name not in self._presets:
-            raise ConfigurationError(f"Preset '{preset_name}' not found")
+            msg = f"Preset '{preset_name}' not found"
+            raise ConfigurationError(msg)
 
         schedule = ZoneSchedule(name, preset_name, time_start, time_end, days, enabled)
         self._schedules[name] = schedule
@@ -297,7 +312,8 @@ class ZonePresetManager:
     def get_active_schedules(self) -> list[ZoneSchedule]:
         """Get currently active schedules."""
         return [
-            schedule for schedule in self._schedules.values()
+            schedule
+            for schedule in self._schedules.values()
             if schedule.is_active_now()
         ]
 

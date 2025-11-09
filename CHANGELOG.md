@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Performance Metrics Sensor**: Fixed inconsistent and delayed updates for `sensor.actronair_neo_performance_metrics`
+  - Added explicit `should_poll = False` to prevent duplicate polling
+  - Added `available` property to validate data availability before updates
+  - Improved error handling with debug/warning logging instead of silent failures
+  - Enhanced data validation in `extra_state_attributes` method
+  - Sensor now updates consistently with the coordinator refresh interval
+
 ### Added
 
 ### Changed

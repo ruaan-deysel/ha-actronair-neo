@@ -929,6 +929,25 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
         self._attr_native_unit_of_measurement = "%"
         self._attr_device_class = None
         self._attr_state_class = None
+        # Explicitly disable polling - coordinator handles updates
+        self._attr_should_poll = False
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        try:
+            # Check if coordinator is available and has required data
+            if not super().available:
+                return False
+
+            raw_data = self.coordinator.data.get("raw_data", {})
+            last_known_state = raw_data.get("lastKnownState", {})
+
+            # Sensor is available if we have LiveAircon data
+            return "LiveAircon" in last_known_state
+        except (KeyError, TypeError, AttributeError):
+            _LOGGER.debug("Performance sensor unavailable: missing required data")
+            return False
 
     @property
     def native_value(self) -> float | None:
@@ -938,13 +957,19 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
             last_known_state = raw_data.get("lastKnownState", {})
             live_aircon = last_known_state.get("LiveAircon", {})
 
-            # Calculate efficiency based on compressor capacity and system status
-            if live_aircon.get("SystemOn", False):
-                capacity = live_aircon.get("CompressorCapacity", 0)
-                return float(capacity) if capacity is not None else 0.0
-            return 0.0
+            if not live_aircon:
+                _LOGGER.debug("Performance sensor: No LiveAircon data available")
+                return None
 
-        except (KeyError, TypeError, ValueError):
+            # Calculate efficiency based on compressor capacity and system status
+            # Return capacity even when system is off (0%) for consistent updates
+            capacity = live_aircon.get("CompressorCapacity", 0)
+            return float(capacity) if capacity is not None else 0.0
+
+        except (KeyError, TypeError, ValueError) as err:
+            _LOGGER.warning(
+                "Error getting performance sensor value: %s", err, exc_info=True
+            )
             return None
 
     def _format_temperature(self, value: Any) -> str:
@@ -988,13 +1013,21 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return enhanced performance attributes with live operational data."""
         try:
-            main_data = self.coordinator.data["main"]
+            main_data = self.coordinator.data.get("main", {})
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
+
+            if not last_known_state:
+                _LOGGER.debug("Performance sensor: No lastKnownState data available")
+                return {"status": "No data available"}
 
             live_aircon = last_known_state.get("LiveAircon", {})
             outdoor_unit = live_aircon.get("OutdoorUnit", {})
             system_status = last_known_state.get("SystemStatus_Local", {})
+
+            if not live_aircon:
+                _LOGGER.debug("Performance sensor: No LiveAircon data available")
+                return {"status": "No live data available"}
 
             return {
                 # Operational Status
@@ -1062,10 +1095,13 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
                 "continuous_fan": main_data.get("fan_continuous", False),
             }
 
-        except (KeyError, TypeError, ValueError):
-            _LOGGER.exception("Error getting performance attributes")
+        except (KeyError, TypeError, ValueError) as err:
+            _LOGGER.warning(
+                "Error getting performance attributes: %s", err, exc_info=True
+            )
             return {
                 "error": "Failed to retrieve performance data",
+                "error_details": str(err),
             }
 
 

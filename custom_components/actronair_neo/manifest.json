@@ -10,6 +10,6 @@
   "issue_tracker": "https://github.com/ruaan-deysel/ha-actronair-neo/issues",
   "requirements": ["aiofiles"],
   "ssdp": [],
-  "version": "2025.10.3",
+  "version": "2025.11.0",
   "zeroconf": []
 }

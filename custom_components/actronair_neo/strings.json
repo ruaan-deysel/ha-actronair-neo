@@ -56,5 +56,22 @@
                 }
             }
         }
+    },
+    "entity": {
+        "number": {
+            "airflow": {
+                "name": "Airflow"
+            }
+        },
+        "sensor": {
+            "damper_position": {
+                "name": "Damper Position"
+            }
+        },
+        "binary_sensor": {
+            "yourzone_enabled": {
+                "name": "YourZone Enabled"
+            }
+        }
     }
 }

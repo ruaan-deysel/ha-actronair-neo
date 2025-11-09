@@ -203,7 +203,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         return self._continuous_fan
 
     @continuous_fan.setter
-    def continuous_fan(self, value: bool):
+    def continuous_fan(self, value: bool) -> None:
         """Set continuous fan state."""
         self._continuous_fan = value
 
@@ -245,7 +245,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             return parsed_data
 
         except AuthenticationError as err:
-            _LOGGER.error("Authentication error: %s", err)
+            _LOGGER.exception("Authentication error: %s", err)
             # Clear any cached data on auth failure
             await self.api.clear_all_caches()
             raise ConfigEntryAuthFailed from err
@@ -256,36 +256,41 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 _LOGGER.info("Using cached coordinator data due to rate limiting")
                 return self.last_data
             # Don't raise UpdateFailed for rate limits if we have cached data
-            raise UpdateFailed(f"Rate limit exceeded: {err}") from err
+            msg = f"Rate limit exceeded: {err}"
+            raise UpdateFailed(msg) from err
 
         except DeviceOfflineError as err:
             _LOGGER.warning("Device appears to be offline: %s", err)
             if self.last_data:
                 _LOGGER.info("Using cached coordinator data while device is offline")
                 return self.last_data
-            raise UpdateFailed(f"Device offline: {err}") from err
+            msg = f"Device offline: {err}"
+            raise UpdateFailed(msg) from err
 
         except ApiError as err:
             if err.is_temporary and self.last_data:
                 _LOGGER.warning("Temporary API error, using cached data: %s", err)
                 return self.last_data
             if err.is_client_error:
-                _LOGGER.error("Client error (configuration issue): %s", err)
+                _LOGGER.exception("Client error (configuration issue): %s", err)
                 if self.last_data:
                     return self.last_data
-                raise UpdateFailed(f"Configuration error: {err}") from err
-            _LOGGER.error("API error: %s", err)
+                msg = f"Configuration error: {err}"
+                raise UpdateFailed(msg) from err
+            _LOGGER.exception("API error: %s", err)
             if self.last_data:
                 _LOGGER.warning("Using cached coordinator data due to API error")
                 return self.last_data
-            raise UpdateFailed(f"API communication error: {err}") from err
+            msg = f"API communication error: {err}"
+            raise UpdateFailed(msg) from err
 
         except Exception as err:
             _LOGGER.error("Unexpected error occurred: %s", err, exc_info=True)
             if self.last_data:
                 _LOGGER.warning("Using cached coordinator data due to unexpected error")
                 return self.last_data
-            raise UpdateFailed(f"Unexpected error: {err}") from err
+            msg = f"Unexpected error: {err}"
+            raise UpdateFailed(msg) from err
 
     async def _parse_data(self, data: AcStatusResponse) -> CoordinatorData:
         """
@@ -326,7 +331,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         except Exception as e:
             _LOGGER.error("Failed to parse API response: %s", e, exc_info=True)
-            raise UpdateFailed(f"Failed to parse API response: {e}") from e
+            msg = f"Failed to parse API response: {e}"
+            raise UpdateFailed(msg) from e
 
     async def _parse_data_optimized(self, data: AcStatusResponse) -> CoordinatorData:
         """
@@ -515,6 +521,16 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                         "damper_position": self._convert_damper_position(
                             zone.get("ZonePosition")
                         ),
+                        # YourZone airflow control fields
+                        "airflow_setpoint": zone.get("AirflowSetpoint"),
+                        "airflow_control_enabled": zone.get(
+                            "AirflowControlEnabled", False
+                        ),
+                        "airflow_control_locked": zone.get(
+                            "AirflowControlLocked", False
+                        ),
+                        "zone_max_position": zone.get("ZoneMaxPosition"),
+                        "zone_min_position": zone.get("ZoneMinPosition"),
                         # Initialize peripheral data
                         "battery_level": None,
                         "signal_strength": None,
@@ -526,13 +542,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     # Find and add matching peripheral data by sensor serial number
                     # Access sensor info from current zone (case-insensitive device ID lookup)
                     zone_sensors = zone.get("Sensors", {})
-                    zone_sensor_info = {}
                     zone_sensor_kind = ""
 
                     # Find device ID with case-insensitive matching
                     for device_key, sensor_data in zone_sensors.items():
                         if device_key.lower() == self.device_id.lower():
-                            zone_sensor_info = sensor_data
                             zone_sensor_kind = sensor_data.get("NV_Kind", "")
                             break
 
@@ -748,7 +762,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             return supported
 
         except Exception as err:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Error validating fan modes: %s (input was: %s, type: %s)",
                 err,
                 modes,
@@ -769,13 +783,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
             zone_info = remote_zone_info[zone_index]
             zone_sensors = zone_info.get("Sensors", {})
-            zone_sensor_info = {}
             zone_sensor_kind = ""
 
             # Find device ID with case-insensitive matching
             for device_key, sensor_data in zone_sensors.items():
                 if device_key.lower() == self.device_id.lower():
-                    zone_sensor_info = sensor_data
                     zone_sensor_kind = sensor_data.get("NV_Kind", "")
                     break
 
@@ -799,7 +811,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
             return None
         except (KeyError, ValueError, IndexError) as ex:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Error getting peripheral data for zone %s: %s", zone_id, str(ex)
             )
             return None
@@ -812,7 +824,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 peripheral_data.get("LastConnectionTime") if peripheral_data else None
             )
         except (KeyError, ValueError, IndexError) as ex:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Error getting last update time for zone %s: %s", zone_id, str(ex)
             )
             return None
@@ -827,7 +839,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.api.send_command(self.device_id, command)
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set HVAC mode to %s: %s", hvac_mode, err)
+            _LOGGER.exception("Failed to set HVAC mode to %s: %s", hvac_mode, err)
             raise
 
     async def set_temperature(self, temperature: float, is_cooling: bool) -> None:
@@ -839,7 +851,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.api.send_command(self.device_id, command)
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Failed to set %s temperature to %s: %s",
                 "cooling" if is_cooling else "heating",
                 temperature,
@@ -949,10 +961,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                             )
                             await asyncio.sleep(wait_time)
                             continue
-                        _LOGGER.error("API error setting fan mode: %s", e)
+                        _LOGGER.exception("API error setting fan mode: %s", e)
                         raise
                     except Exception as err:
-                        _LOGGER.error("Unexpected error setting fan mode: %s", err)
+                        _LOGGER.exception("Unexpected error setting fan mode: %s", err)
                         raise
 
         except Exception as err:
@@ -986,13 +998,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error(
                 "Attempted to set zone temperature while zone control is disabled"
             )
-            raise ConfigurationError(
-                "Zone control is not enabled", config_key="enable_zone_control"
-            )
+            msg = "Zone control is not enabled"
+            raise ConfigurationError(msg, config_key="enable_zone_control")
 
         if not self.last_data:
             _LOGGER.error("No data available for zone temperature control")
-            raise ZoneError("No system data available", zone_id=zone_id)
+            msg = "No system data available"
+            raise ZoneError(msg, zone_id=zone_id)
 
         zones_data = self.last_data.get("zones", {})
         zone_data = zones_data.get(zone_id)
@@ -1003,7 +1015,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 zone_id,
                 list(zones_data.keys()),
             )
-            raise ZoneError(f"Zone {zone_id} not found", zone_id=zone_id)
+            msg = f"Zone {zone_id} not found"
+            raise ZoneError(msg, zone_id=zone_id)
 
         # Note: We allow setting temperature for disabled zones as the ActronAir API
         # supports this and it's useful for pre-setting temperatures before enabling zones
@@ -1017,8 +1030,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 MAX_TEMP,
                 zone_id,
             )
+            msg = f"Temperature {temperature} outside valid range [{MIN_TEMP}, {MAX_TEMP}]"
             raise ZoneError(
-                f"Temperature {temperature} outside valid range [{MIN_TEMP}, {MAX_TEMP}]",
+                msg,
                 zone_id=zone_id,
             )
 
@@ -1026,9 +1040,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         capabilities = zone_data.get("capabilities", {})
         if not capabilities.get("has_temp_control", False):
             _LOGGER.error("Zone %s does not support temperature control", zone_id)
-            raise ZoneError(
-                f"Zone {zone_id} does not support temperature control", zone_id=zone_id
-            )
+            msg = f"Zone {zone_id} does not support temperature control"
+            raise ZoneError(msg, zone_id=zone_id)
 
         try:
             zone_index = int(zone_id.split("_")[1]) - 1
@@ -1041,7 +1054,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             )
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Failed to set zone %s temperature to %s: %s", zone_id, temperature, err
             )
             raise
@@ -1082,10 +1095,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 await self.api.send_command(self.device_id, command)
                 await self.async_request_refresh()
             else:
-                raise ValueError(f"Zone index {zone_index} out of range")
+                msg = f"Zone index {zone_index} out of range"
+                raise ValueError(msg)
 
         except Exception as err:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Failed to set zone %s state to %s: %s",
                 zone_id,
                 "on" if enable else "off",
@@ -1100,7 +1114,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.api.send_command(self.device_id, command)
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set climate mode to %s: %s", mode, err)
+            _LOGGER.exception("Failed to set climate mode to %s: %s", mode, err)
             raise
 
     async def set_away_mode(self, state: bool) -> None:
@@ -1109,7 +1123,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.api.set_away_mode(state)
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set away mode to %s: %s", state, err)
+            _LOGGER.exception("Failed to set away mode to %s: %s", state, err)
             raise
 
     async def set_quiet_mode(self, state: bool) -> None:
@@ -1118,7 +1132,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.api.set_quiet_mode(state)
             await self.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set quiet mode to %s: %s", state, err)
+            _LOGGER.exception("Failed to set quiet mode to %s: %s", state, err)
             raise
 
     async def force_update(self) -> None:
@@ -1185,7 +1199,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.zone_preset_manager.async_load()
             _LOGGER.debug("Zone management initialized for device %s", self.device_id)
         except Exception as err:
-            _LOGGER.error("Failed to initialize zone management: %s", err)
+            _LOGGER.exception("Failed to initialize zone management: %s", err)
 
     async def async_create_zone_preset_from_current(
         self, name: str, description: str = ""
@@ -1202,7 +1216,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         """
         if not self.last_data:
-            raise ConfigurationError("No zone data available")
+            msg = "No zone data available"
+            raise ConfigurationError(msg)
 
         zones_config = {}
         for zone_id, zone_data in self.last_data["zones"].items():
@@ -1230,10 +1245,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """
         preset = self.zone_preset_manager.get_preset(preset_name)
         if not preset:
-            raise ConfigurationError(f"Preset '{preset_name}' not found")
+            msg = f"Preset '{preset_name}' not found"
+            raise ConfigurationError(msg)
 
         if not self.enable_zone_control:
-            raise ConfigurationError("Zone control is not enabled")
+            msg = "Zone control is not enabled"
+            raise ConfigurationError(msg)
 
         # Apply zone states
         for zone_id, zone_config in preset.zones.items():
@@ -1258,7 +1275,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                             )
 
             except Exception as err:
-                _LOGGER.error("Failed to apply preset to zone %s: %s", zone_id, err)
+                _LOGGER.exception("Failed to apply preset to zone %s: %s", zone_id, err)
 
         await self.async_request_refresh()
         _LOGGER.info("Applied zone preset '%s'", preset_name)
@@ -1280,10 +1297,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         """
         if not self.enable_zone_control:
-            raise ConfigurationError("Zone control is not enabled")
+            msg = "Zone control is not enabled"
+            raise ConfigurationError(msg)
 
         if operation not in ["enable", "disable", "set_temperature"]:
-            raise ConfigurationError(f"Invalid operation: {operation}")
+            msg = f"Invalid operation: {operation}"
+            raise ConfigurationError(msg)
 
         results = []
         for zone_id in zones:
@@ -1310,7 +1329,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                         )
 
             except Exception as err:
-                _LOGGER.error("Bulk operation failed for zone %s: %s", zone_id, err)
+                _LOGGER.exception("Bulk operation failed for zone %s: %s", zone_id, err)
                 results.append(
                     {"zone_id": zone_id, "status": "error", "error": str(err)}
                 )

@@ -4,22 +4,18 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from homeassistant.components.sensor import (  # type: ignore
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.const import (  # type: ignore
     UnitOfEnergy,
     UnitOfPower,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant  # type: ignore
-from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
-from homeassistant.helpers.typing import StateType  # type: ignore
 from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
 
 from .base_entity import ActronEntityBase
@@ -30,7 +26,14 @@ from .const import (
     ATTR_ZONE_TYPE,
     DOMAIN,
 )
-from .coordinator import ActronDataCoordinator
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddEntitiesCallback
+    from homeassistant.helpers.typing import StateType
+
+    from .coordinator import ActronDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,24 +58,15 @@ def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
         raw_data = coordinator.data.get("raw_data", {})
         last_known_state = raw_data.get("lastKnownState", {})
 
-        # Get the first key (serial number) from lastKnownState
+        # Validate lastKnownState data is available
         if not last_known_state:
             _LOGGER.warning(
                 "No lastKnownState data available for power monitoring check"
             )
             return False
 
-        # Get the actual data (it's nested under the serial number key)
-        serial_key = next(iter(last_known_state.keys()))
-        system_data = last_known_state.get(serial_key, {})
-
-        _LOGGER.debug(
-            "Power monitoring check - serial_key: %s, has system_data: %s",
-            serial_key,
-            bool(system_data),
-        )
-
-        aircon_system = system_data.get("AirconSystem", {})
+        # Access AirconSystem directly from lastKnownState (no serial number wrapper)
+        aircon_system = last_known_state.get("AirconSystem", {})
         outdoor_unit_info = aircon_system.get("OutdoorUnit", {})
 
         _LOGGER.debug(
@@ -94,23 +88,32 @@ def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
         # and voltage sensing circuitry
         if "Fixed Speed" in family and "Type 100" in ctrl_board_type:
             _LOGGER.info(
-                "Power monitoring not supported: Fixed Speed unit with Type 100 controller "
-                "(Family: %s, Controller: %s)",
+                "Power monitoring not supported: Fixed Speed unit with Type 100 "
+                "controller (Family: %s, Controller: %s)",
                 family,
                 ctrl_board_type,
             )
             return False
 
         # Additional runtime check: Verify if power fields are populated
-        # This catches cases where API fields exist but hardware doesn't
-        # provide data
-        live_aircon = system_data.get("LiveAircon", {})
+        # This catches cases where API fields exist but hardware doesn't provide data
+        # Access LiveAircon directly from lastKnownState (no serial number wrapper)
+        live_aircon = last_known_state.get("LiveAircon", {})
         outdoor_unit_live = live_aircon.get("OutdoorUnit", {})
 
         comp_power = outdoor_unit_live.get("CompPower", 0)
         supply_voltage = outdoor_unit_live.get("SupplyVoltage_Vac", 0.0)
         supply_current = outdoor_unit_live.get("SupplyCurrentRMS_A", 0.0)
         compressor_on = outdoor_unit_live.get("CompressorOn", False)
+
+        _LOGGER.debug(
+            "Power monitoring check - CompPower: %s, Voltage: %s, Current: %s, "
+            "Compressor: %s",
+            comp_power,
+            supply_voltage,
+            supply_current,
+            "ON" if compressor_on else "OFF",
+        )
 
         # If compressor is running but all power fields are zero,
         # hardware doesn't support it
@@ -139,13 +142,17 @@ def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
             )
             return True
 
-        # If we can't determine definitively, check for VSD indicators
-        # VSD units typically support power monitoring
-        if "VSD" in family or "Variable Speed" in family:
+        # Advanced/Inverter series units typically support power monitoring
+        # Check for indicators in the Family field
+        if any(
+            indicator in family
+            for indicator in ["Advance", "Inverter", "VSD", "Variable Speed"]
+        ):
             _LOGGER.info(
-                "Power monitoring likely supported: VSD/Variable Speed unit detected "
-                "(Family: %s)",
+                "Power monitoring likely supported: Advanced/Inverter unit detected "
+                "(Family: %s, Controller: %s)",
                 family,
+                ctrl_board_type,
             )
             return True
 
@@ -195,7 +202,8 @@ async def async_setup_entry(
             outdoor_unit_info = {}
 
         _LOGGER.info(
-            "Adding power monitoring sensors for device %s (Family: %s, Controller: %s)",
+            "Adding power monitoring sensors for device %s (Family: %s, "
+            "Controller: %s)",
             coordinator.device_id,
             outdoor_unit_info.get("Family", "Unknown"),
             outdoor_unit_info.get("CtrlBoardType", "Unknown"),
@@ -231,6 +239,8 @@ async def async_setup_entry(
     for zone_id, zone_data in coordinator.data["zones"].items():
         _LOGGER.debug("Adding zone sensor for %s: %s", zone_id, zone_data)
         entities.append(ActronZoneSensor(coordinator, zone_id))
+        # Add damper position sensor for each zone
+        entities.append(ActronZoneDamperPositionSensor(coordinator, zone_id))
 
     # Add consolidated zone damper diagnostic sensor
     entities.append(ActronZoneDamperDiagnosticSensor(coordinator))
@@ -325,10 +335,8 @@ class ActronZoneSensor(ActronEntityBase, SensorEntity):
         """Return the temperature of the zone."""
         try:
             return self.coordinator.data["zones"][self.zone_id]["temp"]
-        except KeyError as err:
-            _LOGGER.error(
-                "Failed to get temperature for zone %s: %s", self.zone_id, err
-            )
+        except KeyError:
+            _LOGGER.exception("Failed to get temperature for zone %s", self.zone_id)
             return None
 
     @property
@@ -425,19 +433,67 @@ class ActronZoneSensor(ActronEntityBase, SensorEntity):
             _LOGGER.debug("Zone %s attributes: %s", self.zone_id, attributes)
             return attributes
 
-        except KeyError as ex:
-            _LOGGER.error(
-                "Key error getting attributes for zone %s: %s", self.zone_id, str(ex)
+        except KeyError:
+            _LOGGER.exception("Key error getting attributes for zone %s", self.zone_id)
+            return {}
+        except TypeError:
+            _LOGGER.exception("Type error getting attributes for zone %s", self.zone_id)
+            return {}
+        except ValueError:
+            _LOGGER.exception(
+                "Value error getting attributes for zone %s", self.zone_id
             )
             return {}
-        except TypeError as ex:
-            _LOGGER.error(
-                "Type error getting attributes for zone %s: %s", self.zone_id, str(ex)
-            )
-            return {}
-        except ValueError as ex:
-            _LOGGER.error(
-                "Value error getting attributes for zone %s: %s", self.zone_id, str(ex)
+
+
+class ActronZoneDamperPositionSensor(ActronEntityBase, SensorEntity):
+    """Zone damper position sensor (read-only)."""
+
+    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
+        """Initialize the zone damper position sensor."""
+        zone_name = coordinator.data["zones"][zone_id]["name"]
+        super().__init__(coordinator, "sensor", f"{zone_name} Damper Position")
+        self.zone_id = zone_id
+        self._attr_native_unit_of_measurement = "%"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:valve"
+        self._attr_device_class = None
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current damper position percentage."""
+        try:
+            return self.coordinator.data["zones"][self.zone_id].get("damper_position")
+        except KeyError:
+            _LOGGER.exception("Failed to get damper position for zone %s", self.zone_id)
+            return None
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return (
+            super().available
+            and self.zone_id in self.coordinator.data["zones"]
+            and self.coordinator.data["zones"][self.zone_id].get("damper_position")
+            is not None
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return damper-specific attributes."""
+        try:
+            zone_data = self.coordinator.data["zones"][self.zone_id]
+            return {
+                "zone_id": self.zone_id,
+                "zone_name": zone_data.get("name"),
+                "zone_max_position": zone_data.get("zone_max_position"),
+                "zone_min_position": zone_data.get("zone_min_position"),
+                "yourzone_enabled": zone_data.get("airflow_control_enabled"),
+                "airflow_setpoint": zone_data.get("airflow_setpoint"),
+            }
+        except KeyError:
+            _LOGGER.exception(
+                "Key error getting damper attributes for zone %s", self.zone_id
             )
             return {}
 
@@ -542,8 +598,8 @@ class ActronZoneDamperDiagnosticSensor(ActronEntityBase, SensorEntity):
 
             return attributes
 
-        except (KeyError, TypeError) as ex:
-            _LOGGER.error("Error getting damper diagnostic attributes: %s", str(ex))
+        except (KeyError, TypeError):
+            _LOGGER.exception("Error getting damper diagnostic attributes")
             return {"error": "Failed to retrieve damper data"}
 
 
@@ -637,14 +693,22 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
                 "compressor_power": self._format_power_value(
                     live_aircon.get("OutdoorUnit", {}).get("CompPower", 0)
                 ),
-                "supply_voltage": f"{live_aircon.get('OutdoorUnit', {}).get('SupplyVoltage_Vac', 0):.1f} VAC",
-                "supply_current": f"{live_aircon.get('OutdoorUnit', {}).get('SuppyCurrentRMS_A', 0):.1f} A",
+                "supply_voltage": (
+                    f"{live_aircon.get('OutdoorUnit', {}).get('SupplyVoltage_Vac', 0):.1f} VAC"
+                ),
+                "supply_current": (
+                    f"{live_aircon.get('OutdoorUnit', {}).get('SuppyCurrentRMS_A', 0):.1f} A"
+                ),
                 "supply_power": self._format_power_value(
                     live_aircon.get("OutdoorUnit", {}).get("SuppyPowerRMS_W", 0)
                 ),
-                "system_capacity": f"{last_known_state.get('AirconSystem', {}).get('OutdoorUnit', {}).get('Capacity_kW', 0)} kW",
+                "system_capacity": (
+                    f"{last_known_state.get('AirconSystem', {}).get('OutdoorUnit', {}).get('Capacity_kW', 0)} kW"
+                ),
                 # Air Volume Data (if available)
-                "air_volume": f"{last_known_state.get('UserAirconSettings', {}).get('VFT', {}).get('Airflow', 0):.1f} m³/h"
+                "air_volume": (
+                    f"{last_known_state.get('UserAirconSettings', {}).get('VFT', {}).get('Airflow', 0):.1f} m³/h"
+                )
                 if last_known_state.get("UserAirconSettings", {})
                 .get("VFT", {})
                 .get("Supported", False)
@@ -675,11 +739,10 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
                 else "Stale",
             }
 
-        except (KeyError, TypeError, ValueError) as err:
-            _LOGGER.error("Error getting system diagnostic attributes: %s", err)
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.exception("Error getting system diagnostic attributes")
             return {
                 "error": "Failed to retrieve system diagnostics",
-                "error_details": str(err),
             }
 
     def _format_power_value(self, power_value: float) -> str:
@@ -832,11 +895,10 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
                 "device_online": raw_data.get("isOnline", False),
             }
 
-        except (KeyError, TypeError, ValueError) as err:
-            _LOGGER.error("Error getting connectivity attributes: %s", err)
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.exception("Error getting connectivity attributes")
             return {
                 "error": "Failed to retrieve connectivity data",
-                "error_details": str(err),
             }
 
     def _format_uptime(self, seconds: int) -> str:
@@ -1000,11 +1062,10 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
                 "continuous_fan": main_data.get("fan_continuous", False),
             }
 
-        except (KeyError, TypeError, ValueError) as err:
-            _LOGGER.error("Error getting performance attributes: %s", err)
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.exception("Error getting performance attributes")
             return {
                 "error": "Failed to retrieve performance data",
-                "error_details": str(err),
             }
 
 
@@ -1026,15 +1087,12 @@ class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
 
-            # Get device serial to access the correct data path
-            device_serial = self.coordinator.data.get("main", {}).get("serial_number")
-            if not device_serial:
-                _LOGGER.warning("No device serial number available for power sensor")
+            if not last_known_state:
+                _LOGGER.debug("No lastKnownState data available for power sensor")
                 return None
 
-            # Access data through the serial number key (e.g., "<SERIALNUMBER>")
-            system_data = last_known_state.get(f"<{device_serial.upper()}>", {})
-            live_aircon = system_data.get("LiveAircon", {})
+            # Access LiveAircon directly from lastKnownState (no serial number wrapper)
+            live_aircon = last_known_state.get("LiveAircon", {})
 
             # Check if compressor is running
             compressor_running = live_aircon.get("SystemOn", False)
@@ -1053,8 +1111,8 @@ class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
                 else 0.0
             )
 
-        except (KeyError, TypeError, ValueError) as err:
-            _LOGGER.error("Error getting compressor power: %s", err)
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.exception("Error getting compressor power")
             return None
 
     @property
@@ -1064,14 +1122,11 @@ class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
 
-            # Get device serial to access the correct data path
-            device_serial = self.coordinator.data.get("main", {}).get("serial_number")
-            if not device_serial:
-                return {"error": "No device serial number available"}
+            if not last_known_state:
+                return {"error": "No lastKnownState data available"}
 
-            # Access data through the serial number key (e.g., "<SERIALNUMBER>")
-            system_data = last_known_state.get(f"<{device_serial.upper()}>", {})
-            live_aircon = system_data.get("LiveAircon", {})
+            # Access LiveAircon directly from lastKnownState (no serial number wrapper)
+            live_aircon = last_known_state.get("LiveAircon", {})
             outdoor_unit = live_aircon.get("OutdoorUnit", {})
 
             return {
@@ -1084,8 +1139,8 @@ class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
                 "raw_power_value": outdoor_unit.get("CompPower", 0),
             }
 
-        except (KeyError, TypeError) as err:
-            _LOGGER.error("Error getting compressor power attributes: %s", err)
+        except (KeyError, TypeError):
+            _LOGGER.exception("Error getting compressor power attributes")
             return {"error": "Failed to retrieve power data"}
 
 
@@ -1113,15 +1168,12 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
 
-            # Get device serial to access the correct data path
-            device_serial = self.coordinator.data.get("main", {}).get("serial_number")
-            if not device_serial:
-                _LOGGER.warning("No device serial number available for energy sensor")
+            if not last_known_state:
+                _LOGGER.debug("No lastKnownState data available for energy sensor")
                 return None
 
-            # Access data through the serial number key (e.g., "<SERIALNUMBER>")
-            system_data = last_known_state.get(f"<{device_serial.upper()}>", {})
-            live_aircon = system_data.get("LiveAircon", {})
+            # Access LiveAircon directly from lastKnownState (no serial number wrapper)
+            live_aircon = last_known_state.get("LiveAircon", {})
 
             # Check if compressor is running
             compressor_running = live_aircon.get("SystemOn", False)
@@ -1160,8 +1212,8 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
 
             return round(self._total_energy, 3)
 
-        except (KeyError, TypeError, ValueError) as err:
-            _LOGGER.error("Error calculating compressor energy: %s", err)
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.exception("Error calculating compressor energy")
             return None
 
     @property
@@ -1171,14 +1223,11 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
 
-            # Get device serial to access the correct data path
-            device_serial = self.coordinator.data.get("main", {}).get("serial_number")
-            if not device_serial:
-                return {"error": "No device serial number available"}
+            if not last_known_state:
+                return {"error": "No lastKnownState data available"}
 
-            # Access data through the serial number key (e.g., "<SERIALNUMBER>")
-            system_data = last_known_state.get(f"<{device_serial.upper()}>", {})
-            live_aircon = system_data.get("LiveAircon", {})
+            # Access LiveAircon directly from lastKnownState (no serial number wrapper)
+            live_aircon = last_known_state.get("LiveAircon", {})
 
             return {
                 "current_power_w": self._last_power,
@@ -1190,6 +1239,6 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
                 else None,
             }
 
-        except (KeyError, TypeError) as err:
-            _LOGGER.error("Error getting compressor energy attributes: %s", err)
+        except (KeyError, TypeError):
+            _LOGGER.exception("Error getting compressor energy attributes")
             return {"error": "Failed to retrieve energy data"}

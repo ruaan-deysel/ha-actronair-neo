@@ -1,4 +1,3 @@
-
 # ActronAir Neo Integration for Home Assistant
 
 [![HACS Integration](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
@@ -95,7 +94,7 @@ We encourage adding tests for new features. The test suite can be found in the `
 
 ## License
 
-This integration is released under the Apache License.
+This integration is released under the MIT License.
 
 ## Disclaimer
 

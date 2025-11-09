@@ -1,22 +1,27 @@
 """Support for ActronAir Neo switches."""
+
 from __future__ import annotations
 
 import asyncio
 import datetime
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.switch import SwitchEntity  # type: ignore
-from homeassistant.config_entries import ConfigEntry  # type: ignore
-from homeassistant.core import HomeAssistant  # type: ignore
-from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
 
 from .base_entity import ActronEntityBase
 from .const import DOMAIN, ICON_ZONE
-from .coordinator import ActronDataCoordinator
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+    from .coordinator import ActronDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -33,10 +38,11 @@ async def async_setup_entry(
     ]
 
     # Add zone switches
-    for zone_id, _ in coordinator.data["zones"].items():
+    for zone_id in coordinator.data["zones"]:
         entities.append(ActronZoneSwitch(coordinator, zone_id))
 
     async_add_entities(entities)
+
 
 class ActronBaseSwitch(CoordinatorEntity, SwitchEntity):
     """Base class for ActronAir Neo switches."""
@@ -59,6 +65,7 @@ class ActronBaseSwitch(CoordinatorEntity, SwitchEntity):
             "sw_version": self.coordinator.data["main"]["firmware_version"],
         }
 
+
 class ActronAwayModeSwitch(ActronEntityBase, SwitchEntity):
     """Away mode switch."""
 
@@ -79,6 +86,7 @@ class ActronAwayModeSwitch(ActronEntityBase, SwitchEntity):
     async def async_turn_off(self) -> None:
         """Turn the switch off."""
         await self.coordinator.set_away_mode(False)
+
 
 class ActronQuietModeSwitch(ActronEntityBase, SwitchEntity):
     """Quiet mode switch."""
@@ -101,6 +109,7 @@ class ActronQuietModeSwitch(ActronEntityBase, SwitchEntity):
         """Turn the switch off."""
         await self.coordinator.set_quiet_mode(False)
 
+
 class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
     """Continuous fan mode switch."""
 
@@ -120,16 +129,22 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
         try:
             # Get current fan mode and strip any existing suffixes
             current_mode = self.coordinator.data["main"].get("fan_mode", "")
-            base_mode = current_mode.split("+")[0] if "+" in current_mode else current_mode
+            base_mode = (
+                current_mode.split("+")[0] if "+" in current_mode else current_mode
+            )
             base_mode = base_mode.split("-")[0] if "-" in base_mode else base_mode
 
             # Validate base mode
             valid_modes = ["LOW", "MED", "HIGH", "AUTO"]
             if base_mode not in valid_modes:
-                _LOGGER.warning("Invalid fan mode %s, using current base mode", base_mode)
+                _LOGGER.warning(
+                    "Invalid fan mode %s, using current base mode", base_mode
+                )
                 base_mode = self.coordinator.data["main"].get("base_fan_mode", "LOW")
                 if base_mode not in valid_modes:
-                    _LOGGER.warning("Invalid base fan mode %s, defaulting to LOW", base_mode)
+                    _LOGGER.warning(
+                        "Invalid base fan mode %s, defaulting to LOW", base_mode
+                    )
                     base_mode = "LOW"
 
             _LOGGER.debug("Turning on continuous mode with base mode: %s", base_mode)
@@ -144,13 +159,14 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
             # Verify the change
             new_mode = self.coordinator.data["main"].get("fan_mode", "")
             if "+CONT" not in new_mode:
-                _LOGGER.warning("Continuous mode did not activate as expected. Current mode: %s", new_mode)
+                _LOGGER.warning(
+                    "Continuous mode did not activate as expected. Current mode: %s",
+                    new_mode,
+                )
 
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn on continuous fan mode: %s",
-                str(err),
-                exc_info=True
+                "Failed to turn on continuous fan mode: %s", str(err), exc_info=True
             )
             raise
 
@@ -159,19 +175,27 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
         try:
             # Get current fan mode and strip continuous suffix
             current_mode = self.coordinator.data["main"].get("fan_mode", "")
-            base_mode = current_mode.split("+")[0] if "+" in current_mode else current_mode
+            base_mode = (
+                current_mode.split("+")[0] if "+" in current_mode else current_mode
+            )
             base_mode = base_mode.split("-")[0] if "-" in base_mode else base_mode
 
             # Validate base mode
             valid_modes = ["LOW", "MED", "HIGH", "AUTO"]
             if base_mode not in valid_modes:
-                _LOGGER.warning("Invalid fan mode %s, using current base mode", base_mode)
+                _LOGGER.warning(
+                    "Invalid fan mode %s, using current base mode", base_mode
+                )
                 base_mode = self.coordinator.data["main"].get("base_fan_mode", "LOW")
                 if base_mode not in valid_modes:
-                    _LOGGER.warning("Invalid base fan mode %s, defaulting to LOW", base_mode)
+                    _LOGGER.warning(
+                        "Invalid base fan mode %s, defaulting to LOW", base_mode
+                    )
                     base_mode = "LOW"
 
-            _LOGGER.debug("Turning off continuous mode, maintaining base mode: %s", base_mode)
+            _LOGGER.debug(
+                "Turning off continuous mode, maintaining base mode: %s", base_mode
+            )
 
             # Set fan mode with continuous disabled
             await self.coordinator.set_fan_mode(base_mode, False)
@@ -183,13 +207,14 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
             # Verify the change
             new_mode = self.coordinator.data["main"].get("fan_mode", "")
             if "+CONT" in new_mode:
-                _LOGGER.warning("Continuous mode did not deactivate as expected. Current mode: %s", new_mode)
+                _LOGGER.warning(
+                    "Continuous mode did not deactivate as expected. Current mode: %s",
+                    new_mode,
+                )
 
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn off continuous fan mode: %s",
-                str(err),
-                exc_info=True
+                "Failed to turn off continuous fan mode: %s", str(err), exc_info=True
             )
             raise
 
@@ -204,6 +229,7 @@ class ActronContinuousFanSwitch(ActronEntityBase, SwitchEntity):
             "fan_mode": current_mode,
             "last_update": datetime.datetime.now().isoformat(),
         }
+
 
 class ActronZoneSwitch(ActronEntityBase, SwitchEntity):
     """Zone switch."""

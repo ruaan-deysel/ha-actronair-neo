@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.climate import (  # type: ignore
     ClimateEntity,
@@ -16,14 +16,11 @@ from homeassistant.components.climate.const import (  # type: ignore
     FAN_LOW,
     FAN_MEDIUM,
 )
-from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.const import (  # type: ignore
     ATTR_TEMPERATURE,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers import entity_registry as er  # type: ignore
-from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
 from .api import ApiError, ConfigurationError, ZoneError
 from .base_entity import ActronEntityBase
@@ -37,7 +34,13 @@ from .const import (
     MAX_TEMP,
     MIN_TEMP,
 )
-from .coordinator import ActronDataCoordinator
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+    from .coordinator import ActronDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,7 +76,7 @@ async def async_setup_entry(
     entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
 
     if coordinator.enable_zone_control:
-        for zone_id, _ in coordinator.data["zones"].items():
+        for zone_id in coordinator.data["zones"]:
             entities.append(ActronZoneClimate(coordinator, zone_id))
     else:
         # Remove any existing zone climate entities
@@ -237,7 +240,7 @@ class ActronClimate(ActronEntityBase, ClimateEntity):
             else:
                 raise
         except Exception as err:
-            _LOGGER.error("Failed to set fan mode %s: %s", fan_mode, err)
+            _LOGGER.exception("Failed to set fan mode %s: %s", fan_mode, err)
             raise
 
     async def async_turn_on(self) -> None:
@@ -458,7 +461,9 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
             self.async_write_ha_state()
 
         except Exception as err:
-            _LOGGER.error("Failed to set HVAC mode for zone %s: %s", self.zone_id, err)
+            _LOGGER.exception(
+                "Failed to set HVAC mode for zone %s: %s", self.zone_id, err
+            )
             raise
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -516,7 +521,7 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
             await self.coordinator.async_request_refresh()
 
         except Exception as err:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Failed to set temperature for zone %s: %s", self.zone_id, err
             )
             raise
@@ -538,7 +543,7 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
             )
             # Don't re-raise configuration errors - just log and continue
         except ZoneError as err:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Zone-specific error turning on zone %s: %s", self.zone_id, err
             )
             raise
@@ -548,7 +553,7 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
                     "Temporary API error turning on zone %s: %s", self.zone_id, err
                 )
             else:
-                _LOGGER.error("API error turning on zone %s: %s", self.zone_id, err)
+                _LOGGER.exception("API error turning on zone %s: %s", self.zone_id, err)
                 raise
         except Exception as err:
             _LOGGER.error(
@@ -570,7 +575,7 @@ class ActronZoneClimate(ActronEntityBase, ClimateEntity):
             self._attr_hvac_mode = HVACMode.OFF
             self.async_write_ha_state()
         except Exception as err:
-            _LOGGER.error("Failed to turn off zone %s: %s", self.zone_id, err)
+            _LOGGER.exception("Failed to turn off zone %s: %s", self.zone_id, err)
             raise
 
     def _actron_to_ha_hvac_mode(self, mode: str) -> HVACMode:

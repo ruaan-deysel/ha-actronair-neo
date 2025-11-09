@@ -1,20 +1,15 @@
 """Tests for the ActronAir Neo API."""
-import pytest
-import json
-import aiohttp
-from unittest.mock import patch, MagicMock, AsyncMock
+
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import aiohttp
+import pytest
 
 from custom_components.actronair_neo.api import (
     ActronApi,
     AuthenticationError,
-    ApiError,
-    RateLimiter
-)
-from custom_components.actronair_neo.types import (
-    DeviceInfo,
-    AcStatusResponse,
-    CommandResponse
+    RateLimiter,
 )
 
 
@@ -37,21 +32,21 @@ def mock_api_devices_response():
                     "serial": "ABC123",
                     "description": "Living Room AC",
                     "type": "Neo",
-                    "id": "12345"
+                    "id": "12345",
                 },
                 {
                     "serial": "DEF456",
                     "description": "Bedroom AC",
                     "type": "Neo",
-                    "id": "67890"
-                }
+                    "id": "67890",
+                },
             ]
         }
     }
 
 
 @pytest.mark.asyncio
-async def test_api_initialization(mock_session):
+async def test_api_initialization(mock_session) -> None:
     """Test API initialization."""
     # Arrange
     username = "test_user"
@@ -73,13 +68,15 @@ async def test_api_initialization(mock_session):
 
 
 @pytest.mark.asyncio
-async def test_authenticate_success(mock_session, mock_token_response):
+async def test_authenticate_success(mock_session, mock_token_response) -> None:
     """Test successful authentication."""
     # Arrange
-    api = ActronApi(username="test_user", password="test_password", session=mock_session)
+    api = ActronApi(
+        username="test_user", password="test_password", session=mock_session
+    )
 
     # Mock the authenticate method directly
-    with patch.object(api, 'authenticate', AsyncMock()) as mock_authenticate:
+    with patch.object(api, "authenticate", AsyncMock()) as mock_authenticate:
         # Act
         await api.authenticate()
 
@@ -98,10 +95,12 @@ async def test_authenticate_success(mock_session, mock_token_response):
 
 
 @pytest.mark.asyncio
-async def test_authenticate_failure(mock_session):
+async def test_authenticate_failure(mock_session) -> None:
     """Test authentication failure."""
     # Arrange
-    api = ActronApi(username="test_user", password="test_password", session=mock_session)
+    api = ActronApi(
+        username="test_user", password="test_password", session=mock_session
+    )
     mock_response = MagicMock()
     mock_response.status = 401
     mock_response.text = AsyncMock(return_value="Invalid credentials")
@@ -113,17 +112,21 @@ async def test_authenticate_failure(mock_session):
 
 
 @pytest.mark.asyncio
-async def test_get_devices(mock_session, mock_api_devices_response):
+async def test_get_devices(mock_session, mock_api_devices_response) -> None:
     """Test getting devices."""
     # Arrange
-    api = ActronApi(username="test_user", password="test_password", session=mock_session)
+    api = ActronApi(
+        username="test_user", password="test_password", session=mock_session
+    )
     mock_response = MagicMock()
     mock_response.status = 200
     mock_response.json = AsyncMock(return_value=mock_api_devices_response)
     mock_session.request.return_value.__aenter__.return_value = mock_response
 
     # Mock the _make_request method
-    with patch.object(api, '_make_request', AsyncMock(return_value=mock_api_devices_response)) as mock_make_request:
+    with patch.object(
+        api, "_make_request", AsyncMock(return_value=mock_api_devices_response)
+    ) as mock_make_request:
         # Act
         devices = await api.get_devices()
 
@@ -135,39 +138,49 @@ async def test_get_devices(mock_session, mock_api_devices_response):
         assert devices[1]["name"] == "Bedroom AC"
         mock_make_request.assert_called_once_with(
             "GET",
-            "https://nimbus.actronair.com.au/api/v0/client/ac-systems?includeNeo=true"
+            "https://nimbus.actronair.com.au/api/v0/client/ac-systems?includeNeo=true",
         )
 
 
 @pytest.mark.asyncio
-async def test_get_ac_status(mock_session, mock_ac_status_response):
+async def test_get_ac_status(mock_session, mock_ac_status_response) -> None:
     """Test getting AC status."""
     # Arrange
-    api = ActronApi(username="test_user", password="test_password", session=mock_session)
+    api = ActronApi(
+        username="test_user", password="test_password", session=mock_session
+    )
     serial = "ABC123"
 
     # Mock the _make_request method
-    with patch.object(api, '_make_request', AsyncMock(return_value=mock_ac_status_response)) as mock_make_request:
-        with patch.object(api, 'is_api_healthy', return_value=True):
-            # Act
-            status = await api.get_ac_status(serial)
+    with (
+        patch.object(
+            api, "_make_request", AsyncMock(return_value=mock_ac_status_response)
+        ) as mock_make_request,
+        patch.object(api, "is_api_healthy", return_value=True),
+    ):
+        # Act
+        status = await api.get_ac_status(serial)
 
-            # Assert
-            assert status == mock_ac_status_response
-            assert api.cached_status == mock_ac_status_response
-            mock_make_request.assert_called_once()
+        # Assert
+        assert status == mock_ac_status_response
+        assert api.cached_status == mock_ac_status_response
+        mock_make_request.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_ac_status_unhealthy_api(mock_session, mock_ac_status_response):
+async def test_get_ac_status_unhealthy_api(
+    mock_session, mock_ac_status_response
+) -> None:
     """Test getting AC status when API is unhealthy."""
     # Arrange
-    api = ActronApi(username="test_user", password="test_password", session=mock_session)
+    api = ActronApi(
+        username="test_user", password="test_password", session=mock_session
+    )
     serial = "ABC123"
     api.cached_status = mock_ac_status_response
 
     # Mock the is_api_healthy method
-    with patch.object(api, 'is_api_healthy', return_value=False):
+    with patch.object(api, "is_api_healthy", return_value=False):
         # Act
         status = await api.get_ac_status(serial)
 
@@ -178,15 +191,19 @@ async def test_get_ac_status_unhealthy_api(mock_session, mock_ac_status_response
 
 
 @pytest.mark.asyncio
-async def test_send_command(mock_session, mock_command_response):
+async def test_send_command(mock_session, mock_command_response) -> None:
     """Test sending a command."""
     # Arrange
-    api = ActronApi(username="test_user", password="test_password", session=mock_session)
+    api = ActronApi(
+        username="test_user", password="test_password", session=mock_session
+    )
     serial = "ABC123"
     command = {"UserAirconSettings": {"isOn": True, "Mode": "COOL"}}
 
     # Mock the _make_request method
-    with patch.object(api, '_make_request', AsyncMock(return_value=mock_command_response)) as mock_make_request:
+    with patch.object(
+        api, "_make_request", AsyncMock(return_value=mock_command_response)
+    ) as mock_make_request:
         # Act
         response = await api.send_command(serial, command)
 
@@ -196,7 +213,7 @@ async def test_send_command(mock_session, mock_command_response):
 
 
 @pytest.mark.asyncio
-async def test_create_command():
+async def test_create_command() -> None:
     """Test creating a command."""
     # Arrange
     session = MagicMock(spec=aiohttp.ClientSession)
@@ -207,7 +224,10 @@ async def test_create_command():
 
     # Assert
     assert "command" in temp_command
-    assert temp_command["command"]["UserAirconSettings.TemperatureSetpoint_Cool_oC"] == 22.5
+    assert (
+        temp_command["command"]["UserAirconSettings.TemperatureSetpoint_Cool_oC"]
+        == 22.5
+    )
 
     # Act - Test CLIMATE_MODE command
     mode_command = api.create_command("CLIMATE_MODE", mode="HEAT")
@@ -225,7 +245,7 @@ async def test_create_command():
 
 
 @pytest.mark.asyncio
-async def test_rate_limiter():
+async def test_rate_limiter() -> None:
     """Test the rate limiter."""
     # Arrange
     rate_limiter = RateLimiter(calls_per_minute=5)
@@ -237,12 +257,12 @@ async def test_rate_limiter():
 
     # The 6th call should be rate limited, but we can't easily test the timing
     # without making the test slow, so we'll just verify the semaphore exists
-    assert hasattr(rate_limiter, 'semaphore')
+    assert hasattr(rate_limiter, "semaphore")
     assert rate_limiter.semaphore is not None
 
 
 @pytest.mark.asyncio
-async def test_is_api_healthy():
+async def test_is_api_healthy() -> None:
     """Test the API health check."""
     # Arrange
     session = MagicMock()
@@ -256,7 +276,7 @@ async def test_is_api_healthy():
     api.last_successful_request = None
 
     # Mock the is_api_healthy method to return False when error_count > 5
-    with patch.object(api, 'is_api_healthy', return_value=False) as mock_is_api_healthy:
+    with patch.object(api, "is_api_healthy", return_value=False):
         # Act & Assert - Should be unhealthy with many errors and no successful requests
         assert api.is_api_healthy() is False
 
@@ -264,6 +284,6 @@ async def test_is_api_healthy():
     api.last_successful_request = datetime.now()
 
     # Mock the is_api_healthy method to return True when there's a recent successful request
-    with patch.object(api, 'is_api_healthy', return_value=True) as mock_is_api_healthy:
+    with patch.object(api, "is_api_healthy", return_value=True):
         # Act & Assert - Should be healthy with recent successful request despite errors
         assert api.is_api_healthy() is True

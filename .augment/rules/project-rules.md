@@ -22,20 +22,34 @@ This document defines the coding standards, best practices, and workflows for th
 - **NEVER** generate validation documents, summary documents, or reference documents unless explicitly requested by the user
 - **NEVER** create unsolicited README files or markdown documentation
 - **NEVER** create project summaries or status reports without being asked
+- **NEVER** create other unsolicited documentation files (validation documents, reference documents, etc.)
 - Only create documentation when the user specifically and explicitly requests it
 - Focus on code changes, not documentation generation
+
+### MANDATORY: Maintain Required Documentation
+
+- **CHANGELOG.md MUST be updated** whenever code changes or improvements are made to the codebase
+  - Document all additions, changes, fixes, and removals
+  - Follow the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format
+  - Update the [Unreleased] section with all changes
+- **README.md MUST be kept up to date** with accurate information about the project
+  - Ensure features, installation instructions, and configuration details are current
+  - Update any references to changed functionality or new capabilities
+  - Keep troubleshooting and usage information accurate
 
 ## Home Assistant Integration Best Practices
 
 ### Architecture Requirements
 
 1. **Config Flow** (`config_flow.py`)
+
    - Implement proper async config flow for user setup
    - Validate user input before creating config entries
    - Support options flow for runtime configuration changes
    - Use voluptuous schemas for input validation
 
 2. **Data Coordinator** (`coordinator.py`)
+
    - Use `DataUpdateCoordinator` for centralized data fetching
    - Implement proper async/await patterns
    - Handle API errors gracefully with appropriate exceptions
@@ -43,12 +57,14 @@ This document defines the coding standards, best practices, and workflows for th
    - Implement retry logic with exponential backoff
 
 3. **Entity Platforms**
+
    - **Climate** (`climate.py`): Main HVAC control entity
    - **Sensor** (`sensor.py`): Temperature, humidity, and status sensors
    - **Binary Sensor** (`binary_sensor.py`): On/off state sensors
    - **Switch** (`switch.py`): Toggle controls for system features
 
 4. **Entity Implementation**
+
    - Inherit from appropriate Home Assistant entity base classes
    - Use proper device classes (e.g., `DEVICE_CLASS_TEMPERATURE`)
    - Use proper state classes (e.g., `STATE_CLASS_MEASUREMENT`)
@@ -56,6 +72,7 @@ This document defines the coding standards, best practices, and workflows for th
    - Set unique IDs correctly for entity registry
 
 5. **Manifest Configuration** (`manifest.json`)
+
    - Maintain correct domain name: `actronair_neo`
    - Keep version updated following semantic versioning
    - List all external dependencies in `requirements`
@@ -128,16 +145,20 @@ This command runs:
 When working in the devcontainer environment:
 
 1. **Initial Setup**
+
    ```bash
    scripts/setup
    ```
+
    - Installs dependencies
    - Prepares development environment
 
 2. **Start Development Mode**
+
    ```bash
    scripts/develop
    ```
+
    - Starts Home Assistant in development mode
    - Enables hot-reload for testing changes
    - Mounts the integration for live testing

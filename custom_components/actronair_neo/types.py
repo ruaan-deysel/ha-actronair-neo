@@ -1,4 +1,5 @@
 """Type definitions for ActronAir Neo integration."""
+
 from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
@@ -40,6 +41,12 @@ class ZoneData(TypedDict):
     last_connection: str | None
     connection_state: str | None
     damper_position: int | None
+    # YourZone airflow control fields
+    airflow_setpoint: int | None
+    airflow_control_enabled: bool
+    airflow_control_locked: bool
+    zone_max_position: int | None
+    zone_min_position: int | None
 
 
 class MainData(TypedDict):

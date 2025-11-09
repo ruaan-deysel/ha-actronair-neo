@@ -1,0 +1,90 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - '2025.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Creating release for version: $VERSION"
+      
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Extract the changelog section for this version
+          # This script extracts content between [VERSION] and the next version header
+          awk -v version="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ "\\[" version "\\]") {
+                found=1
+                next
+              }
+            }
+            found { print }
+          ' CHANGELOG.md > release_notes.md
+          
+          # If no specific version found, use a default message
+          if [ ! -s release_notes.md ]; then
+            echo "Release $VERSION" > release_notes.md
+            echo "" >> release_notes.md
+            echo "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." >> release_notes.md
+          fi
+          
+          cat release_notes.md
+      
+      - name: Create release archive
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Create a zip file with the integration files
+          mkdir -p release_assets
+          cd custom_components
+          zip -r ../release_assets/actronair_neo-${VERSION}.zip actronair_neo/
+          cd ..
+          
+          # Create checksums
+          cd release_assets
+          sha256sum actronair_neo-${VERSION}.zip > actronair_neo-${VERSION}.zip.sha256
+          cd ..
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          files: |
+            release_assets/actronair_neo-${{ steps.version.outputs.version }}.zip
+            release_assets/actronair_neo-${{ steps.version.outputs.version }}.zip.sha256
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f release_notes.md
+          rm -rf release_assets
+

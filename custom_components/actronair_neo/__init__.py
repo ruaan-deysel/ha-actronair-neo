@@ -6,7 +6,6 @@ from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.core import HomeAssistant, ServiceCall  # type: ignore
 from homeassistant.exceptions import ConfigEntryNotReady  # type: ignore
 from homeassistant.helpers import entity_registry as er  # type: ignore
-from homeassistant.helpers import service  # type: ignore
 from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore
 
 from . import repairs
@@ -33,6 +32,7 @@ PLATFORMS: list[str] = [
     PLATFORM_SENSOR,
     PLATFORM_SWITCH,
     PLATFORM_BINARY_SENSOR,
+    "number",
 ]
 
 
@@ -103,7 +103,7 @@ async def async_migrate_entities(
                         new_unique_id=new_unique_id,
                     )
                 except er.HomeAssistantError as ex:
-                    _LOGGER.error(
+                    _LOGGER.exception(
                         "Error migrating entity %s: %s", entry.entity_id, str(ex)
                     )
 
@@ -131,10 +131,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await api.initializer()
         await api.set_system(serial_number, system_id)
     except AuthenticationError as auth_err:
-        _LOGGER.error("Failed to authenticate: %s", auth_err)
+        _LOGGER.exception("Failed to authenticate: %s", auth_err)
         raise ConfigEntryNotReady from auth_err
     except ApiError as api_err:
-        _LOGGER.error("Failed to connect to ActronAir Neo API: %s", api_err)
+        _LOGGER.exception("Failed to connect to ActronAir Neo API: %s", api_err)
         raise ConfigEntryNotReady from api_err
 
     enable_zone_control = entry.options.get(CONF_ENABLE_ZONE_CONTROL, False)
@@ -155,13 +155,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await async_migrate_entities(hass, entry)
     except er.HomeAssistantError as ex:
-        _LOGGER.error("HomeAssistant error during entity migration: %s", str(ex))
+        _LOGGER.exception("HomeAssistant error during entity migration: %s", str(ex))
         # Continue with setup even if migration fails
     except KeyError as ex:
-        _LOGGER.error("Key error during entity migration: %s", str(ex))
+        _LOGGER.exception("Key error during entity migration: %s", str(ex))
         # Continue with setup even if migration fails
     except TypeError as ex:
-        _LOGGER.error("Type error during entity migration: %s", str(ex))
+        _LOGGER.exception("Type error during entity migration: %s", str(ex))
         # Continue with setup even if migration fails
 
     # Set up platforms
@@ -225,7 +225,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         )
 
         except Exception as err:
-            _LOGGER.error("Error during force update: %s", err)
+            _LOGGER.exception("Error during force update: %s", err)
 
     async def create_zone_preset(call: ServiceCall) -> None:
         """Create a zone preset from current state."""
@@ -267,7 +267,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Created zone preset '%s' for device %s", preset_name, device_id
             )
         except (ConfigurationError, ZoneError) as err:
-            _LOGGER.error("Failed to create zone preset: %s", err)
+            _LOGGER.exception("Failed to create zone preset: %s", err)
 
     async def apply_zone_preset(call: ServiceCall) -> None:
         """Apply a zone preset."""
@@ -306,7 +306,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Applied zone preset '%s' for device %s", preset_name, device_id
             )
         except (ConfigurationError, ZoneError) as err:
-            _LOGGER.error("Failed to apply zone preset: %s", err)
+            _LOGGER.exception("Failed to apply zone preset: %s", err)
 
     async def bulk_zone_operation(call: ServiceCall) -> None:
         """Perform bulk zone operations."""
@@ -357,7 +357,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 len(zones),
             )
         except (ConfigurationError, ZoneError) as err:
-            _LOGGER.error("Failed to perform bulk zone operation: %s", err)
+            _LOGGER.exception("Failed to perform bulk zone operation: %s", err)
 
     hass.services.async_register(DOMAIN, SERVICE_FORCE_UPDATE, force_update)
     hass.services.async_register(DOMAIN, "create_zone_preset", create_zone_preset)
@@ -418,7 +418,7 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
         )
 
     except Exception as err:
-        _LOGGER.error("Error updating zone control setting: %s", err)
+        _LOGGER.exception("Error updating zone control setting: %s", err)
         raise
 
 

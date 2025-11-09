@@ -65,7 +65,7 @@ _LOGGER = logging.getLogger(__name__)
 class AuthenticationError(Exception):
     """Raised when authentication fails."""
 
-    def __init__(self, message: str, retry_after: int | None = None):
+    def __init__(self, message: str, retry_after: int | None = None) -> None:
         super().__init__(message)
         self.retry_after = retry_after
 
@@ -78,7 +78,7 @@ class ApiError(Exception):
         message: str,
         status_code: int | None = None,
         retry_after: int | None = None,
-    ):
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.retry_after = retry_after
@@ -104,14 +104,14 @@ class ApiError(Exception):
 class RateLimitError(ApiError):
     """Raised when rate limit is exceeded."""
 
-    def __init__(self, message: str, retry_after: int | None = None):
+    def __init__(self, message: str, retry_after: int | None = None) -> None:
         super().__init__(message, status_code=429, retry_after=retry_after)
 
 
 class DeviceOfflineError(ApiError):
     """Raised when device is offline or unreachable."""
 
-    def __init__(self, message: str, device_id: str):
+    def __init__(self, message: str, device_id: str) -> None:
         super().__init__(message, status_code=503)
         self.device_id = device_id
 
@@ -119,7 +119,7 @@ class DeviceOfflineError(ApiError):
 class ConfigurationError(Exception):
     """Raised when there's a configuration issue."""
 
-    def __init__(self, message: str, config_key: str | None = None):
+    def __init__(self, message: str, config_key: str | None = None) -> None:
         super().__init__(message)
         self.config_key = config_key
 
@@ -129,7 +129,7 @@ class ZoneError(Exception):
 
     def __init__(
         self, message: str, zone_id: str | None = None, zone_index: int | None = None
-    ):
+    ) -> None:
         super().__init__(message)
         self.zone_id = zone_id
         self.zone_index = zone_index
@@ -138,7 +138,7 @@ class ZoneError(Exception):
 class RateLimiter:
     """Rate limiter to prevent overwhelming the API."""
 
-    def __init__(self, calls_per_minute: int):
+    def __init__(self, calls_per_minute: int) -> None:
         self.calls_per_minute = calls_per_minute
         self.semaphore = asyncio.Semaphore(calls_per_minute)
         self.call_times = []
@@ -149,7 +149,7 @@ class RateLimiter:
     async def __aexit__(self, *_: object) -> None:
         self.release()
 
-    async def acquire(self):
+    async def acquire(self) -> None:
         """Acquire a slot for making an API call."""
         await self.semaphore.acquire()
         now = datetime.now()
@@ -159,7 +159,7 @@ class RateLimiter:
             await asyncio.sleep(sleep_time)
         self.call_times.append(now)
 
-    def release(self):
+    def release(self) -> None:
         """Release the acquired slot."""
         self.semaphore.release()
 
@@ -167,7 +167,7 @@ class RateLimiter:
 class ResponseCache:
     """Response cache with TTL for API optimization."""
 
-    def __init__(self, default_ttl: timedelta = timedelta(seconds=30)):
+    def __init__(self, default_ttl: timedelta = timedelta(seconds=30)) -> None:
         """
         Initialize response cache.
 
@@ -379,7 +379,7 @@ class ActronApi:
             return f"{base_mode}+CONT" if continuous else base_mode
 
         except (ValueError, KeyError, TypeError) as err:
-            _LOGGER.error("Error validating fan mode '%s': %s", mode, str(err))
+            _LOGGER.exception("Error validating fan mode '%s': %s", mode, str(err))
             return "LOW+CONT" if continuous else "LOW"
 
     async def load_tokens(self) -> None:
@@ -402,9 +402,9 @@ class ActronApi:
         except json.JSONDecodeError:
             _LOGGER.warning("Token file is corrupted, will authenticate from scratch")
         except OSError as e:
-            _LOGGER.error("IO error loading tokens: %s", e)
+            _LOGGER.exception("IO error loading tokens: %s", e)
         except ValueError as e:
-            _LOGGER.error("Value error loading tokens: %s", e)
+            _LOGGER.exception("Value error loading tokens: %s", e)
 
     async def save_tokens(self) -> None:
         """Save authentication tokens to storage."""
@@ -422,9 +422,9 @@ class ActronApi:
                 await f.write(json.dumps(token_data))
             _LOGGER.debug("Tokens saved successfully")
         except OSError as e:
-            _LOGGER.error("IO error saving tokens: %s", e)
+            _LOGGER.exception("IO error saving tokens: %s", e)
         except TypeError as e:
-            _LOGGER.error("JSON encoding error saving tokens: %s", e)
+            _LOGGER.exception("JSON encoding error saving tokens: %s", e)
 
     async def clear_tokens(self) -> None:
         """Clear stored tokens when they become invalid."""
@@ -472,7 +472,8 @@ class ActronApi:
             )
             self.refresh_token_value = response.get("pairingToken")
             if not self.refresh_token_value:
-                raise AuthenticationError("No refresh token received in response")
+                msg = "No refresh token received in response"
+                raise AuthenticationError(msg)
             await self.save_tokens()
             _LOGGER.info("New refresh token obtained and saved")
         except Exception as e:
@@ -492,14 +493,15 @@ class ActronApi:
                     "Failed to get new refresh token (connection issue): %s", str(e)
                 )
             else:
-                _LOGGER.error(
+                _LOGGER.exception(
                     "Unable to authenticate with ActronAir servers. Please check your internet connection and integration configuration. Error: %s",
                     str(e),
                 )
                 _LOGGER.debug(
                     "Failed to get new refresh token (unknown error): %s", str(e)
                 )
-            raise AuthenticationError(f"Failed to get new refresh token: {e!s}") from e
+            msg = f"Failed to get new refresh token: {e!s}"
+            raise AuthenticationError(msg) from e
 
     async def _get_access_token(self) -> None:
         """Get access token using refresh token."""
@@ -522,7 +524,8 @@ class ActronApi:
             )  # Refresh 5 minutes early
             if not self.access_token:
                 _LOGGER.error("No access token received in the response")
-                raise AuthenticationError("No access token received in response")
+                msg = "No access token received in response"
+                raise AuthenticationError(msg)
             await self.save_tokens()
             _LOGGER.info(
                 "New access token obtained and valid until: %s", self.token_expires_at
@@ -554,7 +557,8 @@ class ActronApi:
                     "Unable to refresh authentication token. The integration will automatically retry. If this persists, restart the integration."
                 )
                 _LOGGER.debug("Failed to get new access token: %s", e)
-            raise AuthenticationError(f"Failed to get new access token: {e}") from e
+            msg = f"Failed to get new access token: {e}"
+            raise AuthenticationError(msg) from e
 
     MAX_REFRESH_RETRIES = 3
     REFRESH_RETRY_DELAY = 5  # seconds
@@ -603,14 +607,13 @@ class ActronApi:
                         await self._get_access_token()
                         return
                     except AuthenticationError as auth_err:
-                        _LOGGER.error(
+                        _LOGGER.exception(
                             "Unable to authenticate with ActronAir servers. Please verify your username and password in the integration configuration, check your internet connection, and ensure your ActronAir account is active. If the problem persists, try restarting Home Assistant."
                         )
                         _LOGGER.debug("Re-authentication failed: %s", auth_err)
                         raise
-        raise AuthenticationError(
-            "Failed to refresh token and re-authentication failed"
-        )
+        msg = "Failed to refresh token and re-authentication failed"
+        raise AuthenticationError(msg)
 
     T = TypeVar("T")
 
@@ -676,8 +679,9 @@ class ActronApi:
                                 retry_after,
                             )
                             self.error_count += 1
+                            msg = f"Rate limit exceeded, retry after {retry_after} seconds"
                             raise RateLimitError(
-                                f"Rate limit exceeded, retry after {retry_after} seconds",
+                                msg,
                                 retry_after=retry_after,
                             )
                         if response.status == 503:
@@ -688,12 +692,14 @@ class ActronApi:
                                 "device" in response_text.lower()
                                 or "offline" in response_text.lower()
                             ):
+                                msg = f"Device appears to be offline: {response_text}"
                                 raise DeviceOfflineError(
-                                    f"Device appears to be offline: {response_text}",
+                                    msg,
                                     device_id=getattr(self, "actron_serial", "unknown"),
                                 )
+                            msg = f"Service unavailable: {response_text}"
                             raise ApiError(
-                                f"Service unavailable: {response_text}",
+                                msg,
                                 status_code=response.status,
                                 retry_after=30,
                             )
@@ -740,8 +746,9 @@ class ActronApi:
                                     response_text,
                                 )
                             self.error_count += 1
+                            msg = f"Client error: {response.status}, {response_text}"
                             raise ApiError(
-                                f"Client error: {response.status}, {response_text}",
+                                msg,
                                 status_code=response.status,
                             )
                         if 500 <= response.status < 600:
@@ -760,8 +767,9 @@ class ActronApi:
                                 )
                                 await asyncio.sleep(wait_time)
                                 continue
+                            msg = f"Server error after {MAX_RETRIES} attempts: {response.status}, {response_text}"
                             raise ApiError(
-                                f"Server error after {MAX_RETRIES} attempts: {response.status}, {response_text}",
+                                msg,
                                 status_code=response.status,
                             )
                         # Unexpected status code
@@ -771,8 +779,9 @@ class ActronApi:
                             response_text,
                         )
                         self.error_count += 1
+                        msg = f"Unexpected status code: {response.status}, {response_text}"
                         raise ApiError(
-                            f"Unexpected status code: {response.status}, {response_text}",
+                            msg,
                             status_code=response.status,
                         )
 
@@ -787,21 +796,20 @@ class ActronApi:
                         _LOGGER.warning(
                             "Unable to connect to ActronAir servers after multiple attempts. Please check your internet connection. The integration will continue to retry automatically."
                         )
-                        raise ApiError(
-                            f"Request failed after {MAX_RETRIES} attempts: {err}"
-                        ) from err
+                        msg = f"Request failed after {MAX_RETRIES} attempts: {err}"
+                        raise ApiError(msg) from err
                     await asyncio.sleep(5 * (2**attempt))  # Exponential backoff
 
-        raise ApiError(f"Failed to make request after {MAX_RETRIES} attempts")
+        msg = f"Failed to make request after {MAX_RETRIES} attempts"
+        raise ApiError(msg)
 
     def is_api_healthy(self) -> bool:
         """Check if the API is healthy based on recent errors and successful requests."""
-        if self.error_count > 5:
-            if self.last_successful_request and (
-                datetime.now() - self.last_successful_request
-            ) < timedelta(minutes=15):
-                return False
-        return True
+        return not (
+            self.error_count > 5
+            and self.last_successful_request
+            and datetime.now() - self.last_successful_request < timedelta(minutes=15)
+        )
 
     async def get_devices(self) -> list[DeviceInfo]:
         """Fetch the list of devices from the API."""
@@ -923,14 +931,15 @@ class ActronApi:
                     )
                     await asyncio.sleep(wait_time)
                 else:
-                    _LOGGER.error("API error: %s", e)
+                    _LOGGER.exception("API error: %s", e)
                     raise
             except (TimeoutError, aiohttp.ClientError, json.JSONDecodeError) as err:
-                _LOGGER.error("Unexpected error in send_command: %s", err)
+                _LOGGER.exception("Unexpected error in send_command: %s", err)
                 if attempt == MAX_RETRIES - 1:
                     raise
 
-        raise ApiError(f"Failed to send command after {MAX_RETRIES} attempts")
+        msg = f"Failed to send command after {MAX_RETRIES} attempts"
+        raise ApiError(msg)
 
     async def _invalidate_status_cache(self, serial: str) -> None:
         """
@@ -1042,16 +1051,16 @@ class ActronApi:
         """
         # Validate zone index
         if not 0 <= zone_index < MAX_ZONES:
-            raise IndexError(f"Zone index {zone_index} out of bounds")
+            msg = f"Zone index {zone_index} out of bounds"
+            raise IndexError(msg)
 
         # Validate temperature values
         for temp in [
             t for t in [temperature, target_cool, target_heat] if t is not None
         ]:
             if not MIN_TEMP <= temp <= MAX_TEMP:
-                raise ValueError(
-                    f"Temperature {temp} outside valid range {MIN_TEMP}-{MAX_TEMP}"
-                )
+                msg = f"Temperature {temp} outside valid range {MIN_TEMP}-{MAX_TEMP}"
+                raise ValueError(msg)
 
         # Use a lock to prevent concurrent updates to the same zone
         async with self._zone_locks.setdefault(zone_index, asyncio.Lock()):
@@ -1081,10 +1090,45 @@ class ActronApi:
                     temp_key="TemperatureSetpoint_Heat_oC",
                 )
             else:
-                raise ValueError(
-                    "Must provide either temperature or both target_cool and target_heat"
-                )
+                msg = "Must provide either temperature or both target_cool and target_heat"
+                raise ValueError(msg)
 
+            await self.send_command(self.actron_serial, command)
+
+    async def set_zone_airflow(self, zone_index: int, airflow_percentage: int) -> None:
+        """
+        Set zone airflow percentage (YourZone control).
+
+        Args:
+            zone_index: Zero-based zone index
+            airflow_percentage: Airflow percentage (0-100, in 5% increments)
+
+        Raises:
+            ValueError: If airflow percentage is invalid
+            IndexError: If zone_index is out of bounds
+
+        """
+        # Validate zone index
+        if not 0 <= zone_index < MAX_ZONES:
+            msg = f"Zone index {zone_index} out of bounds"
+            raise IndexError(msg)
+
+        # Validate airflow percentage (0-100, multiples of 5)
+        if not 0 <= airflow_percentage <= 100:
+            msg = f"Airflow percentage {airflow_percentage} out of range (0-100)"
+            raise ValueError(msg)
+
+        if airflow_percentage % 5 != 0:
+            msg = (
+                f"Airflow percentage must be in 5% increments, got {airflow_percentage}"
+            )
+            raise ValueError(msg)
+
+        # Use a lock to prevent concurrent updates to the same zone
+        async with self._zone_locks.setdefault(zone_index, asyncio.Lock()):
+            command = self.create_command(
+                "SET_ZONE_AIRFLOW", zone=zone_index, airflow=airflow_percentage
+            )
             await self.send_command(self.actron_serial, command)
 
     async def initializer(self) -> None:
@@ -1166,6 +1210,12 @@ class ActronApi:
                     "type": "set-settings",
                 }
             },
+            "SET_ZONE_AIRFLOW": lambda zone, airflow: {
+                "command": {
+                    f"RemoteZoneInfo[{zone}].AirflowSetpoint": airflow,
+                    "type": "set-settings",
+                }
+            },
         }
         return cast("CommandData", commands[command_type](**params))
 
@@ -1220,7 +1270,8 @@ class ActronApi:
                     and validated_mode.startswith("AUTO")
                     and model not in ADVANCE_SERIES_MODELS
                 ):
-                    raise ValueError(f"AUTO fan mode not supported on model {model}")
+                    msg = f"AUTO fan mode not supported on model {model}"
+                    raise ValueError(msg)
 
                 _LOGGER.debug(
                     "Setting fan mode: %s (original: %s, continuous: %s, model: %s)",
@@ -1283,12 +1334,11 @@ class ActronApi:
 
                 # If we get here, all retries failed
                 if last_error:
-                    raise ApiError(
-                        f"Failed to set fan mode after {MAX_RETRIES} attempts: {last_error}"
-                    )
+                    msg = f"Failed to set fan mode after {MAX_RETRIES} attempts: {last_error}"
+                    raise ApiError(msg)
 
         except ValueError as val_err:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Invalid fan mode request: %s (mode: %s, continuous: %s)",
                 val_err,
                 mode,

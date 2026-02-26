@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "mcp__plugin_serena_serena__initial_instructions",
+      "mcp__plugin_serena_serena__check_onboarding_performed",
+      "mcp__plugin_serena_serena__list_memories",
+      "mcp__plugin_serena_serena__activate_project",
+      "mcp__plugin_serena_serena__list_dir",
+      "mcp__plugin_serena_serena__get_symbols_overview",
+      "mcp__plugin_serena_serena__find_symbol",
+      "mcp__plugin_serena_serena__read_file",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__perplexity__perplexity_search",
+      "mcp__plugin_serena_serena__think_about_collected_information",
+      "mcp__plugin_context7_context7__query-docs",
+      "mcp__plugin_serena_serena__replace_content",
+      "mcp__plugin_serena_serena__create_text_file",
+      "mcp__plugin_serena_serena__replace_symbol_body",
+      "Bash(python3:*)",
+      "Bash(pip show:*)",
+      "mcp__plugin_serena_serena__find_file",
+      "Bash(pip install:*)",
+      "Bash(pre-commit install:*)",
+      "Bash(pre-commit run:*)",
+      "Bash(/opt/homebrew/bin/python3 -m pip install:*)",
+      "Bash(/opt/homebrew/bin/python3 -m pre_commit:*)",
+      "Bash(brew install:*)",
+      "Bash(ruff check:*)",
+      "Bash(ruff config:*)",
+      "Bash(ruff format:*)",
+      "Bash(codespell:*)",
+      "Bash(source .venv/bin/activate)",
+      "Bash(python -m pytest:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(pip uninstall:*)"
+    ]
+  }
+}

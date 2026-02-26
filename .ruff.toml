@@ -23,3 +23,24 @@ keep-runtime-typing = true
 
 [lint.mccabe]
 max-complexity = 25
+
+[lint.per-file-ignores]
+"tests/**/*.py" = [
+    "ANN",     # Type annotations not required in tests
+    "ARG",     # Unused arguments common in fixtures and parametrize
+    "D",       # Docstrings not required in tests
+    "EM101",   # String literals in exceptions fine in tests
+    "ERA001",  # Commented-out code acceptable in tests
+    "FBT003",  # Boolean positional values fine in tests
+    "PLC0415", # Import outside top-level acceptable in tests
+    "PLR2004", # Magic values acceptable in tests
+    "S101",    # assert is the point of tests
+    "S105",    # Hardcoded passwords fine in test fixtures
+    "SLF001",  # Private member access needed to test internals
+    "TC002",   # Type-checking imports not needed in tests
+    "TRY003",  # Long exception messages fine in tests
+    "DTZ005",  # Timezone-naive datetimes acceptable in tests
+]
+"utils/**/*.py" = [
+    "ALL",     # Utility scripts are not part of the integration
+]

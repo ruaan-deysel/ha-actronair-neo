@@ -1,0 +1,6 @@
+# Test dependencies are managed via pyproject.toml [test] extras and uv.
+# Use `uv sync --all-extras` to install everything (preferred).
+#
+# Legacy pip fallback (not recommended):
+#   pip install -e ".[test]"
+-e ".[test]"

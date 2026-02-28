@@ -3,7 +3,7 @@ name: Create Release
 on:
   push:
     tags:
-      - "2025.*.*"
+      - "*.*.*"
 
 permissions:
   contents: write

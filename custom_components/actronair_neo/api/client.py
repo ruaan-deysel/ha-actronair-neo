@@ -247,6 +247,18 @@ class ActronAirNeoApiClient:
                     response_data = await self._execute_request(
                         method, url, attempt, **kwargs
                     )
+                except ApiError as err:
+                    self.error_count += 1
+                    if (
+                        err.status_code is not None
+                        and err.status_code in RETRYABLE_STATUS_CODES
+                        and attempt < MAX_RETRIES - 1
+                    ):
+                        _max_wait = 60
+                        wait_time = min(5 * (2**attempt), _max_wait)
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise
                 except (
                     TimeoutError,
                     aiohttp.ClientError,

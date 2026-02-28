@@ -109,12 +109,7 @@ async def async_get_config_entry_diagnostics(
                         "wifi_signal": device_section.get("SystemStatus_Local", {}).get(
                             "WifiStrength_of3", "No Signal"
                         ),
-                        "wifi_ssid": async_redact_data(
-                            device_section.get("SystemStatus_Local", {})
-                            .get("WiFi", {})
-                            .get("ApSSID", "Not Available"),
-                            TO_REDACT,
-                        ),
+                        "wifi_ssid": "**REDACTED**",
                     },
                     "compressor": {
                         "state": coordinator.data["main"].get(

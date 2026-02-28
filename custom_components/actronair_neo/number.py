@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from homeassistant.components.number import NumberEntity
+from homeassistant.const import UnitOfTime
 from homeassistant.helpers.entity import EntityCategory
 
 from .entity import ActronAirNeoEntity
@@ -40,7 +41,7 @@ class ActronAfterHoursDurationNumber(ActronAirNeoEntity, NumberEntity):
     _attr_native_min_value = 30
     _attr_native_max_value = 480
     _attr_native_step = 30
-    _attr_native_unit_of_measurement = "min"
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_entity_category = EntityCategory.CONFIG
     _attr_translation_key = "after_hours_duration"
 

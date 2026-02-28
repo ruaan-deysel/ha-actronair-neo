@@ -32,7 +32,7 @@ show_scripts() {
         script_name=$(basename "$script")
         script_path="$prefix$script_name"
 
-        description=$(awk -v prefix="# script/$script_name:" '
+        description=$(awk -v prefix="# $script_path:" '
             BEGIN {desc=""}
             $0 ~ prefix {
                 line = $0

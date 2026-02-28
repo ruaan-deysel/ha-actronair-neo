@@ -570,11 +570,14 @@ class ActronSystemDiagnosticSensor(ActronAirNeoEntity, SensorEntity):
                     " VAC"
                 ),
                 "supply_current": (
-                    f"{live_aircon.get('OutdoorUnit', {}).get('SuppyCurrentRMS_A', 0):.1f}"  # noqa: E501
+                    f"{live_aircon.get('OutdoorUnit', {}).get('SupplyCurrentRMS_A', live_aircon.get('OutdoorUnit', {}).get('SuppyCurrentRMS_A', 0)):.1f}"  # noqa: E501
                     " A"
                 ),
                 "supply_power": self._format_power_value(
-                    live_aircon.get("OutdoorUnit", {}).get("SuppyPowerRMS_W", 0)
+                    live_aircon.get("OutdoorUnit", {}).get(
+                        "SupplyPowerRMS_W",
+                        live_aircon.get("OutdoorUnit", {}).get("SuppyPowerRMS_W", 0),
+                    )
                 ),
                 "system_capacity": self._format_system_capacity(last_known_state),
                 # Air Volume Data (if available)

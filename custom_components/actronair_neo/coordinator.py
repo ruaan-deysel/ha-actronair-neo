@@ -680,8 +680,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             if auto_enabled:
                 supported.append("AUTO")
 
-        # Use defaults if HIGH mode active or basic modes set
-        if current_mode == "HIGH" or modes & 0x03:
+        # Use defaults if HIGH mode active or basic modes set without AUTO
+        if current_mode == "HIGH" or (modes & 0x03 and not (modes & 0x08)):
             return default_modes
 
         return supported or default_modes

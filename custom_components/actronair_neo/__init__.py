@@ -194,7 +194,12 @@ async def async_setup_entry(
 ) -> bool:
     """Set up ActronAir Neo from a config entry."""
     # After V1→V2 migration, tokens may be missing → trigger reauth.
-    if CONF_ACCESS_TOKEN not in entry.data:
+    _required_token_keys = (
+        CONF_ACCESS_TOKEN,
+        CONF_REFRESH_TOKEN,
+        CONF_TOKEN_EXPIRES_AT,
+    )
+    if any(key not in entry.data for key in _required_token_keys):
         _msg = (
             "Authentication required — please re-authenticate "
             "using the device code flow."
@@ -316,7 +321,7 @@ async def update_listener(hass: HomeAssistant, entry: ActronAirNeoConfigEntry) -
             if entity_entry.unique_id.startswith(f"{coordinator.device_id}_zone_"):
                 entity_registry.async_remove(entity_entry.entity_id)
 
-        await coordinator.set_enable_zone_control(new_zone)
+        await coordinator.set_enable_zone_control(enable=new_zone)
         await coordinator.async_request_refresh()
 
     await hass.config_entries.async_reload(entry.entry_id)

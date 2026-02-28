@@ -56,10 +56,6 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --skip-plugins)
-            if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
-                echo "Error: --skip-plugins requires a comma-separated list of plugins"
-                exit 1
-            fi
             SKIP_PLUGINS="$2"
             shift 2
             ;;
@@ -91,16 +87,10 @@ if [ ! -d "$HA_CORE_DIR" ]; then
     # Fetch the specific version (shallow clone + blobless for minimal size)
     if [ "$HA_VERSION_TAG" = "dev" ]; then
         git fetch --depth 1 --filter=blob:none origin dev 2>&1 | grep -E "(Receiving|Resolving|Fetching)" || true
-        if ! git checkout dev >/dev/null 2>&1; then
-            echo "Error: Failed to checkout 'dev' branch"
-            exit 1
-        fi
+        git checkout dev >/dev/null 2>&1
     else
         git fetch --depth 1 --filter=blob:none origin tag "$HA_VERSION_TAG" 2>&1 | grep -E "(Receiving|Resolving|Fetching)" || true
-        if ! git checkout "$HA_VERSION_TAG" >/dev/null 2>&1; then
-            echo "Error: Failed to checkout tag '$HA_VERSION_TAG'"
-            exit 1
-        fi
+        git checkout "$HA_VERSION_TAG" >/dev/null 2>&1
     fi
     cd - >/dev/null
     echo ""
@@ -115,16 +105,10 @@ else
         cd "$HA_CORE_DIR"
         if [ "$HA_VERSION_TAG" = "dev" ]; then
             git fetch --depth 1 --filter=blob:none origin dev >/dev/null 2>&1
-            if ! git checkout dev >/dev/null 2>&1; then
-                echo "Error: Failed to checkout 'dev' branch during update"
-                exit 1
-            fi
+            git checkout dev >/dev/null 2>&1
         else
             git fetch --depth 1 --filter=blob:none origin tag "$HA_VERSION_TAG" >/dev/null 2>&1
-            if ! git checkout "$HA_VERSION_TAG" >/dev/null 2>&1; then
-                echo "Error: Failed to checkout tag '$HA_VERSION_TAG' during update"
-                exit 1
-            fi
+            git checkout "$HA_VERSION_TAG" >/dev/null 2>&1
         fi
         cd - >/dev/null
     else

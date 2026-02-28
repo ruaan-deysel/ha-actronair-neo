@@ -19,12 +19,8 @@ applyTo: "**/*.json"
 Use Python's json module to validate syntax:
 
 ```bash
-python3 -m json.tool file.json
+python3 -m json.tool file.json > /dev/null
 ```
-
-This prints formatted JSON on success or an error on invalid JSON.
-On Unix/macOS, append `> /dev/null` to suppress output.
-On Windows, append `> NUL` instead.
 
 ## File-Specific Rules
 

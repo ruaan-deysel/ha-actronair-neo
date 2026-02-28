@@ -22,7 +22,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         handle_set_away_mode,
         schema=vol.Schema({
             vol.Required(CONF_DEVICE_ID): str,
-            vol.Required("away"): bool,
+            vol.Required("away": bool,
         }),
     )
 ```
@@ -59,10 +59,10 @@ set_away_mode:
 
 ## Error Handling
 
-| Error type               | Use when                                   |
-| ------------------------ | ------------------------------------------ |
-| `ServiceValidationError` | Bad user input (wrong device ID, etc.)     |
-| `HomeAssistantError`     | Device error (API failure, device offline) |
+| Error type | Use when |
+| -------------------------------- | ------------------------------------------ |
+| `ServiceValidationError` | Bad user input (wrong device ID, etc.) |
+| `HomeAssistantError` | Device error (API failure, device offline) |
 
 ```python
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -70,7 +70,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 async def handle_set_away_mode(call: ServiceCall) -> None:
     """Handle set_away_mode service call."""
     device_id = call.data[CONF_DEVICE_ID]
-    coordinator = _get_coordinator_for_device(call.hass, device_id)
+    coordinator = _get_coordinator_for_device(hass, device_id)
     if coordinator is None:
         raise ServiceValidationError(f"Device '{device_id}' not found")
     try:

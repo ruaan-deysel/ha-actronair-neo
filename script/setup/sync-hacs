@@ -49,7 +49,6 @@ fi
 
 # Create symlinks for all integrations in config/custom_components/
 # except those that already exist in custom_components/
-mkdir -p "custom_components"
 synced=0
 while IFS= read -r -d '' dir; do
     component=$(basename "$dir")

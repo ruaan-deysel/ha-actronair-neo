@@ -2,9 +2,7 @@
 
 This directory is for temporary AI agent notes, planning, and research.
 
-Nothing in this directory is committed to Git except this README.md. All other
-AI-generated or temporary files (e.g., model outputs, caches, scratch files) are
-excluded from version control.
+Nothing in this directory is committed to Git.
 
 Use this space freely for:
 

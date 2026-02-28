@@ -1,369 +1,416 @@
+# ActronAir Neo/Nimbus API Cheat Sheet
 
-# Actron Neo/Nimbus API Cheat Sheet
+This document details the process of authenticating, querying, and sending commands
+to the ActronAir Neo API.
 
-This document details the process of authenticating, querying and sending commands to the Actron Neo API.
+The details in this document have been acquired through online research, reverse
+engineering, and testing against the Neo API. This information is provided without
+guarantee or warranty of any kind and has not been validated or provided by Actron.
 
-The details in this document have been aquired through online research, reverse engineering and testing against the Que API using my own Actron Que account and AC system. This information is provided without garuntee or warranty of any kind and has not been validated or provided by Actron.
+> **Last verified**: February 2026, against a Classic series unit (EVA150S) running
+> NTW-1000 wall controller firmware v2.5.0.7.
 
-All requests should be sent to the Actron NEO API servers located at: `https://nimbus.actronair.com.au`
+## Base URL
 
-## Authentication ##
+All requests are sent to the ActronAir Neo (Nimbus) API:
 
-Authentication to the Actron Neo API is a two step process.  
+```text
+https://nimbus.actronair.com.au
+```
 
-1. Request a pairing token to authorise a new device
-2. Use pairing token to request a bearer token
+> **Note**: ActronAir also operates a Que platform at `https://que.actronair.com.au`
+> with a similar API. The `actronneoapi` Python library supports both platforms
+> with auto-detection.
 
-Following authentication the bearer token must be sent in the Authorization header for all API queries and commands.
+## Authentication
 
-### Request Pairing (Refresh) Token ###
+Authentication uses the **OAuth 2.0 Device Code Flow** (RFC 8628). This replaced
+the earlier username/password pairing method.
 
-Specify the details of the client in the request body. The username and password are the credentials you use to login to your Actron Neo account. Device name and ID are values that you can set to any unique value. Client must be set to one of the options shown (ios, android, windowsphone or loadtest). I have only tested with this value set to ios.
+### Step 1: Request a Device Code
 
-**Request**  
-Method: POST  
-Path: `/api/v0/client/user-devices`  
-Required Headers:
+Request a device code that the user will enter in the ActronAir app or web portal.
 
-- Host: nimbus.actronair.com.au
-- Content-Length: <content_length>
-- Content-Type: application/x-www-form-urlencoded
+**Request**
 
-Content:  
-username: <my_username>  
-password: <my_password>  
-client: ios | android | windowsphone | loadtest  
-deviceName: <any_unique_name_for_authorised_device>  
-deviceUniqueIdentifier: <any_unique_id_value>  
+```text
+POST /api/v0/oauth/token
+Content-Type: application/x-www-form-urlencoded
+```
 
-**Response**  
-The response will resemble the JSON content below. You will need to extract the `pairingToken` for the next step in the authentication process.
+**Form data**:
+
+| Parameter    | Value                                          |
+| ------------ | ---------------------------------------------- |
+| `client_id`  | `home_assistant`                               |
+| `grant_type` | `urn:ietf:params:oauth:grant-type:device_code` |
+| `scope`      | `read write`                                   |
+
+**Response** (JSON):
 
 ```json
 {
-    "id": "<id_value>",
-    "deviceName": "<name_set_in_request>",
-    "pairingToken": "<token_value>",
-    "expires": "<expire_time>",
-    "_links": {
-        "self": {
-            "href": "/api/v0/client/user-devices/<id_value>"
-        }
+  "device_code": "<device_code>",
+  "user_code": "<user_code>",
+  "verification_uri": "<url>",
+  "expires_in": 900,
+  "interval": 5
+}
+```
+
+The user must visit `verification_uri` and enter the `user_code` to authorize
+the device.
+
+### Step 2: Poll for Token
+
+Poll the token endpoint at the specified `interval` until the user completes
+authorization.
+
+**Request**
+
+```text
+POST /api/v0/oauth/token
+Content-Type: application/x-www-form-urlencoded
+```
+
+**Form data**:
+
+| Parameter     | Value                                          |
+| ------------- | ---------------------------------------------- |
+| `client_id`   | `home_assistant`                               |
+| `grant_type`  | `urn:ietf:params:oauth:grant-type:device_code` |
+| `device_code` | `<device_code from step 1>`                    |
+
+**Response** (success):
+
+```json
+{
+  "access_token": "<bearer_token>",
+  "token_type": "bearer",
+  "expires_in": 259199,
+  "refresh_token": "<refresh_token>"
+}
+```
+
+**Response** (pending authorization):
+
+```json
+{
+  "error": "authorization_pending"
+}
+```
+
+### Step 3: Refresh Token
+
+Access tokens expire (typically after ~72 hours). Use the refresh token to obtain
+a new access token.
+
+**Request**
+
+```text
+POST /api/v0/oauth/token
+Content-Type: application/x-www-form-urlencoded
+```
+
+**Form data**:
+
+| Parameter       | Value             |
+| --------------- | ----------------- |
+| `client_id`     | `home_assistant`  |
+| `grant_type`    | `refresh_token`   |
+| `refresh_token` | `<refresh_token>` |
+
+**Response**:
+
+```json
+{
+  "access_token": "<new_bearer_token>",
+  "token_type": "bearer",
+  "expires_in": 259199,
+  "refresh_token": "<new_refresh_token>"
+}
+```
+
+> **Important**: The response may include an updated `refresh_token`. Always store
+> the latest refresh token from the response.
+
+### Authorization Header
+
+All subsequent API calls require the bearer token:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+## Queries
+
+**Method**: GET
+**Headers**: `Authorization: Bearer <access_token>`
+
+Queries are sent with an empty body and return JSON data.
+
+### List AC Systems
+
+List all AC systems in the customer account. Returns serial numbers needed for
+all subsequent queries and commands.
+
+```text
+GET /api/v0/client/ac-systems?includeNeo=true
+```
+
+**Response**:
+
+```json
+{
+  "items": [
+    {
+      "serial": "<serial_number>",
+      "name": "<system_name>",
+      "type": "<system_type>",
+      "id": "<id>"
     }
+  ],
+  "_links": {
+    "self": { "href": "/api/v0/client/ac-systems" }
+  }
 }
 ```
 
-### Request Bearer Token ###
+### Retrieve AC System Status
 
-Use the provided `pairingToken` (aka Refresh Token) to obtain a bearer toekn. Bearer token will be needed to authorize all subsequent API calls.  
+Retrieves the full status of the targeted AC unit including temperature, humidity,
+zone details, compressor state, and all settings.
 
-**Request**  
-Method: POST  
-Path: `/api/v0/oauth/token`  
-Required Headers:
+```text
+GET /api/v0/client/ac-systems/status/latest?serial=<serial>
+```
 
-- Host: nimbus.actronair.com.au
-- Content-Length: <content_length>
-- Content-Type: application/x-www-form-urlencoded
+See [actron_api_structure.md](actron_api_structure.md) for the complete response
+structure.
 
-Content:  
-grant_type: refresh_token
-refresh_token: <pairing_token>
-client_id: app
+### ~~Retrieve AC System Events~~ (DEPRECATED)
 
-**Response**  
-The response will resemble the JSON content below. You will need to extract the `pairingToken` for the next step in the authentication process.
+> **WARNING**: The Events API was **disabled by Actron in July 2025**. Requests
+> to these endpoints will fail with errors.
+
+```text
+GET /api/v0/client/ac-systems/events/latest?serial=<serial>
+```
+
+Previously supported pagination:
+
+- **Newer events**:
+  `/api/v0/client/ac-systems/events/newer?serial=<serial>&newerThanEventId=<id>`
+- **Older events**:
+  `/api/v0/client/ac-systems/events/older?serial=<serial>&olderThanEventId=<id>`
+
+## Commands
+
+**Method**: POST
+**Headers**: `Authorization: Bearer <access_token>`, `Content-Type: application/json`
+
+```text
+POST /api/v0/client/ac-systems/cmds/send?serial=<serial>
+```
+
+Commands are sent as JSON in the request body:
 
 ```json
 {
-    "access_token": "<Some Very Long Value>",
-    "token_type": "bearer",
-    "expires_in": 259199
+  "command": {
+    "requested.command-1": "setting",
+    "requested.command-n": "setting",
+    "type": "set-settings"
+  }
 }
 ```
 
-Use the value provided in `access_token` as the value of the bearer token in the Authorization header.
+### Operating Mode Commands
 
-## Queries ##
+System ON/OFF can be triggered independently or together with a mode setting.
 
-Method: GET  
-Path: variable  
-Required Headers:
-
-- Authorization: Bearer <my_token>
-
-Queries will be sent with an empty body and return JSON data
-
-### List AC Systems ###
-
-List all AC systems in the customer account. This will return the serial number of the unit you wish to control. The serial number must be set in the query string when sending commands or queries to the unit.  
-Path: `/api/v0/client/ac-systems`
-Parameters: `?includeNeo=true`
-
-### Retrieve AC System Status ###
-
-Retireves the full status of the Actron AC unit targetted. Temprature, humidty, zone details etc.  
-Path: `/api/v0/client/ac-systems/status/latest?serial=<my_serail>`
-
-### Retrieve AC System Events ###
-
-Retireves system events.  
-Path: `/api/v0/client/ac-systems/events/latest?serial=<my_serail>`
-
-Path string can be modified to retrive specific event windows. Replace the '|' in the event ID with '%'.  
-**Newer Events**  
-`/api/v0/client/ac-systems/events/newer?serial=<my_serial>&newerThanEventId=<event_id>"`  
-**Older Events**  
-`/api/v0/client/ac-systems/events/older?serial=<my_serial>&olderThanEventId=<event_id>`
-
-## Commands ##
-
-Method: POST  
-Path: `/api/v0/client/ac-systems/cmds/send?serial=<my_serial>`  
-Required Headers:
-
-- Authorization: Bearer <my_token>
-- Content-Type: application/json
-
-Commands are sent as JSON in the request body and have the following syntax:  
+**Turn OFF**
 
 ```json
 {
-    "command":{
-        "requested.command-1": "setting",
-        ...
-        "requested.command-n": "setting",
-        "type":"set-settings"
-        }
+  "command": {
+    "UserAirconSettings.isOn": false,
+    "type": "set-settings"
+  }
 }
 ```
 
-### Operating Mode Commands ###
-
-System ON/OFF can be triggered indebendlty or along with the desired mode setting
-
-**Set System Mode to OFF**
+**Turn ON with mode** (COOL, HEAT, FAN, AUTO)
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.isOn":false,
-        "type":"set-settings"
-        }
+  "command": {
+    "UserAirconSettings.isOn": true,
+    "UserAirconSettings.Mode": "COOL",
+    "type": "set-settings"
+  }
 }
 ```
 
-**Set System Mode to ON/Automatic**
+> **Note**: Mode support varies by unit. Check `UserAirconSettings.ModeSupport`
+> in the status response. Classic units may not support `AUTO` or `DRY` modes.
+
+### Fan Mode Commands
+
+Fan can be set to LOW, MED, HIGH, or AUTO with optional continuous fan by
+appending `-CONT`.
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.isOn":true,
-        "UserAirconSettings.Mode":"AUTO",
-        "type":"set-settings"
-        }
+  "command": {
+    "UserAirconSettings.FanMode": "AUTO",
+    "type": "set-settings"
+  }
 }
 ```
 
-**Set System Mode to ON/Cool**
+**Valid values**: `LOW`, `LOW-CONT`, `MED`, `MED-CONT`, `HIGH`, `HIGH-CONT`,
+`AUTO`, `AUTO-CONT`
+
+> **Note**: AUTO fan is not available on all models. Check
+> `AirconSystem.IndoorUnit.NV_AutoFanEnabled` and
+> `AirconSystem.IndoorUnit.NV_SupportedFanModes` (bitmask: 1=LOW, 2=MED, 4=HIGH,
+> 8=AUTO).
+
+### Temperature Commands
+
+Temperature can be set as a floating point number within permitted ranges from
+`NV_Limits.UserSetpoint_oC`.
+
+**Set cooling setpoint**
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.isOn":true,
-        "UserAirconSettings.Mode":"COOL",
-        "type":"set-settings"
-        }
+  "command": {
+    "UserAirconSettings.TemperatureSetpoint_Cool_oC": 24.0,
+    "type": "set-settings"
+  }
 }
 ```
 
-**Set System Mode to ON/Fan-Only**
+**Set heating setpoint**
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.isOn":true,
-        "UserAirconSettings.Mode":"FAN",
-        "type":"set-settings"
-        }
+  "command": {
+    "UserAirconSettings.TemperatureSetpoint_Heat_oC": 22.0,
+    "type": "set-settings"
+  }
 }
 ```
 
-**Set System Mode to ON/Heat**
+**Set both (auto mode)**
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.isOn":true,
-        "UserAirconSettings.Mode":"HEAT",
-        "type":"set-settings"
-        }
+  "command": {
+    "UserAirconSettings.TemperatureSetpoint_Cool_oC": 24.0,
+    "UserAirconSettings.TemperatureSetpoint_Heat_oC": 22.0,
+    "type": "set-settings"
+  }
 }
 ```
 
-### Turn On/Off Zone ###
+### Zone Commands
 
-Zones are numbered starting at zero and will be specified within the square brackets '[]' following 'RemoteZoneInfo'.  
-Random zone numbers used in following examples.
+Zones are zero-indexed (0-7 for up to 8 zones). Check `RemoteZoneInfo[n].NV_Exists`
+to determine which zones are configured.
 
-**Set Zone to OFF**
+**Enable/disable zones**
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.EnabledZones[3]":false,
-        "type":"set-settings"
-        }
+  "command": {
+    "UserAirconSettings.EnabledZones[0]": true,
+    "UserAirconSettings.EnabledZones[1]": false,
+    "type": "set-settings"
+  }
 }
 ```
 
-**Set Zone to ON**
+**Set zone temperature** (for zones with individual temperature control)
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.EnabledZones[2]":true,
-        "type":"set-settings"
-        }
+  "command": {
+    "RemoteZoneInfo[0].TemperatureSetpoint_Cool_oC": 23.0,
+    "RemoteZoneInfo[0].TemperatureSetpoint_Heat_oC": 21.0,
+    "type": "set-settings"
+  }
 }
 ```
 
-**Set Multiple Zones ON/OFF in Single Command**
+### Other Commands
+
+**Quiet mode**
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.EnabledZones[2]":true,
-        "UserAirconSettings.EnabledZones[1]":false,
-        "UserAirconSettings.EnabledZones[0]":false,
-        "type":"set-settings"
-        }
+  "command": {
+    "UserAirconSettings.QuietMode": true,
+    "type": "set-settings"
+  }
 }
 ```
 
-### Fan Mode Commands ###
-
-Fan can be set to Auto, Low, Medium or High with the option to set continuous fan by adding the '-CONT' to the end of the mode string.  
-
-**Set Fan Mode to Auto**
+**Away mode**
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.FanMode":"AUTO" | "AUTO-CONT",
-        "type":"set-settings"
-        }
+  "command": {
+    "UserAirconSettings.AwayMode": true,
+    "type": "set-settings"
+  }
 }
 ```
 
-**Set Fan Mode to Low**
+**Turbo mode** (not supported on all models — check `TurboMode.Supported`)
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.FanMode":"LOW" | "LOW-CONT",
-        "type":"set-settings"
-        }
+  "command": {
+    "UserAirconSettings.TurboMode.Enabled": true,
+    "type": "set-settings"
+  }
 }
 ```
 
-**Set Fan Mode to Medium**
+## Error Responses
+
+### Authentication Error
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.FanMode":"MED" | "MED-CONT",
-        "type":"set-settings"
-        }
+  "error": "invalid_grant",
+  "error_description": "The refresh token is invalid."
 }
 ```
 
-**Set Fan Mode to High**
+### Device Unavailable (503)
+
+Returned when the AC unit is offline or unresponsive:
 
 ```json
 {
-    "command":{
-        "UserAirconSettings.FanMode":"HIGH" | "HIGH-CONT",
-        "type":"set-settings"
-        }
+  "correlationId": "<uuid>",
+  "type": "unavailable",
+  "value": null,
+  "mwcResponseTime": "00:00:00.0000381"
 }
 ```
 
-### Temprature Commands ###
+### Rate Limiting
 
-Temprature can be set as a floating point number within permitted ranges.  
-Setting the temprature is not applicable in OFF or FAN-ONLY mode, and command will vary based on heating, cooling or auto mode. This is the setting for the common zone.  
-Random set points used as an example setting in examples that follow
+The API enforces rate limits. Avoid polling more frequently than every 30 seconds.
 
-**Set Cooling Temp**
+## Changelog
 
-```json
-{
-    "command":{
-        "UserAirconSettings.TemperatureSetpoint_Cool_oC": 20.4,
-        "type":"set-settings"
-        }
-}
-```
-
-**Set Heating Temp**
-
-```json
-{
-    "command":{
-        "UserAirconSettings.TemperatureSetpoint_Heat_oC": 22.0,
-        "type":"set-settings"
-        }
-}
-```
-
-**Set Auto Heating/Cooling Temp**
-
-```json
-{
-    "command":{
-        "UserAirconSettings.TemperatureSetpoint_Heat_oC": 22.0,
-        "UserAirconSettings.TemperatureSetpoint_Cool_oC": 20.4,
-        "type":"set-settings"
-        }
-}
-```
-
-### Zone Temprature Commands ###
-
-Same as the temprature commands above but zone specific. Zones are numbered starting at zero and will be specified within the square brackets '[]' following 'RemoteZoneInfo'.  
-Random set points and zone numbers used as an example setting in examples that follow
-
-**Set Cooling Temp**
-
-```json
-{
-    "command":{
-        "RemoteZoneInfo[0].TemperatureSetpoint_Cool_oC": 20.4,
-        "type":"set-settings"
-        }
-}
-```
-
-**Set Heating Temp**
-
-```json
-{
-    "command":{
-        "RemoteZoneInfo[3].TemperatureSetpoint_Heat_oC": 22.0,
-        "type":"set-settings"
-        }
-}
-```
-
-**Set Auto Heating/Cooling Temp**
-
-```json
-{
-    "command":{
-        "RemoteZoneInfo[2].TemperatureSetpoint_Heat_oC": 22.0,
-        "RemoteZoneInfo[2].TemperatureSetpoint_Cool_oC": 20.4,
-        "type":"set-settings"
-        }
-}
-```
+- **February 2026**: Documented OAuth2 Device Code Flow (replaced username/password).
+  Documented Events API deprecation. Added mode support, fan mode bitmask, zone
+  temperature, quiet mode, away mode, and turbo mode commands.
+- **July 2025**: Actron disabled the Events API.

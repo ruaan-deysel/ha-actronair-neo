@@ -56,18 +56,11 @@ fi
 
 "$SCRIPT_DIR/setup/sync-hacs"
 
-# Ensure the dev integration is symlinked into config/custom_components/
-# so Home Assistant's loader can discover it
-mkdir -p "${PWD}/config/custom_components"
-if [[ ! -e "${PWD}/config/custom_components/actronair_neo" ]]; then
-    ln -sf "../../custom_components/actronair_neo" "${PWD}/config/custom_components/actronair_neo"
-fi
-
 # Set the path to custom_components
 ## This lets us have the structure we want <root>/custom_components/actronair_neo
 ## while at the same time have Home Assistant configuration inside <root>/config
 ## without resorting to symlinks.
-export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}${PWD}/custom_components"
+export PYTHONPATH="${PYTHONPATH:-}:${PWD}/custom_components"
 
 log_header "Starting Home Assistant in development mode"
 log_info "Config directory: ${PWD}/config"

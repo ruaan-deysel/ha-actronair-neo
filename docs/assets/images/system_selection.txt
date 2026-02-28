@@ -1,2 +1,0 @@
-This is a placeholder for the system selection screenshot.
-Replace this file with an actual screenshot of the system selection dropdown in the configuration flow.

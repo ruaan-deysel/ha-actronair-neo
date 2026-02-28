@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.binary_sensor import (  # type: ignore
+from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.helpers.entity import EntityCategory  # type: ignore
-from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
 
-from .base_entity import ActronEntityBase
-from .const import DOMAIN
+from .entity import ActronAirNeoEntity
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -22,73 +18,36 @@ if TYPE_CHECKING:
 
     from .coordinator import ActronDataCoordinator
 
-_LOGGER = logging.getLogger(__name__)
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    hass: HomeAssistant,  # noqa: ARG001
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up ActronAir Neo diagnostic sensors."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: ActronDataCoordinator = entry.runtime_data
 
     entities = [
-        # Removed redundant sensors - functionality moved to enhanced diagnostic sensors
-        # ActronFilterStatusSensor(coordinator),  # -> sensor.actronair_neo_system_diagnostics.filter_status
-        # ActronSystemStatusSensor(coordinator),  # -> sensor.actronair_neo_system_diagnostics + performance + connectivity
-        ActronHealthMonitorSensor(
-            coordinator
-        ),  # Kept for unique error history and health monitoring
+        ActronHealthMonitorSensor(coordinator),
+        ActronFastHeatingSensor(coordinator),
+        ActronActiveWarningsSensor(coordinator),
     ]
 
     # Add YourZone enabled binary sensors for each zone
-    for zone_id, zone_data in coordinator.data["zones"].items():
-        entities.append(ActronZoneYourZoneEnabledSensor(coordinator, zone_id))
+    entities.extend(
+        ActronZoneYourZoneEnabledSensor(coordinator, zone_id)
+        for zone_id in coordinator.data["zones"]
+    )
 
     async_add_entities(entities)
 
 
-class ActronDiagnosticBase(CoordinatorEntity):
-    """Base class for diagnostic entities."""
-
-    def __init__(
-        self, coordinator: ActronDataCoordinator, unique_suffix: str, name: str
-    ) -> None:
-        """Initialize the base diagnostic entity."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.device_id}_{unique_suffix}"
-        self._attr_name = name
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    @property
-    def device_info(self):
-        """Return device information."""
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.device_id)},
-            "name": "ActronAir Neo",
-            "manufacturer": "ActronAir",
-            "model": self.coordinator.data["main"]["model"],
-            "sw_version": self.coordinator.data["main"]["firmware_version"],
-        }
-
-
-# REMOVED: ActronFilterStatusSensor - functionality moved to sensor.actronair_neo_system_diagnostics.filter_status
-# This provides the same information in a more user-friendly format
-
-# REMOVED: ActronSystemStatusSensor - functionality moved to enhanced diagnostic sensors:
-# - sensor.actronair_neo_system_diagnostics (system status, modes, temperatures)
-# - sensor.actronair_neo_performance_metrics (compressor, fan performance)
-# - sensor.actronair_neo_connectivity_status (WiFi, cloud connection)
-# This provides the same information with better organization and user experience
-
-# All methods from ActronSystemStatusSensor removed - functionality moved to enhanced sensors
-
-# All remaining methods and properties from ActronSystemStatusSensor removed
-
-
-class ActronHealthMonitorSensor(ActronEntityBase, BinarySensorEntity):
+class ActronHealthMonitorSensor(ActronAirNeoEntity, BinarySensorEntity):
     """System health monitor."""
+
+    _attr_translation_key = "system_health"
 
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the health monitor."""
@@ -96,7 +55,6 @@ class ActronHealthMonitorSensor(ActronEntityBase, BinarySensorEntity):
             coordinator, "binary_sensor", "System Health", is_diagnostic=True
         )
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
-        self._attr_icon = "mdi:alert-circle"
 
     @property
     def is_on(self) -> bool:
@@ -113,8 +71,7 @@ class ActronHealthMonitorSensor(ActronEntityBase, BinarySensorEntity):
                 last_known_state.get("Servicing", {}).get("NV_ErrorHistory", [])
             )
 
-        except (KeyError, TypeError, ValueError) as err:
-            _LOGGER.exception("Error checking system health: %s", err)
+        except (KeyError, TypeError, ValueError):
             return False
 
     @property
@@ -126,7 +83,6 @@ class ActronHealthMonitorSensor(ActronEntityBase, BinarySensorEntity):
                 f"<{self.coordinator.device_id.upper()}>", {}
             )
             servicing = last_known_state.get("Servicing", {})
-            last_known_state.get("LiveAircon", {})
 
             # Focus on unique health data not available in enhanced sensors
             error_history = servicing.get("NV_ErrorHistory", [])
@@ -145,16 +101,16 @@ class ActronHealthMonitorSensor(ActronEntityBase, BinarySensorEntity):
                 "note": "Current error code available in system_diagnostics sensor",
             }
 
-        except (KeyError, TypeError, ValueError) as err:
-            _LOGGER.exception("Error getting health attributes: %s", err)
+        except (KeyError, TypeError, ValueError):
             return {
                 "error": "Failed to get health attributes",
-                "error_details": str(err),
             }
 
 
-class ActronZoneYourZoneEnabledSensor(ActronEntityBase, BinarySensorEntity):
+class ActronZoneYourZoneEnabledSensor(ActronAirNeoEntity, BinarySensorEntity):
     """Binary sensor for YourZone enabled status."""
+
+    _attr_translation_key = "yourzone_enabled"
 
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
         """Initialize the YourZone enabled sensor."""
@@ -167,7 +123,6 @@ class ActronZoneYourZoneEnabledSensor(ActronEntityBase, BinarySensorEntity):
         )
         self.zone_id = zone_id
         self._attr_device_class = None
-        self._attr_icon = "mdi:check-circle"
 
     @property
     def is_on(self) -> bool:
@@ -177,15 +132,7 @@ class ActronZoneYourZoneEnabledSensor(ActronEntityBase, BinarySensorEntity):
                 "airflow_control_enabled", False
             )
         except KeyError:
-            _LOGGER.exception(
-                "Failed to get YourZone enabled status for zone %s", self.zone_id
-            )
             return False
-
-    @property
-    def icon(self) -> str:
-        """Return the icon based on state."""
-        return "mdi:check-circle" if self.is_on else "mdi:close-circle"
 
     @property
     def available(self) -> bool:
@@ -205,7 +152,50 @@ class ActronZoneYourZoneEnabledSensor(ActronEntityBase, BinarySensorEntity):
                 "damper_position": zone_data.get("damper_position"),
             }
         except KeyError:
-            _LOGGER.exception(
-                "Key error getting YourZone attributes for zone %s", self.zone_id
-            )
             return {}
+
+
+class ActronFastHeatingSensor(ActronAirNeoEntity, BinarySensorEntity):
+    """Fast heating binary sensor."""
+
+    _attr_translation_key = "fast_heating"
+
+    def __init__(self, coordinator: ActronDataCoordinator) -> None:
+        """Initialize the fast heating sensor."""
+        super().__init__(
+            coordinator, "binary_sensor", "Fast Heating", is_diagnostic=True
+        )
+        self._attr_device_class = BinarySensorDeviceClass.HEAT
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if fast heating is active."""
+        return self.coordinator.data["main"].get("fast_heating", False)
+
+
+class ActronActiveWarningsSensor(ActronAirNeoEntity, BinarySensorEntity):
+    """Active warnings binary sensor."""
+
+    _attr_translation_key = "active_warnings"
+
+    def __init__(self, coordinator: ActronDataCoordinator) -> None:
+        """Initialize the active warnings sensor."""
+        super().__init__(
+            coordinator, "binary_sensor", "Active Warnings", is_diagnostic=True
+        )
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if there are active warnings."""
+        warnings = self.coordinator.data["main"].get("warnings", [])
+        return len(warnings) > 0
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return warning details."""
+        warnings = self.coordinator.data["main"].get("warnings", [])
+        return {
+            "warning_count": len(warnings),
+            "warnings": warnings,
+        }

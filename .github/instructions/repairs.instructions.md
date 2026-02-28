@@ -50,18 +50,13 @@ async def async_create_fix_flow(
     data: dict[str, str | int | float | None] | None,
 ) -> RepairsFlow:
     """Create flow for issue_id."""
-    return MyRepairFlow(data)
+    return MyRepairFlow()
 
 class MyRepairFlow(RepairsFlow):
-    def __init__(self, data: dict | None = None) -> None:
-        """Initialize the repair flow."""
-        super().__init__()
-        self._data = data or {}
-
     async def async_step_init(self, user_input=None):
         if user_input is not None:
-            # self.handler is the domain string in RepairsFlow
-            ir.async_delete_issue(self.hass, DOMAIN, self._data.get("issue_id", "issue_id"))
+            entry = self.hass.config_entries.async_get_entry(self.handler)
+            ir.async_delete_issue(self.hass, entry.domain, "issue_id")
             return self.async_create_entry(data={})
         return self.async_show_form(step_id="init")
 ```

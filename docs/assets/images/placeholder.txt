@@ -1,6 +1,0 @@
-This directory contains images for the documentation.
-
-The following images need to be added:
-- config_form.png: Screenshot of the configuration form
-- climate_card.png: Screenshot of the climate card in Home Assistant
-- zone_switches.png: Screenshot of zone switches in Home Assistant

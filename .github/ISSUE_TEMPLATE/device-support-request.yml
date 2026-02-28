@@ -220,10 +220,8 @@ body:
       value: |
         ## 📚 Helpful Resources
 
-        - **📖 Documentation**: [ActronAir Neo Integration Docs](https://ruaan-deysel.github.io/ha-actronair-neo/)
         - **🤖 AI Assistant**: [DeepWiki AI Help](https://deepwiki.com/ruaan-deysel/ha-actronair-neo)
-        - **🔧 Troubleshooting**: [Troubleshooting Guide](https://ruaan-deysel.github.io/ha-actronair-neo/user/troubleshooting/)
-        - **💬 Community**: [Home Assistant Community Forum](https://community.home-assistant.io/)
+        - **💬 Community**: [Home Assistant Community Forum](https://community.home-assistant.io/t/actronair-neo-integration)
 
         ## ⏱️ What Happens Next?
 

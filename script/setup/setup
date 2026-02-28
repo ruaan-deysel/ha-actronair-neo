@@ -28,9 +28,6 @@ if [[ -z ${VIRTUAL_ENV:-} ]]; then
         source "$HOME/.local/ha-venv/bin/activate"
     elif [[ -f "$PWD/.local/ha-venv/bin/activate" ]]; then
         source "$PWD/.local/ha-venv/bin/activate"
-    else
-        log_warning "Virtual environment not found in $HOME/.local/ha-venv or $PWD/.local/ha-venv"
-        log_info "Run: ./script/setup/bootstrap to create the virtual environment"
     fi
 fi
 

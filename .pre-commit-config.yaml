@@ -19,7 +19,7 @@ repos:
           - --skip=./.*,*.csv,*.json,*.ambr
           - --quiet-level=2
         exclude_types: [csv, json, html]
-        exclude: ^(tests/fixtures/|utils/)
+        exclude: ^(tests/fixtures/|utils/|script/)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -49,6 +49,7 @@ repos:
               document-start: disable
               truthy:
                 check-keys: false
+        exclude: ^\.serena/
   - repo: https://github.com/rbubley/mirrors-prettier
     rev: v3.6.2
     hooks:
@@ -56,6 +57,15 @@ repos:
         additional_dependencies:
           - prettier@3.6.2
           - prettier-plugin-sort-json@4.2.0
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        args:
+          - -c
+          - pyproject.toml
+        additional_dependencies: ["bandit[toml]"]
+        files: ^custom_components/.+\.py$
   - repo: local
     hooks:
       - id: mypy
@@ -68,6 +78,7 @@ repos:
         args:
           - --ignore-missing-imports
           - --no-site-packages
+          - --explicit-package-bases
       - id: pylint
         name: pylint
         entry: pylint

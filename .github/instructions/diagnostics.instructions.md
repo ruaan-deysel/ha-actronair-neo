@@ -21,17 +21,6 @@ TO_REDACT = {
     "token",
     "refresh_token",
     "access_token",
-    "email",
-    "phone_number",
-    "latitude",
-    "longitude",
-    "lat",
-    "lon",
-    "client_id",
-    "client_secret",
-    "serial_number",
-    "account_id",
-    "user_id",
 }
 
 async def async_get_config_entry_diagnostics(
@@ -43,7 +32,7 @@ async def async_get_config_entry_diagnostics(
     return {
         "entry_data": async_redact_data(entry.data, TO_REDACT),
         "entry_options": async_redact_data(entry.options, TO_REDACT),
-        "coordinator_data": async_redact_data(coordinator.data, TO_REDACT),
+        "coordinator_data": coordinator.data,
     }
 ```
 

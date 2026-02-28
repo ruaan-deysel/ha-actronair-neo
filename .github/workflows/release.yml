@@ -263,7 +263,9 @@ jobs:
         if: always()
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+
+          if [ "${{ job.status }}" = "success" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" << EOF
           ## 🎉 v${VERSION} Released Successfully!
 
           **Package:** \`${{ steps.build.outputs.package }}\`
@@ -281,3 +283,13 @@ jobs:
           - ✅ HACS users can now update to v${VERSION}
           - ✅ Manual installation package available for download
           EOF
+          else
+            cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## ❌ v${VERSION} Release Failed
+
+          The release workflow did not complete successfully.
+          Check the job logs above for details.
+
+          **Status:** ${{ job.status }}
+          EOF
+          fi

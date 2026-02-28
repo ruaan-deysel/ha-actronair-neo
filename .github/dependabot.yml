@@ -45,14 +45,21 @@ updates:
       include: "scope"
     groups:
       production-minor-patch:
-        dependency-type: "production"
+        patterns:
+          - "homeassistant"
+          - "colorlog"
         update-types:
           - "minor"
           - "patch"
-      dev-dependencies:
-        dependency-type: "development"
+      dev-minor-patch:
         patterns:
           - "*"
+        exclude-patterns:
+          - "homeassistant"
+          - "colorlog"
+        update-types:
+          - "minor"
+          - "patch"
     cooldown:
       default-days: 3
       semver-major-days: 7

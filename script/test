@@ -46,24 +46,15 @@ fi
 # Parse coverage flags
 COVERAGE_ARGS=()
 PYTEST_ARGS=()
-HAS_COV=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --cov)
-            if [[ $HAS_COV == false ]]; then
-                COVERAGE_ARGS+=("--cov=custom_components/actronair_neo")
-                HAS_COV=true
-            fi
-            COVERAGE_ARGS+=("--cov-report=term-missing")
+            COVERAGE_ARGS+=("--cov=custom_components/actronair_neo" "--cov-report=term-missing")
             shift
             ;;
         --cov-html)
-            if [[ $HAS_COV == false ]]; then
-                COVERAGE_ARGS+=("--cov=custom_components/actronair_neo")
-                HAS_COV=true
-            fi
-            COVERAGE_ARGS+=("--cov-report=html")
+            COVERAGE_ARGS+=("--cov=custom_components/actronair_neo" "--cov-report=html")
             shift
             ;;
         *)
@@ -86,7 +77,7 @@ else
     log_header "Running tests"
 fi
 echo ""
-pytest ${COVERAGE_ARGS[@]+"${COVERAGE_ARGS[@]}"} ${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}
+pytest "${COVERAGE_ARGS[@]}" "${PYTEST_ARGS[@]}"
 
 if [[ ${#COVERAGE_ARGS[@]} -gt 0 ]] && [[ " ${COVERAGE_ARGS[*]} " =~ " --cov-report=html " ]]; then
     echo ""

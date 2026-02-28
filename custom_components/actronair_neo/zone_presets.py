@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .api import ConfigurationError
+from .const import DOMAIN
+from .exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+STORAGE_VERSION = 1
 
 
 class ZonePreset:
@@ -33,7 +35,8 @@ class ZonePreset:
 
         Args:
             name: Preset name
-            zones: Zone configurations {zone_id: {enabled: bool, temp_cool: float, temp_heat: float}}
+            zones: Zone configurations
+                {zone_id: {enabled, temp_cool, temp_heat}}
             description: Optional description
             created_at: Creation timestamp
 
@@ -73,13 +76,14 @@ class ZonePreset:
 class ZoneSchedule:
     """Represents a zone schedule entry."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         preset_name: str,
         time_start: time,
         time_end: time,
         days: list[int],  # 0=Monday, 6=Sunday
+        *,
         enabled: bool = True,
     ) -> None:
         """
@@ -158,17 +162,17 @@ class ZonePresetManager:
         self.device_id = device_id
         self._presets: dict[str, ZonePreset] = {}
         self._schedules: dict[str, ZoneSchedule] = {}
-        self._storage_file = os.path.join(
-            hass.config.config_dir, f"actron_zone_presets_{device_id}.json"
+        self._store: Store[dict[str, Any]] = Store(
+            hass,
+            STORAGE_VERSION,
+            f"{DOMAIN}.zone_presets_{device_id}",
         )
 
     async def async_load(self) -> None:
         """Load presets and schedules from storage."""
         try:
-            if os.path.exists(self._storage_file):
-                with open(self._storage_file) as f:
-                    data = json.load(f)
-
+            data = await self._store.async_load()
+            if data is not None:
                 # Load presets
                 for preset_data in data.get("presets", []):
                     preset = ZonePreset.from_dict(preset_data)
@@ -178,15 +182,8 @@ class ZonePresetManager:
                 for schedule_data in data.get("schedules", []):
                     schedule = ZoneSchedule.from_dict(schedule_data)
                     self._schedules[schedule.name] = schedule
-
-                _LOGGER.debug(
-                    "Loaded %d presets and %d schedules for device %s",
-                    len(self._presets),
-                    len(self._schedules),
-                    self.device_id,
-                )
-        except Exception as err:
-            _LOGGER.exception("Failed to load zone presets: %s", err)
+        except Exception:
+            _LOGGER.exception("Failed to load zone presets")
 
     async def async_save(self) -> None:
         """Save presets and schedules to storage."""
@@ -197,13 +194,9 @@ class ZonePresetManager:
                     schedule.to_dict() for schedule in self._schedules.values()
                 ],
             }
-
-            with open(self._storage_file, "w") as f:
-                json.dump(data, f, indent=2)
-
-            _LOGGER.debug("Saved zone presets for device %s", self.device_id)
-        except Exception as err:
-            _LOGGER.exception("Failed to save zone presets: %s", err)
+            await self._store.async_save(data)
+        except Exception:
+            _LOGGER.exception("Failed to save zone presets")
 
     async def async_create_preset(
         self,
@@ -230,8 +223,6 @@ class ZonePresetManager:
         preset = ZonePreset(name, zones, description)
         self._presets[name] = preset
         await self.async_save()
-
-        _LOGGER.info("Created zone preset '%s' with %d zones", name, len(zones))
 
     async def async_delete_preset(self, name: str) -> None:
         """
@@ -261,8 +252,6 @@ class ZonePresetManager:
         del self._presets[name]
         await self.async_save()
 
-        _LOGGER.info("Deleted zone preset '%s'", name)
-
     def get_preset(self, name: str) -> ZonePreset | None:
         """Get a zone preset by name."""
         return self._presets.get(name)
@@ -271,13 +260,14 @@ class ZonePresetManager:
         """Get all zone presets."""
         return self._presets.copy()
 
-    async def async_create_schedule(
+    async def async_create_schedule(  # noqa: PLR0913
         self,
         name: str,
         preset_name: str,
         time_start: time,
         time_end: time,
         days: list[int],
+        *,
         enabled: bool = True,
     ) -> None:
         """
@@ -303,11 +293,11 @@ class ZonePresetManager:
             msg = f"Preset '{preset_name}' not found"
             raise ConfigurationError(msg)
 
-        schedule = ZoneSchedule(name, preset_name, time_start, time_end, days, enabled)
+        schedule = ZoneSchedule(
+            name, preset_name, time_start, time_end, days, enabled=enabled
+        )
         self._schedules[name] = schedule
         await self.async_save()
-
-        _LOGGER.info("Created zone schedule '%s' for preset '%s'", name, preset_name)
 
     def get_active_schedules(self) -> list[ZoneSchedule]:
         """Get currently active schedules."""

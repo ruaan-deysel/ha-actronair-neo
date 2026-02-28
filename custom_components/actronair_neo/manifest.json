@@ -4,12 +4,12 @@
   "codeowners": ["@ruaan-deysel"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://ruaan-deysel.github.io/ha-actronair-neo/",
+  "documentation": "https://github.com/ruaan-deysel/ha-actronair-neo/issues",
   "homekit": {},
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ruaan-deysel/ha-actronair-neo/issues",
-  "requirements": ["aiofiles"],
+  "requirements": [],
   "ssdp": [],
-  "version": "2025.11.0",
+  "version": "2026.3.0",
   "zeroconf": []
 }

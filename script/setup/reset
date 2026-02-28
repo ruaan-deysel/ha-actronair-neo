@@ -61,7 +61,7 @@ fi
 if [[ $FULL_RESET == true ]]; then
     # Full reset: Remove everything
     log_step "Removing all files in config/ directory"
-    find config -mindepth 1 -depth -exec rm -rf {} \\; 2>/dev/null || true
+    rm -rf config/* config/.* 2>/dev/null || true
 
     # Check if configuration.yaml exists in git
     if git ls-files --error-unmatch config/configuration.yaml >/dev/null 2>&1; then

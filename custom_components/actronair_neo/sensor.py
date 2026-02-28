@@ -2,30 +2,29 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.sensor import (  # type: ignore
+from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import (  # type: ignore
+from homeassistant.const import (
+    PERCENTAGE,
     UnitOfEnergy,
     UnitOfPower,
     UnitOfTemperature,
 )
-from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
+from homeassistant.helpers.entity import EntityCategory  # type: ignore[import-untyped]
 
-from .base_entity import ActronEntityBase
 from .const import (
     ATTR_BATTERY_LEVEL,
     ATTR_LAST_UPDATED,
     ATTR_ZONE_NAME,
     ATTR_ZONE_TYPE,
-    DOMAIN,
 )
+from .entity import ActronAirNeoEntity
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -35,16 +34,38 @@ if TYPE_CHECKING:
 
     from .coordinator import ActronDataCoordinator
 
-_LOGGER = logging.getLogger(__name__)
+PARALLEL_UPDATES = 0
 
 
-def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
+def _get_device_section(last_known_state: dict[str, Any]) -> dict[str, Any]:
+    """
+    Extract the serial-keyed device section from lastKnownState.
+
+    The API nests device-specific data (SystemStatus_Local, Cloud, etc.)
+    inside a key like "<SERIAL_NUMBER>". This helper finds that section.
+
+    Args:
+        last_known_state: The lastKnownState dict from the raw API response
+
+    Returns:
+        The device section dict, or empty dict if not found
+
+    """
+    for key, value in last_known_state.items():
+        if key.startswith("<") and key.endswith(">") and isinstance(value, dict):
+            return value
+    return {}
+
+
+def _supports_power_monitoring(
+    coordinator: ActronDataCoordinator,
+) -> bool:
     """
     Determine if the outdoor unit supports power consumption monitoring.
 
-    Power monitoring requires hardware support (current/voltage sensors) in the
-    outdoor unit. Fixed Speed Classic units with basic controllers typically
-    don't have this capability, while VSD units with advanced controllers do.
+    Power monitoring requires hardware support (current/voltage sensors)
+    in the outdoor unit. Fixed Speed Classic units with basic controllers
+    typically don't have this capability.
 
     Args:
         coordinator: The ActronDataCoordinator instance
@@ -54,131 +75,114 @@ def _supports_power_monitoring(coordinator: ActronDataCoordinator) -> bool:
 
     """
     try:
-        # Get outdoor unit information from raw API data (more reliable during setup)
-        raw_data = coordinator.data.get("raw_data", {})
-        last_known_state = raw_data.get("lastKnownState", {})
+        result = _check_power_monitoring_support(coordinator)
+    except (KeyError, TypeError, AttributeError):
+        return False
+    else:
+        return result
 
-        # Validate lastKnownState data is available
-        if not last_known_state:
-            _LOGGER.warning(
-                "No lastKnownState data available for power monitoring check"
-            )
-            return False
 
-        # Access AirconSystem directly from lastKnownState (no serial number wrapper)
-        aircon_system = last_known_state.get("AirconSystem", {})
-        outdoor_unit_info = aircon_system.get("OutdoorUnit", {})
+def _check_power_monitoring_support(
+    coordinator: ActronDataCoordinator,
+) -> bool:
+    """
+    Check hardware support for power monitoring.
 
-        _LOGGER.debug(
-            "Power monitoring check - outdoor_unit_info keys: %s",
-            list(outdoor_unit_info.keys()) if outdoor_unit_info else "None",
-        )
+    Args:
+        coordinator: The ActronDataCoordinator instance
 
-        family = outdoor_unit_info.get("Family", "")
-        ctrl_board_type = outdoor_unit_info.get("CtrlBoardType", "")
+    Returns:
+        True if power monitoring is supported
 
-        _LOGGER.debug(
-            "Power monitoring check - Family: '%s', Controller: '%s'",
-            family,
-            ctrl_board_type,
-        )
+    """
+    raw_data = coordinator.data.get("raw_data", {})
+    last_known_state = raw_data.get("lastKnownState", {})
 
-        # Fixed Speed Classic units with Type 100 controllers don't support
-        # power monitoring. These units lack the necessary current transformers
-        # and voltage sensing circuitry
-        if "Fixed Speed" in family and "Type 100" in ctrl_board_type:
-            _LOGGER.info(
-                "Power monitoring not supported: Fixed Speed unit with Type 100 "
-                "controller (Family: %s, Controller: %s)",
-                family,
-                ctrl_board_type,
-            )
-            return False
-
-        # Additional runtime check: Verify if power fields are populated
-        # This catches cases where API fields exist but hardware doesn't provide data
-        # Access LiveAircon directly from lastKnownState (no serial number wrapper)
-        live_aircon = last_known_state.get("LiveAircon", {})
-        outdoor_unit_live = live_aircon.get("OutdoorUnit", {})
-
-        comp_power = outdoor_unit_live.get("CompPower", 0)
-        supply_voltage = outdoor_unit_live.get("SupplyVoltage_Vac", 0.0)
-        supply_current = outdoor_unit_live.get("SupplyCurrentRMS_A", 0.0)
-        compressor_on = outdoor_unit_live.get("CompressorOn", False)
-
-        _LOGGER.debug(
-            "Power monitoring check - CompPower: %s, Voltage: %s, Current: %s, "
-            "Compressor: %s",
-            comp_power,
-            supply_voltage,
-            supply_current,
-            "ON" if compressor_on else "OFF",
-        )
-
-        # If compressor is running but all power fields are zero,
-        # hardware doesn't support it
-        if (
-            compressor_on
-            and comp_power == 0
-            and supply_voltage == 0.0
-            and supply_current == 0.0
-        ):
-            _LOGGER.info(
-                "Power monitoring not supported: Compressor running but all "
-                "power fields are zero (Family: %s, Controller: %s)",
-                family,
-                ctrl_board_type,
-            )
-            return False
-
-        # If any power field has a non-zero value, power monitoring is supported
-        if comp_power > 0 or supply_voltage > 0 or supply_current > 0:
-            _LOGGER.info(
-                "Power monitoring supported: Active power data detected "
-                "(CompPower: %s W, Voltage: %s V, Current: %s A)",
-                comp_power,
-                supply_voltage,
-                supply_current,
-            )
-            return True
-
-        # Advanced/Inverter series units typically support power monitoring
-        # Check for indicators in the Family field
-        if any(
-            indicator in family
-            for indicator in ["Advance", "Inverter", "VSD", "Variable Speed"]
-        ):
-            _LOGGER.info(
-                "Power monitoring likely supported: Advanced/Inverter unit detected "
-                "(Family: %s, Controller: %s)",
-                family,
-                ctrl_board_type,
-            )
-            return True
-
-        # Default to False for safety - don't create sensors if unsure
-        _LOGGER.info(
-            "Power monitoring support unknown, defaulting to disabled "
-            "(Family: %s, Controller: %s)",
-            family,
-            ctrl_board_type,
-        )
+    if not last_known_state:
         return False
 
-    except (KeyError, TypeError, AttributeError) as err:
-        _LOGGER.warning(
-            "Error checking power monitoring support: %s - defaulting to disabled", err
-        )
+    # Handle both shapes: last_known_state may be keyed by serial number
+    # (matching async_setup_entry) or may directly contain AirconSystem.
+    if "AirconSystem" in last_known_state or "LiveAircon" in last_known_state:
+        resolved_state = last_known_state
+    else:
+        serial_key = next(iter(last_known_state.keys()), None)
+        if serial_key is None:
+            return False
+        resolved_state = last_known_state.get(serial_key, {})
+
+    aircon_system = resolved_state.get("AirconSystem", {})
+    outdoor_unit_info = aircon_system.get("OutdoorUnit", {})
+
+    family = outdoor_unit_info.get("Family", "")
+    ctrl_board_type = outdoor_unit_info.get("CtrlBoardType", "")
+
+    # Fixed Speed Classic units with Type 100 controllers don't support
+    # power monitoring
+    if "Fixed Speed" in family and "Type 100" in ctrl_board_type:
         return False
+
+    return _check_power_fields(resolved_state, family, ctrl_board_type)
+
+
+def _check_power_fields(
+    last_known_state: dict,
+    family: str,
+    ctrl_board_type: str,  # noqa: ARG001
+) -> bool:
+    """
+    Check if power fields are populated in live data.
+
+    Args:
+        last_known_state: Raw API last known state
+        family: Outdoor unit family string
+        ctrl_board_type: Controller board type string
+
+    Returns:
+        True if power monitoring is supported
+
+    """
+    live_aircon = last_known_state.get("LiveAircon", {})
+    outdoor_unit_live = live_aircon.get("OutdoorUnit", {})
+
+    comp_power = outdoor_unit_live.get("CompPower", 0)
+    supply_voltage = outdoor_unit_live.get("SupplyVoltage_Vac", 0.0)
+    supply_current = outdoor_unit_live.get("SupplyCurrentRMS_A", 0.0)
+    compressor_on = outdoor_unit_live.get("CompressorOn", False)
+
+    # If compressor is running but all power fields are zero,
+    # hardware doesn't support it
+    if (
+        compressor_on
+        and comp_power == 0
+        and supply_voltage == 0.0
+        and supply_current == 0.0
+    ):
+        return False
+
+    # If any power field has a non-zero value, power monitoring is supported
+    if comp_power > 0 or supply_voltage > 0 or supply_current > 0:
+        return True
+
+    # Advanced/Inverter series units typically support power monitoring
+    return any(
+        indicator in family
+        for indicator in [
+            "Advance",
+            "Inverter",
+            "VSD",
+            "Variable Speed",
+        ]
+    )
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    hass: HomeAssistant,  # noqa: ARG001
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up ActronAir Neo sensors from a config entry."""
-    coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: ActronDataCoordinator = entry.runtime_data
 
     entities = [
         ActronMainSensor(coordinator),
@@ -186,100 +190,39 @@ async def async_setup_entry(
         ActronSystemDiagnosticSensor(coordinator),
         ActronConnectivitySensor(coordinator),
         ActronPerformanceSensor(coordinator),
+        ActronServiceReminderSensor(coordinator),
     ]
+
+    # Add outdoor temperature sensor if data is available
+    outdoor_temp = coordinator.data["main"].get("outdoor_temp")
+    if outdoor_temp is not None:
+        entities.append(ActronOutdoorTemperatureSensor(coordinator))
 
     # Only add power sensors if hardware supports power monitoring
     if _supports_power_monitoring(coordinator):
-        # Get outdoor unit info from raw data for logging
-        raw_data = coordinator.data.get("raw_data", {})
-        last_known_state = raw_data.get("lastKnownState", {})
-        if last_known_state:
-            serial_key = next(iter(last_known_state.keys()))
-            system_data = last_known_state.get(serial_key, {})
-            aircon_system = system_data.get("AirconSystem", {})
-            outdoor_unit_info = aircon_system.get("OutdoorUnit", {})
-        else:
-            outdoor_unit_info = {}
-
-        _LOGGER.info(
-            "Adding power monitoring sensors for device %s (Family: %s, "
-            "Controller: %s)",
-            coordinator.device_id,
-            outdoor_unit_info.get("Family", "Unknown"),
-            outdoor_unit_info.get("CtrlBoardType", "Unknown"),
-        )
         entities.extend(
             [
                 ActronCompressorPowerSensor(coordinator),
                 ActronCompressorEnergySensor(coordinator),
             ]
         )
-    else:
-        # Get outdoor unit info from raw data for logging
-        raw_data = coordinator.data.get("raw_data", {})
-        last_known_state = raw_data.get("lastKnownState", {})
-        if last_known_state:
-            serial_key = next(iter(last_known_state.keys()))
-            system_data = last_known_state.get(serial_key, {})
-            aircon_system = system_data.get("AirconSystem", {})
-            outdoor_unit_info = aircon_system.get("OutdoorUnit", {})
-        else:
-            outdoor_unit_info = {}
-
-        _LOGGER.info(
-            "Skipping power monitoring sensors for device %s - hardware does "
-            "not support power measurement (Family: %s, Controller: %s). "
-            "Consider using external power monitoring hardware.",
-            coordinator.device_id,
-            outdoor_unit_info.get("Family", "Unknown"),
-            outdoor_unit_info.get("CtrlBoardType", "Unknown"),
-        )
 
     # Add zone sensors
     for zone_id, zone_data in coordinator.data["zones"].items():
-        _LOGGER.debug("Adding zone sensor for %s: %s", zone_id, zone_data)
         entities.append(ActronZoneSensor(coordinator, zone_id))
-        # Add damper position sensor for each zone
-        entities.append(ActronZoneDamperPositionSensor(coordinator, zone_id))
 
-    # Add consolidated zone damper diagnostic sensor
-    entities.append(ActronZoneDamperDiagnosticSensor(coordinator))
+        # Add humidity sensor if zone reports humidity
+        if zone_data.get("humidity") is not None:
+            entities.append(ActronZoneHumiditySensor(coordinator, zone_id))
+
+        # Add battery sensor only for wireless zones (battery_level populated)
+        if zone_data.get("battery_level") is not None:
+            entities.append(ActronZoneBatterySensor(coordinator, zone_id))
 
     async_add_entities(entities)
 
 
-class ActronSensorBase(CoordinatorEntity, SensorEntity):
-    """Base class for ActronAir Neo sensors."""
-
-    _ATTR_HAS_ENTITY_NAME: Final = True
-
-    def __init__(
-        self,
-        coordinator: ActronDataCoordinator,
-        unique_id: str,
-        name: str,
-    ) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_device_class = SensorDeviceClass.TEMPERATURE
-        self._attr_name = name
-        self._attr_unique_id = f"{coordinator.device_id}_{unique_id}"
-        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def device_info(self):
-        """Return device information about this entity."""
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.device_id)},
-            "name": "ActronAir Neo",
-            "manufacturer": "ActronAir",
-            "model": self.coordinator.data["main"]["model"],
-            "sw_version": self.coordinator.data["main"]["firmware_version"],
-        }
-
-
-class ActronMainSensor(ActronEntityBase, SensorEntity):
+class ActronMainSensor(ActronAirNeoEntity, SensorEntity):
     """Main temperature sensor."""
 
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
@@ -302,7 +245,7 @@ class ActronMainSensor(ActronEntityBase, SensorEntity):
         }
 
 
-class ActronZoneSensor(ActronEntityBase, SensorEntity):
+class ActronZoneSensor(ActronAirNeoEntity, SensorEntity):
     """Zone temperature sensor."""
 
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
@@ -319,11 +262,11 @@ class ActronZoneSensor(ActronEntityBase, SensorEntity):
         if not isinstance(signal, (int, float)):
             return "Unknown"
 
-        if signal > -50:
+        if signal > -50:  # noqa: PLR2004
             quality = "Excellent"
-        elif signal > -60:
+        elif signal > -60:  # noqa: PLR2004
             quality = "Good"
-        elif signal > -70:
+        elif signal > -70:  # noqa: PLR2004
             quality = "Fair"
         else:
             quality = "Poor"
@@ -336,7 +279,6 @@ class ActronZoneSensor(ActronEntityBase, SensorEntity):
         try:
             return self.coordinator.data["zones"][self.zone_id]["temp"]
         except KeyError:
-            _LOGGER.exception("Failed to get temperature for zone %s", self.zone_id)
             return None
 
     @property
@@ -354,118 +296,111 @@ class ActronZoneSensor(ActronEntityBase, SensorEntity):
         try:
             zone_data = self.coordinator.data["zones"][self.zone_id]
             peripheral_data = self.coordinator.get_zone_peripheral(self.zone_id)
-
-            attributes = {
-                ATTR_ZONE_NAME: zone_data["name"],
-                "humidity": zone_data["humidity"],
-                "enabled": zone_data["is_enabled"],
-            }
-
-            # Add battery level from zone data if available (for wireless sensors)
-            if zone_data.get("battery_level") is not None:
-                attributes[ATTR_BATTERY_LEVEL] = zone_data["battery_level"]
-                _LOGGER.debug(
-                    "Zone %s has battery level: %s%%",
-                    self.zone_id,
-                    zone_data["battery_level"],
-                )
-
-            # Add peripheral type information if available
-            if zone_data.get("peripheral_type") is not None:
-                attributes[ATTR_ZONE_TYPE] = zone_data["peripheral_type"]
-
-            # Add connection information for wireless sensors
-            if zone_data.get("last_connection") is not None:
-                attributes[ATTR_LAST_UPDATED] = zone_data["last_connection"]
-            if zone_data.get("connection_state") is not None:
-                attributes["connection_state"] = zone_data["connection_state"]
-
-            # Add signal strength if available (with user-friendly formatting)
-            if zone_data.get("signal_strength") is not None:
-                signal = zone_data["signal_strength"]
-                attributes["signal_strength"] = self._format_signal_strength(signal)
-
-            # Fallback to peripheral data for additional information if available
+            attributes = self._build_zone_attributes(zone_data)
             if peripheral_data:
-                # Only use peripheral battery data if zone data doesn't have it
-                if (
-                    ATTR_BATTERY_LEVEL not in attributes
-                    and "RemainingBatteryCapacity_pc" in peripheral_data
-                ):
-                    attributes[ATTR_BATTERY_LEVEL] = peripheral_data[
-                        "RemainingBatteryCapacity_pc"
-                    ]
-                    _LOGGER.debug(
-                        "Zone %s using peripheral battery level: %s%%",
-                        self.zone_id,
-                        peripheral_data["RemainingBatteryCapacity_pc"],
-                    )
-
-                # Use peripheral data for additional attributes if zone data
-                # doesn't have them
-                if ATTR_ZONE_TYPE not in attributes and "DeviceType" in peripheral_data:
-                    attributes[ATTR_ZONE_TYPE] = peripheral_data["DeviceType"]
-                if (
-                    "signal_strength" not in attributes
-                    and "Signal_of3" in peripheral_data
-                    and peripheral_data["Signal_of3"] != "NA"
-                ):
-                    try:
-                        signal = int(peripheral_data["Signal_of3"])
-                        attributes["signal_strength"] = self._format_signal_strength(
-                            signal
-                        )
-                    except (ValueError, TypeError):
-                        attributes["signal_strength"] = peripheral_data["Signal_of3"]
-                if (
-                    ATTR_LAST_UPDATED not in attributes
-                    and "LastConnectionTime" in peripheral_data
-                ):
-                    attributes[ATTR_LAST_UPDATED] = peripheral_data[
-                        "LastConnectionTime"
-                    ]
-                if (
-                    "connection_state" not in attributes
-                    and "ConnectionState" in peripheral_data
-                ):
-                    attributes["connection_state"] = peripheral_data["ConnectionState"]
-
-            _LOGGER.debug("Zone %s attributes: %s", self.zone_id, attributes)
+                self._enrich_from_peripheral(attributes, peripheral_data)
+        except (KeyError, TypeError, ValueError):
+            return {}
+        else:
             return attributes
 
-        except KeyError:
-            _LOGGER.exception("Key error getting attributes for zone %s", self.zone_id)
-            return {}
-        except TypeError:
-            _LOGGER.exception("Type error getting attributes for zone %s", self.zone_id)
-            return {}
-        except ValueError:
-            _LOGGER.exception(
-                "Value error getting attributes for zone %s", self.zone_id
-            )
-            return {}
+    def _build_zone_attributes(self, zone_data: dict[str, Any]) -> dict[str, Any]:
+        """Build base zone attributes from zone data."""
+        attributes: dict[str, Any] = {
+            ATTR_ZONE_NAME: zone_data["name"],
+            "humidity": zone_data["humidity"],
+            "enabled": zone_data["is_enabled"],
+        }
+
+        if zone_data.get("battery_level") is not None:
+            attributes[ATTR_BATTERY_LEVEL] = zone_data["battery_level"]
+
+        if zone_data.get("peripheral_type") is not None:
+            attributes[ATTR_ZONE_TYPE] = zone_data["peripheral_type"]
+
+        if zone_data.get("last_connection") is not None:
+            attributes[ATTR_LAST_UPDATED] = zone_data["last_connection"]
+        if zone_data.get("connection_state") is not None:
+            attributes["connection_state"] = zone_data["connection_state"]
+
+        if zone_data.get("signal_strength") is not None:
+            signal = zone_data["signal_strength"]
+            attributes["signal_strength"] = self._format_signal_strength(signal)
+
+        return attributes
+
+    def _enrich_from_peripheral(
+        self,
+        attributes: dict[str, Any],
+        peripheral_data: dict[str, Any],
+    ) -> None:
+        """Enrich zone attributes from peripheral data."""
+        if (
+            ATTR_BATTERY_LEVEL not in attributes
+            and "RemainingBatteryCapacity_pc" in peripheral_data
+        ):
+            attributes[ATTR_BATTERY_LEVEL] = peripheral_data[
+                "RemainingBatteryCapacity_pc"
+            ]
+
+        if ATTR_ZONE_TYPE not in attributes and "DeviceType" in peripheral_data:
+            attributes[ATTR_ZONE_TYPE] = peripheral_data["DeviceType"]
+
+        if (
+            "signal_strength" not in attributes
+            and "Signal_of3" in peripheral_data
+            and peripheral_data["Signal_of3"] != "NA"
+        ):
+            try:
+                signal = int(peripheral_data["Signal_of3"])
+                if 0 <= signal <= 3:  # noqa: PLR2004
+                    # Signal_of3 is a 0-3 bars scale, not dBm
+                    bars_map = {
+                        0: "Poor (0 bars)",
+                        1: "Fair (1 bar)",
+                        2: "Good (2 bars)",
+                        3: "Excellent (3 bars)",
+                    }
+                    attributes["signal_strength"] = bars_map[signal]
+                else:
+                    # Assume dBm value
+                    attributes["signal_strength"] = self._format_signal_strength(signal)
+            except (ValueError, TypeError):
+                attributes["signal_strength"] = peripheral_data["Signal_of3"]
+
+        if (
+            ATTR_LAST_UPDATED not in attributes
+            and "LastConnectionTime" in peripheral_data
+        ):
+            attributes[ATTR_LAST_UPDATED] = peripheral_data["LastConnectionTime"]
+
+        if (
+            "connection_state" not in attributes
+            and "ConnectionState" in peripheral_data
+        ):
+            attributes["connection_state"] = peripheral_data["ConnectionState"]
 
 
-class ActronZoneDamperPositionSensor(ActronEntityBase, SensorEntity):
-    """Zone damper position sensor (read-only)."""
+class ActronZoneHumiditySensor(ActronAirNeoEntity, SensorEntity):
+    """Zone humidity sensor."""
+
+    _attr_device_class = SensorDeviceClass.HUMIDITY
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "zone_humidity"
 
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
-        """Initialize the zone damper position sensor."""
+        """Initialize the zone humidity sensor."""
         zone_name = coordinator.data["zones"][zone_id]["name"]
-        super().__init__(coordinator, "sensor", f"{zone_name} Damper Position")
+        super().__init__(coordinator, "sensor", f"Zone {zone_name} Humidity")
         self.zone_id = zone_id
-        self._attr_native_unit_of_measurement = "%"
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:valve"
-        self._attr_device_class = None
 
     @property
-    def native_value(self) -> float | None:
-        """Return the current damper position percentage."""
+    def native_value(self) -> StateType:
+        """Return the humidity of the zone."""
         try:
-            return self.coordinator.data["zones"][self.zone_id].get("damper_position")
+            return self.coordinator.data["zones"][self.zone_id].get("humidity")
         except KeyError:
-            _LOGGER.exception("Failed to get damper position for zone %s", self.zone_id)
             return None
 
     @property
@@ -474,144 +409,79 @@ class ActronZoneDamperPositionSensor(ActronEntityBase, SensorEntity):
         return (
             super().available
             and self.zone_id in self.coordinator.data["zones"]
-            and self.coordinator.data["zones"][self.zone_id].get("damper_position")
+            and self.coordinator.data["zones"][self.zone_id].get("humidity") is not None
+        )
+
+
+class ActronZoneBatterySensor(ActronAirNeoEntity, SensorEntity):
+    """
+    Zone sensor battery level.
+
+    Only created for wireless zone sensors that report battery level.
+    Wired sensors do not have battery data.
+    """
+
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "zone_battery"
+
+    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
+        """Initialize the zone battery sensor."""
+        zone_name = coordinator.data["zones"][zone_id]["name"]
+        super().__init__(coordinator, "sensor", f"Zone {zone_name} Battery")
+        self.zone_id = zone_id
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the battery level of the zone sensor."""
+        try:
+            return self.coordinator.data["zones"][self.zone_id].get("battery_level")
+        except KeyError:
+            return None
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return (
+            super().available
+            and self.zone_id in self.coordinator.data["zones"]
+            and self.coordinator.data["zones"][self.zone_id].get("battery_level")
             is not None
         )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return damper-specific attributes."""
+        """Return additional attributes about the wireless sensor."""
         try:
             zone_data = self.coordinator.data["zones"][self.zone_id]
-            return {
-                "zone_id": self.zone_id,
-                "zone_name": zone_data.get("name"),
-                "zone_max_position": zone_data.get("zone_max_position"),
-                "zone_min_position": zone_data.get("zone_min_position"),
-                "yourzone_enabled": zone_data.get("airflow_control_enabled"),
-                "airflow_setpoint": zone_data.get("airflow_setpoint"),
-            }
         except KeyError:
-            _LOGGER.exception(
-                "Key error getting damper attributes for zone %s", self.zone_id
-            )
             return {}
 
-
-class ActronZoneDamperDiagnosticSensor(ActronEntityBase, SensorEntity):
-    """Consolidated zone damper positions diagnostic sensor."""
-
-    def __init__(self, coordinator: ActronDataCoordinator) -> None:
-        """Initialize the zone damper diagnostic sensor."""
-        super().__init__(
-            coordinator, "sensor", "Zone Damper Positions", is_diagnostic=True
-        )
-        self._attr_native_unit_of_measurement = None
-        self._attr_state_class = None
-        self._attr_icon = "mdi:valve"
-
-    @property
-    def native_value(self) -> str:
-        """Return summary of damper positions."""
-        try:
-            zones = self.coordinator.data.get("zones", {})
-            open_dampers = []
-            total_zones = 0
-
-            for zone_id, zone_data in zones.items():
-                total_zones += 1
-                damper_position = zone_data.get("damper_position", 0)
-                if damper_position > 0:
-                    open_dampers.append(
-                        f"{zone_data.get('name', zone_id)}: {damper_position}%"
-                    )
-
-            if not open_dampers:
-                return f"All Closed ({total_zones} zones)"
-            if len(open_dampers) == 1:
-                return f"1 Open: {open_dampers[0]}"
-            return f"{len(open_dampers)} Open of {total_zones}"
-
-        except (KeyError, TypeError):
-            return "Unknown"
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return all zone damper positions and statuses."""
-        try:
-            zones = self.coordinator.data.get("zones", {})
-            attributes = {}
-
-            # Individual zone damper data
-            for zone_id, zone_data in zones.items():
-                zone_name = zone_data.get("name", zone_id)
-                damper_position = zone_data.get("damper_position", 0)
-
-                # Determine damper status
-                if damper_position == 0:
-                    damper_status = "Closed"
-                elif damper_position >= 90:
-                    damper_status = "Fully Open"
-                elif damper_position >= 50:
-                    damper_status = "Mostly Open"
-                elif damper_position >= 25:
-                    damper_status = "Partially Open"
-                else:
-                    damper_status = "Mostly Closed"
-
-                # Add zone-specific attributes
-                attributes[f"{zone_name.lower().replace(' ', '_')}_position"] = (
-                    f"{damper_position}%"
-                )
-                attributes[f"{zone_name.lower().replace(' ', '_')}_status"] = (
-                    damper_status
-                )
-                attributes[f"{zone_name.lower().replace(' ', '_')}_airflow_active"] = (
-                    "Yes"
-                    if (damper_position > 0 and zone_data.get("is_enabled", False))
-                    else "No"
-                )
-
-            # Summary statistics
-            positions = [
-                zone_data.get("damper_position", 0) for zone_data in zones.values()
-            ]
-            open_count = sum(1 for pos in positions if pos > 0)
-            avg_position = sum(positions) / len(positions) if positions else 0
-            zones_with_airflow = sum(
-                1
-                for zone_data in zones.values()
-                if zone_data.get("damper_position", 0) > 0
-                and zone_data.get("is_enabled", False)
-            )
-
-            attributes.update(
-                {
-                    "total_zones": str(len(zones)),
-                    "open_dampers": str(open_count),
-                    "closed_dampers": str(len(zones) - open_count),
-                    "average_position": f"{avg_position:.1f}%",
-                    "max_position": f"{max(positions) if positions else 0}%",
-                    "zones_with_airflow": str(zones_with_airflow),
-                }
-            )
-
-            return attributes
-
-        except (KeyError, TypeError):
-            _LOGGER.exception("Error getting damper diagnostic attributes")
-            return {"error": "Failed to retrieve damper data"}
+        attrs: dict[str, Any] = {}
+        if zone_data.get("peripheral_type") is not None:
+            attrs["sensor_type"] = zone_data["peripheral_type"]
+        if zone_data.get("signal_strength") is not None:
+            attrs["signal_strength_dbm"] = zone_data["signal_strength"]
+        if zone_data.get("connection_state") is not None:
+            attrs["connection_state"] = zone_data["connection_state"]
+        if zone_data.get("last_connection") is not None:
+            attrs["last_connection"] = zone_data["last_connection"]
+        return attrs
 
 
-class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
+class ActronSystemDiagnosticSensor(ActronAirNeoEntity, SensorEntity):
     """Enhanced system diagnostic sensor with live data and user-friendly formatting."""
+
+    _attr_translation_key = "system_diagnostics"
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the system diagnostic sensor."""
         super().__init__(
             coordinator, "sensor", "System Diagnostics", is_diagnostic=True
         )
-        self._attr_icon = "mdi:information-outline"
         self._attr_native_unit_of_measurement = None
         self._attr_device_class = None
         self._attr_state_class = None
@@ -621,12 +491,13 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
         """Return the overall system status."""
         try:
             main_data = self.coordinator.data["main"]
+        except (KeyError, TypeError):
+            return "Unknown"
+        else:
             if main_data.get("is_on", False):
                 mode = main_data.get("mode", "Unknown").title()
                 return f"Running ({mode})"
             return "Standby"
-        except (KeyError, TypeError):
-            return "Unknown"
 
     def _format_uptime(self, seconds: int) -> str:
         """Format uptime to human readable string."""
@@ -660,8 +531,9 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
 
-            # System status from live data
-            system_status = last_known_state.get("SystemStatus_Local", {})
+            # SystemStatus_Local is inside the serial-keyed device section
+            device_section = _get_device_section(last_known_state)
+            system_status = device_section.get("SystemStatus_Local", {})
             live_aircon = last_known_state.get("LiveAircon", {})
 
             return {
@@ -694,25 +566,19 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
                     live_aircon.get("OutdoorUnit", {}).get("CompPower", 0)
                 ),
                 "supply_voltage": (
-                    f"{live_aircon.get('OutdoorUnit', {}).get('SupplyVoltage_Vac', 0):.1f} VAC"
+                    f"{live_aircon.get('OutdoorUnit', {}).get('SupplyVoltage_Vac', 0):.1f}"  # noqa: E501
+                    " VAC"
                 ),
                 "supply_current": (
-                    f"{live_aircon.get('OutdoorUnit', {}).get('SuppyCurrentRMS_A', 0):.1f} A"
+                    f"{live_aircon.get('OutdoorUnit', {}).get('SuppyCurrentRMS_A', 0):.1f}"  # noqa: E501
+                    " A"
                 ),
                 "supply_power": self._format_power_value(
                     live_aircon.get("OutdoorUnit", {}).get("SuppyPowerRMS_W", 0)
                 ),
-                "system_capacity": (
-                    f"{last_known_state.get('AirconSystem', {}).get('OutdoorUnit', {}).get('Capacity_kW', 0)} kW"
-                ),
+                "system_capacity": self._format_system_capacity(last_known_state),
                 # Air Volume Data (if available)
-                "air_volume": (
-                    f"{last_known_state.get('UserAirconSettings', {}).get('VFT', {}).get('Airflow', 0):.1f} m³/h"
-                )
-                if last_known_state.get("UserAirconSettings", {})
-                .get("VFT", {})
-                .get("Supported", False)
-                else "Not Supported",
+                "air_volume": self._format_air_volume(last_known_state),
                 # Live Temperature Readings
                 "indoor_temperature": self._format_temperature(
                     main_data.get("indoor_temp")
@@ -740,7 +606,6 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
             }
 
         except (KeyError, TypeError, ValueError):
-            _LOGGER.exception("Error getting system diagnostic attributes")
             return {
                 "error": "Failed to retrieve system diagnostics",
             }
@@ -749,20 +614,39 @@ class ActronSystemDiagnosticSensor(ActronEntityBase, SensorEntity):
         """Format power value with appropriate units."""
         if power_value == 0:
             return "0 W"
-        if power_value >= 1000:
+        if power_value >= 1000:  # noqa: PLR2004
             return f"{power_value / 1000:.1f} kW"
         return f"{power_value:.0f} W"
 
+    def _format_system_capacity(self, last_known_state: dict[str, Any]) -> str:
+        """Format system capacity from last known state."""
+        capacity = (
+            last_known_state.get("AirconSystem", {})
+            .get("OutdoorUnit", {})
+            .get("Capacity_kW", 0)
+        )
+        return f"{capacity} kW"
 
-class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
+    def _format_air_volume(self, last_known_state: dict[str, Any]) -> str:
+        """Format air volume from last known state."""
+        vft = last_known_state.get("UserAirconSettings", {}).get("VFT", {})
+        if not vft.get("Supported", False):
+            return "Not Supported"
+        airflow = vft.get("Airflow", 0)
+        return f"{airflow:.1f} m\u00b3/h"
+
+
+class ActronConnectivitySensor(ActronAirNeoEntity, SensorEntity):
     """Enhanced connectivity sensor with signal quality and connection health."""
+
+    _attr_translation_key = "connectivity_status"
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the connectivity sensor."""
         super().__init__(
             coordinator, "sensor", "Connectivity Status", is_diagnostic=True
         )
-        self._attr_icon = "mdi:wifi"
         self._attr_native_unit_of_measurement = None
         self._attr_device_class = None
         self._attr_state_class = None
@@ -771,59 +655,55 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
     def native_value(self) -> str:
         """Return the connectivity status."""
         try:
-            raw_data = self.coordinator.data.get("raw_data", {})
-
-            # Primary indicator: device online status and recent API activity
-            device_online = raw_data.get("isOnline", False)
-
-            # Secondary indicator: cloud connection state
-            last_known_state = raw_data.get("lastKnownState", {})
-
-            # Get the device-specific section (e.g., "<22H09780>")
-            device_section = None
-            for key, value in last_known_state.items():
-                if key.startswith("<") and key.endswith(">"):
-                    device_section = value
-                    break
-
-            if not device_section:
-                # Fallback to old structure if device section not found
-                device_section = last_known_state
-
-            cloud_status = device_section.get("Cloud", {})
-            connection_state = cloud_status.get("ConnectionState", "Unknown")
-
-            # Determine status based on multiple indicators
-            if device_online and self.coordinator.last_update_success:
-                # Device is online and we have recent successful updates
-                if connection_state == "Connected":
-                    return "Online"
-                if connection_state == "Unknown":
-                    return "Online (Cloud Status Unknown)"
-                return f"Online (Cloud: {connection_state})"
-            if device_online:
-                # Device reports online but we may have update issues
-                return "Online (Limited Connectivity)"
-            # Device appears offline
-            if connection_state != "Unknown":
-                return f"Offline ({connection_state})"
-            return "Offline"
-
+            status = self._determine_connectivity_status()
         except (KeyError, TypeError):
             return "Unknown"
+        else:
+            return status
+
+    def _determine_connectivity_status(self) -> str:
+        """Determine connectivity status from raw data."""
+        raw_data = self.coordinator.data.get("raw_data", {})
+        device_online = raw_data.get("isOnline", False)
+        last_known_state = raw_data.get("lastKnownState", {})
+
+        # Get the device-specific section (e.g., "<22H09780>")
+        device_section = None
+        for key, value in last_known_state.items():
+            if key.startswith("<") and key.endswith(">"):
+                device_section = value
+                break
+
+        if not device_section:
+            device_section = last_known_state
+
+        cloud_status = device_section.get("Cloud", {})
+        connection_state = cloud_status.get("ConnectionState", "Unknown")
+
+        if device_online and self.coordinator.last_update_success:
+            if connection_state == "Connected":
+                return "Online"
+            if connection_state == "Unknown":
+                return "Online (Cloud Status Unknown)"
+            return f"Online (Cloud: {connection_state})"
+        if device_online:
+            return "Online (Limited Connectivity)"
+        if connection_state != "Unknown":
+            return f"Offline ({connection_state})"
+        return "Offline"
 
     def _format_wifi_signal(self, signal: float | None) -> dict[str, str]:
         """Format WiFi signal strength with quality rating."""
         if not isinstance(signal, (int, float)):
             return {"strength": "Unknown", "quality": "Unknown", "bars": "0/4"}
 
-        if signal > -50:
+        if signal > -50:  # noqa: PLR2004
             quality = "Excellent"
             bars = "4/4"
-        elif signal > -60:
+        elif signal > -60:  # noqa: PLR2004
             quality = "Good"
             bars = "3/4"
-        elif signal > -70:
+        elif signal > -70:  # noqa: PLR2004
             quality = "Fair"
             bars = "2/4"
         else:
@@ -839,16 +719,8 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
 
-            # Get the device-specific section (e.g., "<22H09780>")
-            device_section = None
-            for key, value in last_known_state.items():
-                if key.startswith("<") and key.endswith(">"):
-                    device_section = value
-                    break
-
-            if not device_section:
-                # Fallback to old structure if device section not found
-                device_section = last_known_state
+            # SystemStatus_Local and Cloud are in the serial-keyed device section
+            device_section = _get_device_section(last_known_state)
 
             system_status = device_section.get("SystemStatus_Local", {})
             cloud_status = device_section.get("Cloud", {})
@@ -896,7 +768,6 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
             }
 
         except (KeyError, TypeError, ValueError):
-            _LOGGER.exception("Error getting connectivity attributes")
             return {
                 "error": "Failed to retrieve connectivity data",
             }
@@ -917,15 +788,17 @@ class ActronConnectivitySensor(ActronEntityBase, SensorEntity):
         return f"{minutes}m"
 
 
-class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
+class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
     """Enhanced performance sensor with real-time operational metrics."""
+
+    _attr_translation_key = "performance_metrics"
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the performance sensor."""
         super().__init__(
             coordinator, "sensor", "Performance Metrics", is_diagnostic=True
         )
-        self._attr_icon = "mdi:speedometer"
         self._attr_native_unit_of_measurement = "%"
         self._attr_device_class = None
         self._attr_state_class = None
@@ -936,18 +809,17 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
     def available(self) -> bool:
         """Return if entity is available."""
         try:
-            # Check if coordinator is available and has required data
             if not super().available:
                 return False
 
             raw_data = self.coordinator.data.get("raw_data", {})
             last_known_state = raw_data.get("lastKnownState", {})
 
-            # Sensor is available if we have LiveAircon data
-            return "LiveAircon" in last_known_state
+            has_data = "LiveAircon" in last_known_state
         except (KeyError, TypeError, AttributeError):
-            _LOGGER.debug("Performance sensor unavailable: missing required data")
             return False
+        else:
+            return has_data
 
     @property
     def native_value(self) -> float | None:
@@ -958,7 +830,6 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
             live_aircon = last_known_state.get("LiveAircon", {})
 
             if not live_aircon:
-                _LOGGER.debug("Performance sensor: No LiveAircon data available")
                 return None
 
             # Calculate efficiency based on compressor capacity and system status
@@ -966,10 +837,7 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
             capacity = live_aircon.get("CompressorCapacity", 0)
             return float(capacity) if capacity is not None else 0.0
 
-        except (KeyError, TypeError, ValueError) as err:
-            _LOGGER.warning(
-                "Error getting performance sensor value: %s", err, exc_info=True
-            )
+        except (KeyError, TypeError, ValueError):
             return None
 
     def _format_temperature(self, value: Any) -> str:
@@ -987,11 +855,12 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
             return "Unknown"
         try:
             power = float(value)
-            if power >= 1000:
-                return f"{power / 1000:.1f} kW"
-            return f"{power:.0f} W"
         except (ValueError, TypeError):
             return str(value)
+        else:
+            if power >= 1000:  # noqa: PLR2004
+                return f"{power / 1000:.1f} kW"
+            return f"{power:.0f} W"
 
     def _get_operational_status(self, live_aircon: dict) -> str:
         """Determine operational status from live data."""
@@ -1018,15 +887,15 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
             last_known_state = raw_data.get("lastKnownState", {})
 
             if not last_known_state:
-                _LOGGER.debug("Performance sensor: No lastKnownState data available")
                 return {"status": "No data available"}
 
             live_aircon = last_known_state.get("LiveAircon", {})
             outdoor_unit = live_aircon.get("OutdoorUnit", {})
-            system_status = last_known_state.get("SystemStatus_Local", {})
+            # SystemStatus_Local is inside the serial-keyed device section
+            device_section = _get_device_section(last_known_state)
+            system_status = device_section.get("SystemStatus_Local", {})
 
             if not live_aircon:
-                _LOGGER.debug("Performance sensor: No LiveAircon data available")
                 return {"status": "No live data available"}
 
             return {
@@ -1067,6 +936,9 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
                     .get("SHTC1", {})
                     .get("Temperature_oC")
                 ),
+                "outdoor_ambient_temp": self._format_temperature(
+                    outdoor_unit.get("AmbTemp")
+                ),
                 # Valve and Control
                 "reverse_valve_position": outdoor_unit.get(
                     "ReverseValvePosition", "Unknown"
@@ -1095,18 +967,16 @@ class ActronPerformanceSensor(ActronEntityBase, SensorEntity):
                 "continuous_fan": main_data.get("fan_continuous", False),
             }
 
-        except (KeyError, TypeError, ValueError) as err:
-            _LOGGER.warning(
-                "Error getting performance attributes: %s", err, exc_info=True
-            )
+        except (KeyError, TypeError, ValueError):
             return {
                 "error": "Failed to retrieve performance data",
-                "error_details": str(err),
             }
 
 
-class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
+class ActronCompressorPowerSensor(ActronAirNeoEntity, SensorEntity):
     """Compressor power sensor for energy dashboard compatibility."""
+
+    _attr_translation_key = "compressor_power"
 
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the compressor power sensor."""
@@ -1114,7 +984,6 @@ class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:flash"
 
     @property
     def native_value(self) -> float | None:
@@ -1124,7 +993,6 @@ class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
             last_known_state = raw_data.get("lastKnownState", {})
 
             if not last_known_state:
-                _LOGGER.debug("No lastKnownState data available for power sensor")
                 return None
 
             # Access LiveAircon directly from lastKnownState (no serial number wrapper)
@@ -1148,7 +1016,6 @@ class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
             )
 
         except (KeyError, TypeError, ValueError):
-            _LOGGER.exception("Error getting compressor power")
             return None
 
     @property
@@ -1176,12 +1043,13 @@ class ActronCompressorPowerSensor(ActronEntityBase, SensorEntity):
             }
 
         except (KeyError, TypeError):
-            _LOGGER.exception("Error getting compressor power attributes")
             return {"error": "Failed to retrieve power data"}
 
 
-class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
+class ActronCompressorEnergySensor(ActronAirNeoEntity, SensorEntity):
     """Compressor energy sensor for energy dashboard compatibility."""
+
+    _attr_translation_key = "compressor_energy"
 
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the compressor energy sensor."""
@@ -1189,11 +1057,10 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_icon = "mdi:lightning-bolt"
 
         # Initialize energy tracking variables
         self._last_power = 0.0
-        self._last_update = None
+        self._last_update: datetime | None = None
         self._total_energy = 0.0
 
     @property
@@ -1205,7 +1072,6 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
             last_known_state = raw_data.get("lastKnownState", {})
 
             if not last_known_state:
-                _LOGGER.debug("No lastKnownState data available for energy sensor")
                 return None
 
             # Access LiveAircon directly from lastKnownState (no serial number wrapper)
@@ -1249,7 +1115,6 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
             return round(self._total_energy, 3)
 
         except (KeyError, TypeError, ValueError):
-            _LOGGER.exception("Error calculating compressor energy")
             return None
 
     @property
@@ -1276,5 +1141,56 @@ class ActronCompressorEnergySensor(ActronEntityBase, SensorEntity):
             }
 
         except (KeyError, TypeError):
-            _LOGGER.exception("Error getting compressor energy attributes")
             return {"error": "Failed to retrieve energy data"}
+
+
+class ActronOutdoorTemperatureSensor(ActronAirNeoEntity, SensorEntity):
+    """Outdoor temperature sensor."""
+
+    _attr_translation_key = "outdoor_temperature"
+
+    def __init__(self, coordinator: ActronDataCoordinator) -> None:
+        """Initialize the outdoor temperature sensor."""
+        super().__init__(coordinator, "sensor", "Outdoor Temperature")
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the outdoor temperature."""
+        return self.coordinator.data["main"].get("outdoor_temp")
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available (None means sensor unavailable)."""
+        return (
+            super().available
+            and self.coordinator.data["main"].get("outdoor_temp") is not None
+        )
+
+
+class ActronServiceReminderSensor(ActronAirNeoEntity, SensorEntity):
+    """Service reminder sensor."""
+
+    _attr_translation_key = "service_reminder"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: ActronDataCoordinator) -> None:
+        """Initialize the service reminder sensor."""
+        super().__init__(coordinator, "sensor", "Service Reminder", is_diagnostic=True)
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the service reminder time."""
+        return self.coordinator.data["main"].get("service_reminder_time", "NA")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        return {
+            "enabled": self.coordinator.data["main"].get(
+                "service_reminder_enabled", False
+            ),
+        }

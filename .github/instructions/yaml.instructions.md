@@ -18,6 +18,7 @@ applyTo: "**/*.yaml, **/*.yml"
 
 - Use modern HA configuration syntax (no legacy `platform:` style)
 - Use `!secret` for sensitive values (passwords, API keys, tokens)
+- Boolean values: `true`/`false` (lowercase)
 
 ## services.yaml (Service Actions)
 
@@ -26,16 +27,12 @@ Service action definitions must include:
 - `name` — Human-readable action name
 - `description` — What the action does
 - `fields` — Parameters with types and descriptions
-- `target` — Optional; only required when the action targets specific entities
+- `target` — If the action targets entities
 
 ```yaml
 set_zone_temperature:
   name: Set zone temperature
   description: Sets the target temperature for a specific zone.
-  target:
-    entity:
-      integration: actronair_neo
-      domain: climate
   fields:
     zone_id:
       name: Zone ID

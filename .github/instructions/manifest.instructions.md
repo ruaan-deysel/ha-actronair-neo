@@ -45,10 +45,10 @@ Update version only after testing with the new library release.
 
 ## Version
 
-Use calendar versioning (CalVer): `YEAR.MONTH.PATCH` (Home Assistant convention: `2025.1.0`)
+Use semantic versioning: `YEAR.MINOR.PATCH` (Home Assistant convention: `2025.1.0`)
 
 - Increment last segment for bug fixes
-- Increment middle segment (month) for new releases
+- Increment middle for new features
 - First segment is the year
 
 ## Common Mistakes

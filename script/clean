@@ -96,10 +96,10 @@ fi
 
 # Optional: Clean __pycache__ (normally not needed, but useful for troubleshooting)
 if [[ $DEEP_MODE == true ]]; then
-    log_step "Deep clean: Removing all .pyc files"
-    find . -type f -name "*.pyc" -delete 2>/dev/null || true
     log_step "Deep clean: Removing all __pycache__ directories"
     find . -type d -name "__pycache__" -delete 2>/dev/null || true
+    log_step "Deep clean: Removing all .pyc files"
+    find . -type f -name "*.pyc" -delete 2>/dev/null || true
 fi
 
 log_success "Cleanup complete"

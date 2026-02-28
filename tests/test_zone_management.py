@@ -1,20 +1,15 @@
 """Tests for zone management enhancements."""
 
-from datetime import datetime, time
-from unittest.mock import AsyncMock, patch
+from __future__ import annotations
+
+from datetime import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from custom_components.actronair_neo.zone_analytics import (
-    ZoneAnalyticsManager,
-    ZoneUsageStats,
-)
 from homeassistant.core import HomeAssistant
 
-from custom_components.actronair_neo.api import (
-    ActronApi,
-    ConfigurationError,
-)
 from custom_components.actronair_neo.coordinator import ActronDataCoordinator
+from custom_components.actronair_neo.exceptions import ConfigurationError
 from custom_components.actronair_neo.zone_presets import (
     ZonePreset,
     ZonePresetManager,
@@ -121,19 +116,20 @@ class TestZonePresetManager:
     """Test zone preset manager functionality."""
 
     @pytest.mark.asyncio
-    async def test_preset_manager_initialization(self, hass: HomeAssistant) -> None:
+    async def test_preset_manager_initialization(self) -> None:
         """Test preset manager initialization."""
+        hass = MagicMock()
         manager = ZonePresetManager(hass, "TEST123")
 
-        assert manager.hass == hass
+        assert manager.hass is hass
         assert manager.device_id == "TEST123"
         assert len(manager._presets) == 0
         assert len(manager._schedules) == 0
 
     @pytest.mark.asyncio
-    async def test_create_preset(self, hass: HomeAssistant) -> None:
+    async def test_create_preset(self) -> None:
         """Test creating a zone preset."""
-        manager = ZonePresetManager(hass, "TEST123")
+        manager = ZonePresetManager(MagicMock(), "TEST123")
         zones = {"zone_1": {"enabled": True, "temp_cool": 22.0}}
 
         with patch.object(manager, "async_save", new_callable=AsyncMock):
@@ -145,9 +141,9 @@ class TestZonePresetManager:
         assert preset.description == "Description"
 
     @pytest.mark.asyncio
-    async def test_create_duplicate_preset(self, hass: HomeAssistant) -> None:
+    async def test_create_duplicate_preset(self) -> None:
         """Test creating duplicate preset raises error."""
-        manager = ZonePresetManager(hass, "TEST123")
+        manager = ZonePresetManager(MagicMock(), "TEST123")
         zones = {"zone_1": {"enabled": True}}
 
         with patch.object(manager, "async_save", new_callable=AsyncMock):
@@ -157,8 +153,9 @@ class TestZonePresetManager:
                 await manager.async_create_preset("Test", zones)
 
     @pytest.mark.asyncio
-    async def test_delete_preset_with_schedules(self, hass: HomeAssistant) -> None:
+    async def test_delete_preset_with_schedules(self) -> None:
         """Test deleting preset removes associated schedules."""
+        hass = MagicMock()
         manager = ZonePresetManager(hass, "TEST123")
 
         with patch.object(manager, "async_save", new_callable=AsyncMock):
@@ -178,108 +175,6 @@ class TestZonePresetManager:
             assert "Morning" not in manager._schedules
 
 
-class TestZoneUsageStats:
-    """Test zone usage statistics."""
-
-    def test_zone_stats_initialization(self) -> None:
-        """Test zone stats initialization."""
-        stats = ZoneUsageStats("zone_1")
-
-        assert stats.zone_id == "zone_1"
-        assert stats.total_runtime_hours == 0.0
-        assert len(stats.daily_runtime_hours) == 0
-        assert stats.setpoint_changes == 0
-        assert stats.on_off_cycles == 0
-
-    def test_record_temperature(self) -> None:
-        """Test temperature recording."""
-        stats = ZoneUsageStats("zone_1")
-
-        stats.record_temperature(22.5, 22.0)
-
-        assert len(stats.temperature_history) == 1
-        reading = stats.temperature_history[0]
-        assert reading["temperature"] == 22.5
-        assert reading["setpoint"] == 22.0
-        assert reading["variance"] == 0.5
-
-    def test_record_state_change(self) -> None:
-        """Test state change recording."""
-        stats = ZoneUsageStats("zone_1")
-
-        # Turn on
-        stats.record_state_change(True)
-        assert stats.on_off_cycles == 1
-
-        # Turn off after 1 hour
-        from datetime import timedelta
-
-        later_time = datetime.now() + timedelta(hours=1)
-        stats.record_state_change(False, later_time)
-
-        assert stats.on_off_cycles == 2
-        assert stats.total_runtime_hours == 1.0
-
-    def test_efficiency_score_calculation(self) -> None:
-        """Test efficiency score calculation."""
-        stats = ZoneUsageStats("zone_1")
-
-        # Add some temperature readings with low variance
-        for i in range(10):
-            stats.record_temperature(22.0 + (i % 2) * 0.1, 22.0)
-
-        score = stats.calculate_efficiency_score()
-        assert 80 <= score <= 100  # Should be high efficiency
-
-        # Add readings with high variance
-        for i in range(10):
-            stats.record_temperature(22.0 + i * 2, 22.0)
-
-        score = stats.calculate_efficiency_score()
-        assert score < 50  # Should be lower efficiency
-
-
-class TestZoneAnalyticsManager:
-    """Test zone analytics manager."""
-
-    @pytest.mark.asyncio
-    async def test_analytics_manager_initialization(self, hass: HomeAssistant) -> None:
-        """Test analytics manager initialization."""
-        manager = ZoneAnalyticsManager(hass, "TEST123")
-
-        assert manager.hass == hass
-        assert manager.device_id == "TEST123"
-        assert len(manager._zone_stats) == 0
-
-    @pytest.mark.asyncio
-    async def test_record_zone_data(self, hass: HomeAssistant) -> None:
-        """Test recording zone data for analytics."""
-        manager = ZoneAnalyticsManager(hass, "TEST123")
-
-        await manager.async_record_zone_data("zone_1", 22.5, 22.0, True)
-
-        assert "zone_1" in manager._zone_stats
-        stats = manager._zone_stats["zone_1"]
-        assert len(stats.temperature_history) == 1
-        assert stats.last_state_change is not None
-
-    @pytest.mark.asyncio
-    async def test_system_summary(self, hass: HomeAssistant) -> None:
-        """Test system analytics summary."""
-        manager = ZoneAnalyticsManager(hass, "TEST123")
-
-        # Add some data
-        await manager.async_record_zone_data("zone_1", 22.0, 22.0, True)
-        await manager.async_record_zone_data("zone_2", 24.0, 24.0, False)
-
-        summary = manager.get_system_summary()
-
-        assert summary["status"] == "ok"
-        assert summary["total_zones"] == 2
-        assert "most_used_zone" in summary
-        assert "least_used_zone" in summary
-
-
 class TestCoordinatorZoneManagement:
     """Test coordinator zone management integration."""
 
@@ -287,7 +182,7 @@ class TestCoordinatorZoneManagement:
     async def test_create_preset_from_current(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api,
     ) -> None:
         """Test creating preset from current zone state."""
         coordinator = ActronDataCoordinator(
@@ -330,7 +225,7 @@ class TestCoordinatorZoneManagement:
     async def test_bulk_zone_operation(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api,
     ) -> None:
         """Test bulk zone operations."""
         coordinator = ActronDataCoordinator(
@@ -359,7 +254,7 @@ class TestCoordinatorZoneManagement:
     async def test_bulk_zone_operation_disabled(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api,
     ) -> None:
         """Test bulk zone operation with zone control disabled."""
         coordinator = ActronDataCoordinator(

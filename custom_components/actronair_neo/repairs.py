@@ -169,7 +169,8 @@ async def async_check_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     # Check sensor availability
     unavailable_sensors = []
-    for zone_id, zone_data in coordinator.data.get("zones", {}).items():
+    zones = coordinator.data.get("zones", {}) if coordinator.data else {}
+    for zone_id, zone_data in zones.items():
         if zone_data.get("temp") is None and zone_data.get("capabilities", {}).get(
             "exists", False
         ):
@@ -229,7 +230,8 @@ async def async_health_check(hass: HomeAssistant, entry: ConfigEntry) -> dict[st
         health_status["overall_status"] = "degraded"
 
     # Check zone sensor health
-    for zone_id, zone_data in coordinator.data.get("zones", {}).items():
+    zones = coordinator.data.get("zones", {}) if coordinator.data else {}
+    for zone_id, zone_data in zones.items():
         if (
             zone_data.get("battery_level") is not None
             and zone_data["battery_level"] < 20  # noqa: PLR2004

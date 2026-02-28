@@ -4,7 +4,7 @@
   "codeowners": ["@ruaan-deysel"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/ruaan-deysel/ha-actronair-neo/issues",
+  "documentation": "https://github.com/ruaan-deysel/ha-actronair-neo",
   "homekit": {},
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ruaan-deysel/ha-actronair-neo/issues",

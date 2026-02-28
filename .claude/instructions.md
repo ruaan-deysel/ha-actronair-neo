@@ -15,6 +15,7 @@ This file provides coding guidelines for Claude AI when working on the ActronAir
 ### 🚫 Documentation Policy
 
 **NEVER** generate unsolicited documentation:
+
 - Do NOT create validation documents, summary documents, or reference documents unless explicitly requested
 - Do NOT create README files or markdown documentation without being asked
 - Do NOT create project summaries or status reports
@@ -95,7 +96,7 @@ def calculate_value(data: dict[str, Any]) -> float:
 
 **ALWAYS** follow these steps after making code changes:
 
-1. Run `scripts/lint` to validate code
+1. Run `script/lint` to validate code
 2. Fix all linting errors and warnings
 3. Do NOT commit code that fails linting
 4. Verify changes don't break existing functionality
@@ -103,10 +104,11 @@ def calculate_value(data: dict[str, Any]) -> float:
 ### Linting Command
 
 ```bash
-scripts/lint
+script/lint
 ```
 
 This runs:
+
 - `ruff format .` - Code formatting
 - `ruff check . --fix` - Code quality checks with auto-fixes
 
@@ -115,9 +117,9 @@ This runs:
 ### Setup Commands
 
 ```bash
-scripts/setup      # Initial setup
-scripts/develop    # Start Home Assistant in dev mode
-scripts/lint       # Check code quality
+script/setup/setup  # Initial setup
+script/develop     # Start Home Assistant in dev mode
+script/lint        # Check code quality
 ```
 
 ### Testing and Validation
@@ -140,6 +142,7 @@ python -m pytest --cov=custom_components/actronair_neo tests/  # With coverage
 ### ActronAir API (`api.py`)
 
 Use custom exception classes:
+
 - `ApiError`: General API errors
 - `AuthenticationError`: Authentication failures
 - `ConfigurationError`: Configuration issues
@@ -186,24 +189,24 @@ custom_components/actronair_neo/
 3. Add to `PLATFORMS` list in `__init__.py`
 4. Add translations to `strings.json`
 5. Update coordinator for necessary data
-6. Run `scripts/lint`
-7. Test with `scripts/develop`
+6. Run `script/lint`
+7. Test with `script/develop`
 
 ### Modifying the Coordinator
 
 1. Update `coordinator.py` data fetching
 2. Update `types.py` if needed
 3. Update entity platforms
-4. Run `scripts/lint`
+4. Run `script/lint`
 5. Check `config/home-assistant.log`
-6. Test with `scripts/develop`
+6. Test with `script/develop`
 
 ### Fixing Bugs
 
 1. Identify issue in logs or code
 2. Write test case reproducing bug
 3. Fix in appropriate module
-4. Run `scripts/lint`
+4. Run `script/lint`
 5. Run tests
 6. Check logs for side effects
 
@@ -215,4 +218,3 @@ custom_components/actronair_neo/
 - [Data Coordinator](https://developers.home-assistant.io/docs/integration_fetching_data/)
 - [Python Type Hints](https://docs.python.org/3/library/typing.html)
 - [Ruff Documentation](https://docs.astral.sh/ruff/)
-

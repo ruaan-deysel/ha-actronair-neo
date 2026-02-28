@@ -9,7 +9,8 @@ name: Release
     paths:
       - custom_components/actronair_neo/manifest.json
     tags:
-      - "v*"
+      - "[0-9]*"
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
@@ -48,7 +49,7 @@ jobs:
       - name: Check if tag already exists
         id: check_tag
         run: |
-          TAG="v${{ steps.manifest.outputs.version }}"
+          TAG="${{ steps.manifest.outputs.version }}"
 
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
@@ -68,7 +69,7 @@ jobs:
         id: create_tag
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          TAG="v${{ steps.manifest.outputs.version }}"
+          TAG="${{ steps.manifest.outputs.version }}"
           echo "Creating tag $TAG"
 
           git config user.name "github-actions[bot]"
@@ -80,7 +81,7 @@ jobs:
 
       - name: Summary
         run: |
-          TAG="v${{ steps.manifest.outputs.version }}"
+          TAG="${{ steps.manifest.outputs.version }}"
           if [ "${{ steps.check_tag.outputs.exists }}" = "true" ]; then
             echo "Tag $TAG already existed. No new tag created." >> "$GITHUB_STEP_SUMMARY"
           else
@@ -97,12 +98,14 @@ jobs:
       id-token: write
       attestations: write
     # Run when: (1) triggered directly by a tag push, OR
-    # (2) auto_tag just created a new tag in this workflow run.
+    # (2) auto_tag just created a new tag in this workflow run, OR
+    # (3) manually triggered via workflow_dispatch.
     # always() is needed so the job evaluates even when auto_tag is skipped.
     if: >-
       always() && !cancelled() &&
       (startsWith(github.ref, 'refs/tags/') ||
-       needs.auto_tag.outputs.tag_created == 'true')
+       needs.auto_tag.outputs.tag_created == 'true' ||
+       github.event_name == 'workflow_dispatch')
 
     steps:
       - name: Checkout code
@@ -115,7 +118,7 @@ jobs:
         run: |
           # Determine version from tag ref (direct tag push) or auto_tag output
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
+            VERSION=${GITHUB_REF#refs/tags/}
           else
             VERSION="${{ needs.auto_tag.outputs.version }}"
           fi
@@ -196,7 +199,7 @@ jobs:
           fi
 
           if [ -z "$NOTES" ]; then
-            NOTES="Release v${VERSION} of the ActronAir Neo Home Assistant integration."
+            NOTES="Release ${VERSION} of the ActronAir Neo Home Assistant integration."
           fi
 
           # Assemble RELEASE_NOTES.md using a heredoc
@@ -250,11 +253,11 @@ jobs:
           fi
 
           # shellcheck disable=SC2086
-          gh release create "v${VERSION}" \
+          gh release create "${VERSION}" \
             "${{ steps.build.outputs.package }}" \
             SHA256SUM \
             CHANGELOG.md \
-            --title "v${VERSION}" \
+            --title "${VERSION}" \
             --notes-file RELEASE_NOTES.md \
             --verify-tag \
             $PRERELEASE_FLAG
@@ -266,13 +269,13 @@ jobs:
 
           if [ "${{ job.status }}" = "success" ]; then
             cat >> "$GITHUB_STEP_SUMMARY" << EOF
-          ## 🎉 v${VERSION} Released Successfully!
+          ## 🎉 ${VERSION} Released Successfully!
 
           **Package:** \`${{ steps.build.outputs.package }}\`
 
           **SHA256:** \`${{ steps.build.outputs.sha256 }}\`
 
-          **Release:** https://github.com/${{ github.repository }}/releases/tag/v${VERSION}
+          **Release:** https://github.com/${{ github.repository }}/releases/tag/${VERSION}
 
           **Type:** ${{ steps.version.outputs.prerelease == 'true' && 'Pre-release' || 'Stable release' }}
 
@@ -280,12 +283,12 @@ jobs:
 
           - ✅ Release created and package uploaded
           - ✅ Build provenance attestation recorded
-          - ✅ HACS users can now update to v${VERSION}
+          - ✅ HACS users can now update to ${VERSION}
           - ✅ Manual installation package available for download
           EOF
           else
             cat >> "$GITHUB_STEP_SUMMARY" << EOF
-          ## ❌ v${VERSION} Release Failed
+          ## ❌ ${VERSION} Release Failed
 
           The release workflow did not complete successfully.
           Check the job logs above for details.

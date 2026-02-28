@@ -140,8 +140,6 @@ body:
       label: ✅ Checklist
       description: "Please confirm you have done the following:"
       options:
-        - label: "I have read the [troubleshooting guide](https://ruaan-deysel.github.io/ha-actronair-neo/user/troubleshooting/)"
-          required: true
         - label: "I have searched existing issues to make sure this isn't a duplicate"
           required: true
         - label: "I have tried restarting Home Assistant"

@@ -72,6 +72,18 @@ class MainData(TypedDict):
     serial_number: str | None
     filter_clean_required: bool
     defrosting: bool
+    # Extended API coverage fields
+    turbo_mode_supported: bool
+    turbo_mode_enabled: bool
+    after_hours_enabled: bool
+    after_hours_duration: int
+    outdoor_temp: float | None
+    fast_heating: bool
+    quiet_mode_supported: bool
+    quiet_mode_active: bool
+    service_reminder_enabled: bool
+    service_reminder_time: str
+    warnings: list[str]
 
 
 class CoordinatorData(TypedDict):

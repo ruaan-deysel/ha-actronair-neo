@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-import logging
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.diagnostics import async_redact_data  # type: ignore
-from homeassistant.util import dt as dt_util  # type: ignore
-
-from .const import DOMAIN
+from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
-_LOGGER = logging.getLogger(__name__)
-
 TO_REDACT = {
+    "access_token",
+    "refresh_token",
+    "token_expires_at",
     "username",
     "password",
     "devices",
@@ -32,26 +29,27 @@ TO_REDACT = {
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant,
+    hass: HomeAssistant,  # noqa: ARG001
     entry: ConfigEntry,
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
+
+    if not coordinator or not coordinator.data:
+        msg = "No coordinator data available"
+        raise ValueError(msg)
 
     try:
-        if not coordinator or not coordinator.data:
-            msg = "No coordinator data available"
-            raise ValueError(msg)
-
         # First get the correct path to the data
         raw_data = coordinator.data.get("raw_data", {})
-        # Use device serial to access the correct data
+        full_state = raw_data.get("lastKnownState", {})
+        # Use device serial to access the serial-keyed device section
+        # (contains SystemStatus_Local, Cloud, etc.)
         device_serial = coordinator.data["main"]["serial_number"]
-        last_known_state = raw_data.get("lastKnownState", {}).get(
-            f"<{device_serial.upper()}>", {}
-        )
-        aircon_system = last_known_state.get("AirconSystem", {})
-        live_aircon = last_known_state.get("LiveAircon", {})
+        device_section = full_state.get(f"<{device_serial.upper()}>", {})
+        # Top-level sections (AirconSystem, LiveAircon, etc.)
+        aircon_system = full_state.get("AirconSystem", {})
+        live_aircon = full_state.get("LiveAircon", {})
         indoor_unit = aircon_system.get("IndoorUnit", {})
         outdoor_unit = aircon_system.get("OutdoorUnit", {})
 
@@ -105,18 +103,13 @@ async def async_get_config_entry_diagnostics(
                     "quiet_mode": coordinator.data["main"].get("quiet_mode", False),
                     "away_mode": coordinator.data["main"].get("away_mode", False),
                     "connection": {
-                        "state": last_known_state.get("Cloud", {}).get(
+                        "state": device_section.get("Cloud", {}).get(
                             "ConnectionState", "Unknown"
                         ),
-                        "wifi_signal": last_known_state.get(
-                            "SystemStatus_Local", {}
-                        ).get("WifiStrength_of3", "No Signal"),
-                        "wifi_ssid": async_redact_data(
-                            last_known_state.get("SystemStatus_Local", {})
-                            .get("WiFi", {})
-                            .get("ApSSID", "Not Available"),
-                            TO_REDACT,
+                        "wifi_signal": device_section.get("SystemStatus_Local", {}).get(
+                            "WifiStrength_of3", "No Signal"
                         ),
+                        "wifi_ssid": "**REDACTED**",
                     },
                     "compressor": {
                         "state": coordinator.data["main"].get(
@@ -152,7 +145,7 @@ async def async_get_config_entry_diagnostics(
                         "coil_temp": live_aircon.get("OutdoorUnit", {}).get(
                             "CoilTemp", "Not Available"
                         ),
-                        "ambient_temp": last_known_state.get("SystemStatus_Local", {})
+                        "ambient_temp": device_section.get("SystemStatus_Local", {})
                         .get("SensorInputs", {})
                         .get("SHTC1", {})
                         .get("Temperature_oC", "Not Available"),
@@ -163,8 +156,8 @@ async def async_get_config_entry_diagnostics(
             },
         }
 
-        # Get RemoteZoneInfo for zone capabilities
-        remote_zone_info = last_known_state.get("RemoteZoneInfo", [])
+        # Get RemoteZoneInfo for zone capabilities (top-level in lastKnownState)
+        remote_zone_info = full_state.get("RemoteZoneInfo", [])
 
         # Add zone information with enhanced capability details
         for zone_id, zone_data in coordinator.data["zones"].items():
@@ -181,7 +174,7 @@ async def async_get_config_entry_diagnostics(
             }
 
             # Find matching RemoteZoneInfo for this zone
-            matching_zone_info = next(
+            matching_zone_info: dict[str, Any] = next(
                 (
                     zone
                     for zone in remote_zone_info
@@ -233,41 +226,35 @@ async def async_get_config_entry_diagnostics(
 
             diagnostics_data["data"]["zones"][zone_id] = zone_info
 
-        return diagnostics_data
-
-    except KeyError as ex:
-        _LOGGER.exception("KeyError generating diagnostics: %s", str(ex))
+    except KeyError:
         return {
             "error": {
                 "type": "KeyError",
-                "message": str(ex),
                 "coordinator_available": bool(coordinator),
                 "has_data": bool(coordinator and coordinator.data),
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": dt_util.utcnow().isoformat(),
             },
             "entry": async_redact_data(entry.as_dict(), TO_REDACT),
         }
-    except ValueError as ex:
-        _LOGGER.exception("ValueError generating diagnostics: %s", str(ex))
+    except ValueError:
         return {
             "error": {
                 "type": "ValueError",
-                "message": str(ex),
                 "coordinator_available": bool(coordinator),
                 "has_data": bool(coordinator and coordinator.data),
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": dt_util.utcnow().isoformat(),
             },
             "entry": async_redact_data(entry.as_dict(), TO_REDACT),
         }
-    except (TypeError, AttributeError) as ex:
-        _LOGGER.exception("Error generating diagnostics: %s", str(ex))
+    except (TypeError, AttributeError):
         return {
             "error": {
-                "type": type(ex).__name__,
-                "message": str(ex),
+                "type": "unexpected",
                 "coordinator_available": bool(coordinator),
                 "has_data": bool(coordinator and coordinator.data),
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": dt_util.utcnow().isoformat(),
             },
             "entry": async_redact_data(entry.as_dict(), TO_REDACT),
         }
+    else:
+        return diagnostics_data

@@ -1,351 +1,375 @@
-"""Tests for the ActronAir Neo config flow."""
+"""Tests for the ActronAir Neo config flow (device code auth)."""
 
+from __future__ import annotations
+
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, InvalidData
 
-from custom_components.actronair_neo.api import ApiError, AuthenticationError
+from custom_components.actronair_neo.api.auth import DeviceCodeResponse
+from custom_components.actronair_neo.api.models import DeviceInfo
+from custom_components.actronair_neo.config_flow import ActronairNeoConfigFlow
 from custom_components.actronair_neo.const import (
+    CONF_ACCESS_TOKEN,
     CONF_ENABLE_ZONE_CONTROL,
-    CONF_PASSWORD,
-    CONF_REFRESH_INTERVAL,
-    CONF_SERIAL_NUMBER,
-    CONF_USERNAME,
+    CONF_REFRESH_TOKEN,
     DOMAIN,
 )
+from custom_components.actronair_neo.exceptions import AuthenticationError
+
+from .conftest import MOCK_SERIAL
+
+MOCK_DEVICE_1 = DeviceInfo(
+    serial=MOCK_SERIAL, name="Living Room AC", type="Neo", id="12345"
+)
+MOCK_DEVICE_2 = DeviceInfo(serial="DEF456", name="Bedroom AC", type="Neo", id="67890")
+
+MOCK_DEVICE_CODE_RESPONSE = DeviceCodeResponse(
+    device_code="test-device-code",
+    user_code="ABCD-1234",
+    verification_uri="https://nimbus.actronair.com.au/connect",
+    verification_uri_complete="https://nimbus.actronair.com.au/connect?user_code=ABCD-1234",
+    expires_in=300,
+    interval=1,
+)
+
+MOCK_TOKEN_RESPONSE = {
+    "access_token": "mock_access_token",
+    "refresh_token": "mock_refresh_token",
+    "expires_in": 3600,
+    "token_type": "bearer",
+}
+
+_PATCH_AUTH = "custom_components.actronair_neo.config_flow.ActronAirNeoAuth"
+_PATCH_API = "custom_components.actronair_neo.config_flow.ActronAirNeoApiClient"
+
+
+def _mock_auth_instance() -> MagicMock:
+    """Create a mock auth instance with device code flow methods."""
+    auth = MagicMock()
+    auth.request_device_code = AsyncMock(return_value=MOCK_DEVICE_CODE_RESPONSE)
+    auth.poll_for_token = AsyncMock(return_value=MOCK_TOKEN_RESPONSE)
+    auth.access_token = "mock_access_token"
+    auth.refresh_token_value = "mock_refresh_token"
+    auth.token_expires_at = MagicMock()
+    auth.token_expires_at.timestamp.return_value = 9999999999.0
+    return auth
+
+
+async def _advance_flow(hass: HomeAssistant, flow_id: str) -> dict:
+    """Advance a flow past any SHOW_PROGRESS / SHOW_PROGRESS_DONE states."""
+    await hass.async_block_till_done()
+    result = await hass.config_entries.flow.async_configure(flow_id)
+    while result["type"] in (
+        FlowResultType.SHOW_PROGRESS_DONE,
+        FlowResultType.SHOW_PROGRESS,
+    ):
+        await hass.async_block_till_done()
+        result = await hass.config_entries.flow.async_configure(result["flow_id"])
+    return result
 
 
 class TestActronConfigFlow:
-    """Test the ActronAir Neo config flow."""
+    """Test the ActronAir Neo config flow (device code auth)."""
 
     @pytest.mark.asyncio
-    async def test_form_user_step(self, hass: HomeAssistant) -> None:
-        """Test the user step form."""
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
+    async def test_user_step_starts_device_code_flow(
+        self, hass: HomeAssistant, enable_custom_integrations
+    ) -> None:
+        """Test user step requests device code and shows progress."""
+        mock_auth = _mock_auth_instance()
+        # Make poll_for_token block (never completes during test)
+        poll_event = asyncio.Event()
+
+        async def _blocking_poll(*args, **kwargs):
+            await poll_event.wait()
+
+        mock_auth.poll_for_token = _blocking_poll
+
+        with patch(_PATCH_AUTH, return_value=mock_auth):
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+
+        assert result["type"] == FlowResultType.SHOW_PROGRESS
+        assert result["step_id"] == "user"
+        assert result["description_placeholders"]["user_code"] == "ABCD-1234"
+        assert (
+            result["description_placeholders"]["verification_uri"]
+            == "https://nimbus.actronair.com.au/connect?user_code=ABCD-1234"
         )
 
+    @pytest.mark.asyncio
+    async def test_single_device_creates_entry(
+        self, hass: HomeAssistant, enable_custom_integrations
+    ) -> None:
+        """Test auto-creation when only one device is found."""
+        mock_auth = _mock_auth_instance()
+        mock_api = MagicMock()
+        mock_api.get_devices = AsyncMock(return_value=[MOCK_DEVICE_1])
+
+        with (
+            patch(_PATCH_AUTH, return_value=mock_auth),
+            patch(_PATCH_API, return_value=mock_api),
+        ):
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+
+            # Task may complete immediately with mock — advance to final state
+            result = await _advance_flow(hass, result["flow_id"])
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["title"] == f"ActronAir Neo ({MOCK_DEVICE_1.name})"
+        assert result["data"]["serial_number"] == MOCK_SERIAL
+        assert result["data"]["system_id"] == "12345"
+        assert result["data"][CONF_ACCESS_TOKEN] == "mock_access_token"
+        assert result["data"][CONF_REFRESH_TOKEN] == "mock_refresh_token"
+        assert result["options"][CONF_ENABLE_ZONE_CONTROL] is False
+
+    @pytest.mark.asyncio
+    async def test_multiple_devices_shows_selection(
+        self, hass: HomeAssistant, enable_custom_integrations
+    ) -> None:
+        """Test device selection step when multiple devices found."""
+        mock_auth = _mock_auth_instance()
+        mock_api = MagicMock()
+        mock_api.get_devices = AsyncMock(return_value=[MOCK_DEVICE_1, MOCK_DEVICE_2])
+
+        with (
+            patch(_PATCH_AUTH, return_value=mock_auth),
+            patch(_PATCH_API, return_value=mock_api),
+        ):
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+
+            result = await _advance_flow(hass, result["flow_id"])
+
         assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "user"
-        assert result["errors"] == {}
+        assert result["step_id"] == "select_device"
 
     @pytest.mark.asyncio
-    async def test_form_user_step_invalid_auth(self, hass: HomeAssistant) -> None:
-        """Test the user step with invalid authentication."""
-        with patch(
-            "custom_components.actronair_neo.config_flow.ActronApi"
-        ) as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.authenticate = AsyncMock(
-                side_effect=AuthenticationError("Invalid credentials")
-            )
-            mock_api_class.return_value = mock_api
-
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_USER}
-            )
-
-            result2 = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {
-                    CONF_USERNAME: "test@example.com",
-                    CONF_PASSWORD: "wrong_password",
-                },
-            )
-
-            assert result2["type"] == FlowResultType.FORM
-            assert result2["step_id"] == "user"
-            assert result2["errors"] == {"base": "invalid_auth"}
-
-    @pytest.mark.asyncio
-    async def test_form_user_step_api_error(self, hass: HomeAssistant) -> None:
-        """Test the user step with API error."""
-        with patch(
-            "custom_components.actronair_neo.config_flow.ActronApi"
-        ) as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.authenticate = AsyncMock(side_effect=ApiError("API Error"))
-            mock_api_class.return_value = mock_api
-
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_USER}
-            )
-
-            result2 = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {
-                    CONF_USERNAME: "test@example.com",
-                    CONF_PASSWORD: "test_password",
-                },
-            )
-
-            assert result2["type"] == FlowResultType.FORM
-            assert result2["step_id"] == "user"
-            assert result2["errors"] == {"base": "cannot_connect"}
-
-    @pytest.mark.asyncio
-    async def test_form_user_step_unexpected_error(self, hass: HomeAssistant) -> None:
-        """Test the user step with unexpected error."""
-        with patch(
-            "custom_components.actronair_neo.config_flow.ActronApi"
-        ) as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.authenticate = AsyncMock(side_effect=Exception("Unexpected error"))
-            mock_api_class.return_value = mock_api
-
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_USER}
-            )
-
-            result2 = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {
-                    CONF_USERNAME: "test@example.com",
-                    CONF_PASSWORD: "test_password",
-                },
-            )
-
-            assert result2["type"] == FlowResultType.FORM
-            assert result2["step_id"] == "user"
-            assert result2["errors"] == {"base": "unknown"}
-
-    @pytest.mark.asyncio
-    async def test_form_device_step(
-        self, hass: HomeAssistant, mock_device_list
+    async def test_device_code_request_fails(
+        self, hass: HomeAssistant, enable_custom_integrations
     ) -> None:
-        """Test the device selection step."""
-        with patch(
-            "custom_components.actronair_neo.config_flow.ActronApi"
-        ) as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.authenticate = AsyncMock()
-            mock_api.get_devices = AsyncMock(return_value=mock_device_list)
-            mock_api_class.return_value = mock_api
+        """Test abort when device code request fails."""
+        mock_auth = MagicMock()
+        mock_auth.request_device_code = AsyncMock(
+            side_effect=AuthenticationError("Connection failed")
+        )
 
+        with patch(_PATCH_AUTH, return_value=mock_auth):
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
             )
 
-            result2 = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {
-                    CONF_USERNAME: "test@example.com",
-                    CONF_PASSWORD: "test_password",
-                },
-            )
-
-            assert result2["type"] == FlowResultType.FORM
-            assert result2["step_id"] == "device"
-            assert "TEST123456" in str(result2["data_schema"])
+        assert result["type"] == FlowResultType.ABORT
+        assert result["reason"] == "cannot_connect"
 
     @pytest.mark.asyncio
-    async def test_form_device_step_no_devices(self, hass: HomeAssistant) -> None:
-        """Test the device selection step with no devices."""
-        with patch(
-            "custom_components.actronair_neo.config_flow.ActronApi"
-        ) as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.authenticate = AsyncMock()
-            mock_api.get_devices = AsyncMock(return_value=[])
-            mock_api_class.return_value = mock_api
-
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_USER}
-            )
-
-            result2 = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {
-                    CONF_USERNAME: "test@example.com",
-                    CONF_PASSWORD: "test_password",
-                },
-            )
-
-            assert result2["type"] == FlowResultType.FORM
-            assert result2["step_id"] == "device"
-            assert result2["errors"] == {"base": "no_devices"}
-
-    @pytest.mark.asyncio
-    async def test_form_options_step(
-        self, hass: HomeAssistant, mock_device_list
+    async def test_authorization_timeout_shows_error_step(
+        self, hass: HomeAssistant, enable_custom_integrations
     ) -> None:
-        """Test the options step."""
-        with patch(
-            "custom_components.actronair_neo.config_flow.ActronApi"
-        ) as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.authenticate = AsyncMock()
-            mock_api.get_devices = AsyncMock(return_value=mock_device_list)
-            mock_api_class.return_value = mock_api
+        """Test that auth failure transitions to connection_error step."""
+        mock_auth = _mock_auth_instance()
+        mock_auth.poll_for_token = AsyncMock(
+            side_effect=AuthenticationError("Device code authorization timed out")
+        )
 
+        with patch(_PATCH_AUTH, return_value=mock_auth):
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
             )
 
-            result2 = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {
-                    CONF_USERNAME: "test@example.com",
-                    CONF_PASSWORD: "test_password",
-                },
-            )
+            result = await _advance_flow(hass, result["flow_id"])
 
-            result3 = await hass.config_entries.flow.async_configure(
-                result2["flow_id"],
-                {
-                    CONF_SERIAL_NUMBER: "TEST123456",
-                },
-            )
-
-            assert result3["type"] == FlowResultType.FORM
-            assert result3["step_id"] == "options"
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "connection_error"
 
     @pytest.mark.asyncio
-    async def test_complete_flow_success(
-        self, hass: HomeAssistant, mock_device_list
+    @pytest.mark.asyncio
+    async def test_select_device_invalid_data_raises(
+        self, hass: HomeAssistant, enable_custom_integrations
     ) -> None:
-        """Test complete successful flow."""
-        with patch(
-            "custom_components.actronair_neo.config_flow.ActronApi"
-        ) as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.authenticate = AsyncMock()
-            mock_api.get_devices = AsyncMock(return_value=mock_device_list)
-            mock_api_class.return_value = mock_api
+        """Test select device schema rejects unknown serial values."""
+        mock_auth = _mock_auth_instance()
+        mock_api = MagicMock()
+        mock_api.get_devices = AsyncMock(return_value=[MOCK_DEVICE_1, MOCK_DEVICE_2])
 
+        with (
+            patch(_PATCH_AUTH, return_value=mock_auth),
+            patch(_PATCH_API, return_value=mock_api),
+        ):
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
             )
-
-            result2 = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {
-                    CONF_USERNAME: "test@example.com",
-                    CONF_PASSWORD: "test_password",
-                },
-            )
-
-            result3 = await hass.config_entries.flow.async_configure(
-                result2["flow_id"],
-                {
-                    CONF_SERIAL_NUMBER: "TEST123456",
-                },
-            )
-
-            result4 = await hass.config_entries.flow.async_configure(
-                result3["flow_id"],
-                {
-                    CONF_REFRESH_INTERVAL: 60,
-                    CONF_ENABLE_ZONE_CONTROL: True,
-                },
-            )
-
-            assert result4["type"] == FlowResultType.CREATE_ENTRY
-            assert result4["title"] == "Test AC System"
-            assert result4["data"] == {
-                CONF_USERNAME: "test@example.com",
-                CONF_PASSWORD: "test_password",
-                CONF_SERIAL_NUMBER: "TEST123456",
-                CONF_REFRESH_INTERVAL: 60,
-                CONF_ENABLE_ZONE_CONTROL: True,
-            }
+            select_form = await _advance_flow(hass, result["flow_id"])
+            with pytest.raises(InvalidData):
+                await hass.config_entries.flow.async_configure(
+                    select_form["flow_id"],
+                    {"device": "UNKNOWN"},
+                )
 
     @pytest.mark.asyncio
-    async def test_duplicate_entry(
-        self, hass: HomeAssistant, mock_config_entry, mock_device_list
+    async def test_finish_auth_no_devices_aborts(
+        self, hass: HomeAssistant, enable_custom_integrations
     ) -> None:
-        """Test handling of duplicate entries."""
-        # Add existing entry
-        mock_config_entry.add_to_hass(hass)
+        """Test finish auth aborts when no devices are returned."""
+        mock_auth = _mock_auth_instance()
+        mock_api = MagicMock()
+        mock_api.get_devices = AsyncMock(return_value=[])
 
-        with patch(
-            "custom_components.actronair_neo.config_flow.ActronApi"
-        ) as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.authenticate = AsyncMock()
-            mock_api.get_devices = AsyncMock(return_value=mock_device_list)
-            mock_api_class.return_value = mock_api
-
+        with (
+            patch(_PATCH_AUTH, return_value=mock_auth),
+            patch(_PATCH_API, return_value=mock_api),
+        ):
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
             )
+            result = await _advance_flow(hass, result["flow_id"])
 
-            result2 = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {
-                    CONF_USERNAME: "test@example.com",
-                    CONF_PASSWORD: "test_password",
-                },
-            )
+        assert result["type"] == FlowResultType.ABORT
+        assert result["reason"] == "no_devices"
 
-            result3 = await hass.config_entries.flow.async_configure(
-                result2["flow_id"],
-                {
-                    CONF_SERIAL_NUMBER: "TEST123456",
-                },
-            )
 
-            assert result3["type"] == FlowResultType.ABORT
-            assert result3["reason"] == "already_configured"
+class TestOptionsFlow:
+    """Test the options flow handler."""
 
     @pytest.mark.asyncio
-    async def test_options_flow(self, hass: HomeAssistant, mock_config_entry) -> None:
-        """Test options flow."""
-        mock_config_entry.add_to_hass(hass)
-
+    async def test_options_flow(
+        self, hass: HomeAssistant, mock_config_entry, enable_custom_integrations
+    ) -> None:
+        """Test options flow shows form and saves changes."""
         result = await hass.config_entries.options.async_init(
             mock_config_entry.entry_id
         )
-
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "init"
 
-        result2 = await hass.config_entries.options.async_configure(
+        result = await hass.config_entries.options.async_configure(
             result["flow_id"],
-            {
-                CONF_REFRESH_INTERVAL: 30,
-                CONF_ENABLE_ZONE_CONTROL: False,
-            },
+            {CONF_ENABLE_ZONE_CONTROL: False},
         )
 
-        assert result2["type"] == FlowResultType.CREATE_ENTRY
-        assert result2["data"] == {
-            CONF_REFRESH_INTERVAL: 30,
-            CONF_ENABLE_ZONE_CONTROL: False,
-        }
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["data"][CONF_ENABLE_ZONE_CONTROL] is False
+
+
+class TestConfigFlowDirectMethods:
+    """Direct method tests for branches hard to hit via flow manager."""
 
     @pytest.mark.asyncio
-    async def test_form_validation(self, hass: HomeAssistant) -> None:
-        """Test form validation."""
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_USER}
+    async def test_timeout_step_paths(self):
+        flow = ActronairNeoConfigFlow()
+        flow.hass = MagicMock()
+        flow.async_show_form = MagicMock(return_value={"step_id": "timeout"})
+        result = await flow.async_step_timeout()
+        assert result["step_id"] == "timeout"
+
+        flow.async_step_user = AsyncMock(return_value={"type": "progress"})
+        flow.login_task = object()
+        result = await flow.async_step_timeout(user_input={})
+        assert result["type"] == "progress"
+        assert flow.login_task is None
+
+    @pytest.mark.asyncio
+    async def test_connection_error_step_paths(self):
+        flow = ActronairNeoConfigFlow()
+        flow.hass = MagicMock()
+        flow.async_show_form = MagicMock(return_value={"step_id": "connection_error"})
+        result = await flow.async_step_connection_error()
+        assert result["step_id"] == "connection_error"
+
+        flow._auth = object()
+        flow._device_code_response = object()
+        flow.login_task = object()
+        flow.async_step_user = AsyncMock(return_value={"type": "progress"})
+        result = await flow.async_step_connection_error(user_input={})
+        assert result["type"] == "progress"
+        assert flow._auth is None
+        assert flow._device_code_response is None
+        assert flow.login_task is None
+
+    @pytest.mark.asyncio
+    async def test_select_device_not_found_error_branch(self):
+        flow = ActronairNeoConfigFlow()
+        flow._devices = [MOCK_DEVICE_1]
+        flow.async_show_form = MagicMock(side_effect=lambda **kwargs: kwargs)
+        result = await flow.async_step_select_device({"device": "MISSING"})
+        assert result["errors"]["base"] == "device_not_found"
+
+    @pytest.mark.asyncio
+    async def test_finish_auth_reauth_token_expiry_none(self):
+        flow = ActronairNeoConfigFlow()
+        flow.context = {"source": config_entries.SOURCE_REAUTH}
+        flow._auth = MagicMock()
+        flow._auth.access_token = "token"
+        flow._auth.refresh_token_value = "refresh"
+        flow._auth.token_expires_at = None
+        flow._get_reauth_entry = MagicMock(return_value=MagicMock())
+        flow.async_update_reload_and_abort = MagicMock(return_value={"type": "abort"})
+
+        result = await flow.async_step_finish_auth()
+        assert result["type"] == "abort"
+        call_kwargs = flow.async_update_reload_and_abort.call_args.kwargs
+        assert call_kwargs["data_updates"]["token_expires_at"] == 0.0
+
+    def test_async_get_options_flow_static(self):
+        entry = MagicMock()
+        flow = ActronairNeoConfigFlow.async_get_options_flow(entry)
+        assert flow is not None
+
+    @pytest.mark.asyncio
+    async def test_user_step_done_task_timeout_path(self):
+        """Test async_step_user handles completed task with non-connect exception."""
+        flow = ActronairNeoConfigFlow()
+        flow.hass = MagicMock()
+        flow._auth = MagicMock()
+        flow._device_code_response = MOCK_DEVICE_CODE_RESPONSE
+        future = asyncio.get_running_loop().create_future()
+        future.set_exception(RuntimeError("timeout"))
+        flow.login_task = future
+        flow.async_show_progress_done = MagicMock(return_value={"step_id": "timeout"})
+
+        result = await flow.async_step_user()
+        assert result["step_id"] == "timeout"
+
+    @pytest.mark.asyncio
+    async def test_finish_auth_exception_abort(self):
+        """Test finish auth aborts when get_devices raises unexpected exception."""
+        flow = ActronairNeoConfigFlow()
+        flow.hass = MagicMock()
+        flow._auth = _mock_auth_instance()
+        flow.context = {"source": config_entries.SOURCE_USER}
+        flow.async_abort = MagicMock(return_value={"reason": "cannot_connect"})
+
+        mock_api = MagicMock()
+        mock_api.get_devices = AsyncMock(side_effect=Exception("boom"))
+        with patch(_PATCH_API, return_value=mock_api):
+            result = await flow.async_step_finish_auth()
+        assert result["reason"] == "cannot_connect"
+
+    @pytest.mark.asyncio
+    async def test_select_device_success_path(self):
+        """Test select device calls create entry for matching serial."""
+        flow = ActronairNeoConfigFlow()
+        flow._devices = [MOCK_DEVICE_1]
+        flow._async_create_device_entry = AsyncMock(
+            return_value={"type": "create_entry"}
         )
 
-        # Test empty username
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_USERNAME: "",
-                CONF_PASSWORD: "test_password",
-            },
-        )
+        result = await flow.async_step_select_device({"device": MOCK_SERIAL})
+        assert result["type"] == "create_entry"
 
-        assert result2["type"] == FlowResultType.FORM
-        assert result2["step_id"] == "user"
-        # Should show form again for empty username
-
-        # Test empty password
-        result3 = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_USERNAME: "test@example.com",
-                CONF_PASSWORD: "",
-            },
-        )
-
-        assert result3["type"] == FlowResultType.FORM
-        assert result3["step_id"] == "user"
-        # Should show form again for empty password
+    @pytest.mark.asyncio
+    async def test_reauth_confirm_with_user_input(self):
+        """Test reauth confirm routes to user step when confirmed."""
+        flow = ActronairNeoConfigFlow()
+        flow.async_step_user = AsyncMock(return_value={"type": "progress"})
+        result = await flow.async_step_reauth_confirm(user_input={})
+        assert result["type"] == "progress"

@@ -1,171 +1,209 @@
-"""Config flow for ActronAir Neo integration."""
+"""
+Config flow for ActronAir Neo integration.
+
+Uses OAuth2 Device Code Flow (RFC 8628) — the user authorizes via a
+browser URL + code instead of entering username/password.
+
+Modelled after the official HA ``actron_air`` integration config flow.
+"""
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
-import voluptuous as vol  # type: ignore
-from homeassistant import config_entries  # type: ignore
-from homeassistant.core import HomeAssistant, callback  # type: ignore
-from homeassistant.exceptions import HomeAssistantError  # type: ignore
-from homeassistant.helpers import aiohttp_client  # type: ignore
+import voluptuous as vol
+from homeassistant.config_entries import (
+    SOURCE_REAUTH,
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import aiohttp_client
 
-from .api import ActronApi, ApiError, AuthenticationError
+from .api import ActronAirNeoApiClient, ActronAirNeoAuth
 from .const import (
+    CONF_ACCESS_TOKEN,
+    CONF_BASE_URL,
     CONF_ENABLE_ZONE_CONTROL,
-    CONF_PASSWORD,
-    CONF_REFRESH_INTERVAL,
-    CONF_USERNAME,
-    DEFAULT_REFRESH_INTERVAL,
+    CONF_REFRESH_TOKEN,
+    CONF_SERIAL_NUMBER,
+    CONF_TOKEN_EXPIRES_AT,
     DOMAIN,
 )
+from .exceptions import AuthenticationError
 
 if TYPE_CHECKING:
-    from homeassistant.data_entry_flow import FlowResult
+    import asyncio
+    from collections.abc import Mapping
 
-_LOGGER = logging.getLogger(__name__)
-
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_USERNAME): str,
-        vol.Required(CONF_PASSWORD): str,
-        vol.Optional(CONF_REFRESH_INTERVAL, default=DEFAULT_REFRESH_INTERVAL): int,
-        vol.Optional(CONF_ENABLE_ZONE_CONTROL, default=False): bool,
-    }
-)
+    from .api.auth import DeviceCodeResponse
 
 
-async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate the user input allows us to connect."""
-    session = aiohttp_client.async_get_clientsession(hass)
-    api = ActronApi(
-        username=data[CONF_USERNAME],
-        password=data[CONF_PASSWORD],
-        session=session,
-        config_path=hass.config.config_dir,
-    )
+class ActronairNeoConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
+    """Handle a config flow for ActronAir Neo (device code auth)."""
 
-    try:
-        await api.initializer()
-        devices = await api.get_devices()
-        if not devices:
-            msg = "No devices found"
-            raise CannotConnect(msg)
-
-        # Return all devices for selection
-        return {
-            "devices": devices,
-            "username": data[CONF_USERNAME],
-            "password": data[CONF_PASSWORD],
-            "refresh_interval": data.get(
-                CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL
-            ),
-            "enable_zone_control": data.get(CONF_ENABLE_ZONE_CONTROL, False),
-        }
-    except AuthenticationError as err:
-        raise InvalidAuth from err
-    except ApiError as err:
-        raise CannotConnect from err
-
-
-class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for ActronAir Neo."""
-
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         """Initialize the config flow."""
-        self._devices = []
-        self._username = None
-        self._password = None
-        self._refresh_interval = DEFAULT_REFRESH_INTERVAL
-        self._enable_zone_control = False
+        self._auth: ActronAirNeoAuth | None = None
+        self._devices: list[Any] = []
+        self._device_code_response: DeviceCodeResponse | None = None
+        self.login_task: asyncio.Task[None] | None = None
+
+    # ── User step (entry-point) ──────────────────────────────────
 
     async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle the initial step."""
-        errors: dict[str, str] = {}
-        if user_input is not None:
+        self,
+        user_input: dict[str, Any] | None = None,  # noqa: ARG002
+    ) -> ConfigFlowResult:
+        """Handle the initial step — request a device code and poll."""
+        if self._auth is None:
+            session = aiohttp_client.async_get_clientsession(self.hass)
+            self._auth = ActronAirNeoAuth(session=session)
+
             try:
-                info = await validate_input(self.hass, user_input)
-                self._devices = info["devices"]
-                self._username = info["username"]
-                self._password = info["password"]
-                self._refresh_interval = info["refresh_interval"]
-                self._enable_zone_control = info["enable_zone_control"]
+                self._device_code_response = await self._auth.request_device_code()
+            except AuthenticationError:
+                return self.async_abort(reason="cannot_connect")
 
-                # If only one device is found, skip the selection step
-                if len(self._devices) == 1:
-                    return self.async_create_entry(
-                        title=f"ActronAir Neo ({self._devices[0]['name']})",
-                        data={
-                            CONF_USERNAME: self._username,
-                            CONF_PASSWORD: self._password,
-                            CONF_REFRESH_INTERVAL: self._refresh_interval,
-                            "serial_number": self._devices[0]["serial"],
-                            "system_id": self._devices[0]["id"],
-                        },
-                        options={
-                            CONF_ENABLE_ZONE_CONTROL: self._enable_zone_control,
-                        },
+        async def _wait_for_authorization() -> None:
+            """Wait for the user to authorize the device."""
+            assert self._auth is not None  # noqa: S101
+            assert self._device_code_response is not None  # noqa: S101
+            try:
+                await self._auth.poll_for_token(
+                    self._device_code_response.device_code,
+                    self._device_code_response.interval,
+                    self._device_code_response.expires_in,
+                )
+            except AuthenticationError as ex:
+                raise CannotConnectError from ex
+
+        if self.login_task is None:
+            self.login_task = self.hass.async_create_task(_wait_for_authorization())
+
+        if self.login_task.done():
+            if exception := self.login_task.exception():
+                if isinstance(exception, CannotConnectError):
+                    return self.async_show_progress_done(
+                        next_step_id="connection_error"
                     )
+                return self.async_show_progress_done(next_step_id="timeout")
+            return self.async_show_progress_done(next_step_id="finish_auth")
 
-                # If multiple devices are found, proceed to the selection step
-                return await self.async_step_select_device()
-
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except InvalidAuth:
-                errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
-
-        return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+        assert self._device_code_response is not None  # noqa: S101
+        return self.async_show_progress(
+            step_id="user",
+            progress_action="wait_for_authorization",
+            description_placeholders={
+                "user_code": self._device_code_response.user_code,
+                "verification_uri": (
+                    self._device_code_response.verification_uri_complete
+                ),
+                "expires_minutes": str(
+                    max(1, self._device_code_response.expires_in // 60)
+                ),
+            },
+            progress_task=self.login_task,
         )
+
+    # ── Finish auth — fetch devices ──────────────────────────────
+
+    async def async_step_finish_auth(
+        self,
+        user_input: dict[str, Any] | None = None,  # noqa: ARG002
+    ) -> ConfigFlowResult:
+        """Fetch devices after successful authorization."""
+        assert self._auth is not None  # noqa: S101
+
+        # For reauth, just update tokens and reload
+        if self.source == SOURCE_REAUTH:
+            reauth_entry = self._get_reauth_entry()
+            return self.async_update_reload_and_abort(
+                reauth_entry,
+                data_updates={
+                    CONF_ACCESS_TOKEN: self._auth.access_token,
+                    CONF_REFRESH_TOKEN: self._auth.refresh_token_value,
+                    CONF_TOKEN_EXPIRES_AT: (
+                        self._auth.token_expires_at.timestamp()
+                        if self._auth.token_expires_at
+                        else 0.0
+                    ),
+                },
+            )
+
+        session = aiohttp_client.async_get_clientsession(self.hass)
+        api = ActronAirNeoApiClient(auth=self._auth, session=session)
+
+        try:
+            devices = await api.get_devices()
+        except Exception:  # noqa: BLE001
+            return self.async_abort(reason="cannot_connect")
+
+        if not devices:
+            return self.async_abort(reason="no_devices")
+
+        self._devices = devices
+
+        if len(devices) == 1:
+            return await self._async_create_device_entry(devices[0])
+
+        return await self.async_step_select_device()
+
+    # ── Error recovery steps ─────────────────────────────────────
+
+    async def async_step_timeout(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle authentication timeout."""
+        if user_input is None:
+            return self.async_show_form(step_id="timeout")
+        # Reset task and retry
+        self.login_task = None
+        return await self.async_step_user()
+
+    async def async_step_connection_error(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle connection error during authorization."""
+        if user_input is None:
+            return self.async_show_form(step_id="connection_error")
+        # Reset all state and retry
+        self._auth = None
+        self._device_code_response = None
+        self.login_task = None
+        return await self.async_step_user()
+
+    # ── Device selection ─────────────────────────────────────────
 
     async def async_step_select_device(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the device selection step."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             selected_serial = user_input["device"]
             selected_device = next(
-                (
-                    device
-                    for device in self._devices
-                    if device["serial"] == selected_serial
-                ),
+                (d for d in self._devices if d.serial == selected_serial),
                 None,
             )
 
             if selected_device:
-                return self.async_create_entry(
-                    title=f"ActronAir Neo ({selected_device['name']})",
-                    data={
-                        CONF_USERNAME: self._username,
-                        CONF_PASSWORD: self._password,
-                        CONF_REFRESH_INTERVAL: self._refresh_interval,
-                        "serial_number": selected_device["serial"],
-                        "system_id": selected_device["id"],
-                    },
-                    options={
-                        CONF_ENABLE_ZONE_CONTROL: self._enable_zone_control,
-                    },
-                )
+                return await self._async_create_device_entry(selected_device)
             errors["base"] = "device_not_found"
 
-        # Create a schema with a dropdown of available devices
         device_schema = vol.Schema(
             {
                 vol.Required("device"): vol.In(
                     {
-                        device["serial"]: f"{device['name']} ({device['serial']})"
+                        device.serial: f"{device.name} ({device.serial})"
                         for device in self._devices
                     }
                 )
@@ -176,21 +214,68 @@ class ActronairNeoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="select_device", data_schema=device_schema, errors=errors
         )
 
+    async def _async_create_device_entry(self, device: Any) -> ConfigFlowResult:
+        """Create a config entry for a discovered device."""
+        assert self._auth is not None  # noqa: S101
+
+        await self.async_set_unique_id(device.serial)
+        self._abort_if_unique_id_configured()
+
+        return self.async_create_entry(
+            title=f"ActronAir Neo ({device.name})",
+            data={
+                CONF_ACCESS_TOKEN: self._auth.access_token,
+                CONF_REFRESH_TOKEN: self._auth.refresh_token_value,
+                CONF_TOKEN_EXPIRES_AT: (
+                    self._auth.token_expires_at.timestamp()
+                    if self._auth.token_expires_at
+                    else 0.0
+                ),
+                CONF_SERIAL_NUMBER: device.serial,
+                CONF_BASE_URL: device.base_url,
+                "system_id": device.id,
+            },
+            options={
+                CONF_ENABLE_ZONE_CONTROL: False,
+            },
+        )
+
+    # ── Reauth flow ─────────────────────────────────────────────
+
+    async def async_step_reauth(
+        self,
+        entry_data: Mapping[str, Any],  # noqa: ARG002
+    ) -> ConfigFlowResult:
+        """Handle reauthentication request."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Confirm reauth dialog."""
+        if user_input is not None:
+            return await self.async_step_user()
+
+        return self.async_show_form(step_id="reauth_confirm")
+
+    # ── Options flow ────────────────────────────────────────────
+
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(
+        config_entry: ConfigEntry,  # noqa: ARG004
+    ) -> OptionsFlowHandler:
         """Get the options flow for this handler."""
-        return OptionsFlowHandler(config_entry)
+        return OptionsFlowHandler()
 
 
-class OptionsFlowHandler(config_entries.OptionsFlow):
+class OptionsFlowHandler(OptionsFlow):
     """Handle options."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self._config_entry = config_entry
-
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
@@ -200,14 +285,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Optional(
-                        CONF_REFRESH_INTERVAL,
-                        default=self._config_entry.options.get(
-                            CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL
-                        ),
-                    ): int,
-                    vol.Optional(
                         CONF_ENABLE_ZONE_CONTROL,
-                        default=self._config_entry.options.get(
+                        default=self.config_entry.options.get(
                             CONF_ENABLE_ZONE_CONTROL, False
                         ),
                     ): bool,
@@ -216,9 +295,5 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
 
-class CannotConnect(HomeAssistantError):
+class CannotConnectError(HomeAssistantError):
     """Error to indicate we cannot connect."""
-
-
-class InvalidAuth(HomeAssistantError):
-    """Error to indicate there is invalid auth."""

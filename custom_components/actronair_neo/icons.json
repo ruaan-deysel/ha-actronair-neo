@@ -1,0 +1,110 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "active_warnings": {
+        "default": "mdi:check-circle",
+        "state": {
+          "on": "mdi:alert"
+        }
+      },
+      "fast_heating": {
+        "default": "mdi:fire-off",
+        "state": {
+          "on": "mdi:fire"
+        }
+      },
+      "system_health": {
+        "default": "mdi:check-circle",
+        "state": {
+          "on": "mdi:alert-circle"
+        }
+      },
+      "yourzone_enabled": {
+        "default": "mdi:close-circle",
+        "state": {
+          "on": "mdi:check-circle"
+        }
+      }
+    },
+    "cover": {
+      "zone_damper": {
+        "default": "mdi:valve"
+      }
+    },
+    "number": {
+      "after_hours_duration": {
+        "default": "mdi:timer-outline"
+      }
+    },
+    "sensor": {
+      "compressor_energy": {
+        "default": "mdi:lightning-bolt"
+      },
+      "compressor_power": {
+        "default": "mdi:flash"
+      },
+      "connectivity_status": {
+        "default": "mdi:wifi"
+      },
+      "outdoor_temperature": {
+        "default": "mdi:sun-thermometer"
+      },
+      "performance_metrics": {
+        "default": "mdi:speedometer"
+      },
+      "service_reminder": {
+        "default": "mdi:wrench-clock"
+      },
+      "system_diagnostics": {
+        "default": "mdi:information-outline"
+      },
+      "zone_battery": {
+        "default": "mdi:battery"
+      },
+      "zone_humidity": {
+        "default": "mdi:water-percent"
+      }
+    },
+    "switch": {
+      "after_hours": {
+        "default": "mdi:clock-outline",
+        "state": {
+          "on": "mdi:clock-end"
+        }
+      },
+      "away_mode": {
+        "default": "mdi:home",
+        "state": {
+          "on": "mdi:home-export-outline"
+        }
+      },
+      "continuous_fan": {
+        "default": "mdi:fan-off",
+        "state": {
+          "on": "mdi:fan-clock"
+        }
+      },
+      "quiet_mode": {
+        "default": "mdi:volume-high",
+        "state": {
+          "on": "mdi:volume-mute"
+        }
+      },
+      "turbo_mode": {
+        "default": "mdi:rocket-outline",
+        "state": {
+          "on": "mdi:rocket-launch"
+        }
+      },
+      "zone": {
+        "default": "mdi:air-conditioner"
+      }
+    }
+  },
+  "services": {
+    "apply_zone_preset": "mdi:check-decagram",
+    "bulk_zone_operation": "mdi:format-list-checks",
+    "create_zone_preset": "mdi:content-save-plus",
+    "force_update": "mdi:refresh"
+  }
+}

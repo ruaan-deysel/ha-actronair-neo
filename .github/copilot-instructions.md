@@ -1,218 +1,173 @@
-# GitHub Copilot Instructions for ActronAir Neo Integration
+# GitHub Copilot Instructions
 
-This file provides coding guidelines for GitHub Copilot when working on the ActronAir Neo Home Assistant custom integration.
+> **Comprehensive docs:** See [`AGENTS.md`](../AGENTS.md) at the repository root for full AI agent documentation.
+>
+> **Why two files?** This file is loaded automatically by GitHub Copilot. `AGENTS.md` serves
+> non-Copilot agents (Claude Code, Gemini, Cursor, etc.) who don't read this file. Some
+> overlap is intentional. Path-specific `*.instructions.md` files provide detailed
+> patterns per file type — avoid duplicating their content here.
 
-## Project Context
+## Project Identity
 
-**ActronAir Neo Integration** - A Home Assistant custom component for controlling ActronAir Neo air conditioning systems.
+- **Domain:** `actronair_neo`
+- **Title:** ActronAir Neo
+- **Class prefix:** `ActronAirNeo`
+- **Main code:** `custom_components/actronair_neo/`
+- **iot_class:** `cloud_polling`
+- **Validate:** `script/lint` (ruff format + ruff check --fix)
+- **Start HA:** `script/develop`
+- **Tests:** `uv run python -m pytest tests/`
 
-- **Domain**: `actronair_neo`
-- **Repository**: https://github.com/ruaan-deysel/ha-actronair-neo
-- **License**: Apache License 2.0
+Use these exact identifiers throughout the codebase. Never hardcode different values.
 
-## Critical Rules
+## Code Quality Baseline
 
-### 🚫 Documentation Policy
+- **Python:** 4 spaces, 88 char lines, double quotes, full type hints, async for all I/O
+- **YAML:** 2 spaces, modern Home Assistant syntax
+- **JSON:** 2 spaces, no trailing commas, no comments
 
-**NEVER** generate unsolicited documentation:
-- Do NOT create validation documents, summary documents, or reference documents unless explicitly requested
-- Do NOT create README files or markdown documentation without being asked
-- Do NOT create project summaries or status reports
-- Only create documentation when the user specifically requests it
-- Focus on code changes, not documentation generation
-
-## Home Assistant Integration Standards
-
-### Architecture Components
-
-1. **Config Flow** (`config_flow.py`)
-   - Async config flow for user setup
-   - Input validation with voluptuous schemas
-   - Options flow for runtime configuration
-
-2. **Data Coordinator** (`coordinator.py`)
-   - Use `DataUpdateCoordinator` for centralized data fetching
-   - Proper async/await patterns
-   - Graceful API error handling
-   - Configurable refresh intervals
-   - Retry logic with exponential backoff
-
-3. **Entity Platforms**
-   - Climate: Main HVAC control
-   - Sensor: Temperature, humidity, status
-   - Binary Sensor: On/off states
-   - Switch: Toggle controls
-
-4. **Entity Implementation**
-   - Inherit from appropriate Home Assistant base classes
-   - Use proper device classes (DEVICE_CLASS_TEMPERATURE, etc.)
-   - Use proper state classes (STATE_CLASS_MEASUREMENT, etc.)
-   - Implement CoordinatorEntity for automatic updates
-   - Set unique IDs correctly
-
-5. **Manifest** (`manifest.json`)
-   - Domain: `actronair_neo`
-   - Semantic versioning
-   - List all external dependencies
-   - iot_class: `cloud_polling`
-
-6. **Translations** (`strings.json`)
-   - All user-facing text must be translatable
-   - Maintain proper translation structure
-
-## Python Code Standards
-
-### Code Quality
-
-- **Formatter**: `ruff format`
-- **Linter**: `ruff check`
-- **Type Hints**: Required for all function signatures
-- **Async/Await**: Follow Home Assistant patterns
-- **Error Handling**: Proper exception handling and logging
-- **Logging**: Use `_LOGGER` for all log statements
-
-### Code Organization
-
-- Single-responsibility modules
-- Type definitions in `types.py`
-- Constants in `const.py`
-- Base classes in `base_entity.py`
-- Avoid circular dependencies
-
-### Type Hints Example
-
-```python
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the integration."""
-    return True
-
-def calculate_value(data: dict[str, Any]) -> float:
-    """Calculate a value from data."""
-    return float(data.get("value", 0))
-```
-
-## ⚠️ MANDATORY: Code Quality Validation
-
-**ALWAYS** follow these steps after making code changes:
-
-1. Run `scripts/lint` to validate code
-2. Fix all linting errors and warnings
-3. Do NOT commit code that fails linting
-4. Verify changes don't break existing functionality
-
-### Linting Command
+Before considering any coding task complete, the following **must** pass:
 
 ```bash
-scripts/lint
+script/lint    # ruff format + ruff check --fix
 ```
 
-This runs:
-- `ruff format .` - Code formatting
-- `ruff check . --fix` - Code quality checks with auto-fixes
+Generate code that passes these checks on first run. Aim for zero validation errors.
 
-## Development Workflow
+## Architecture (Quick Reference)
 
-### Setup Commands
+**Data Flow:** Entities → Coordinator → API Wrapper (never skip layers)
+
+**Key files:**
+
+- `coordinator.py` — `ActronDataCoordinator` (DataUpdateCoordinator subclass)
+- `api_wrapper.py` — Primary API client (prefer this over legacy `api.py`)
+- `base_entity.py` — `ActronAirNeoBaseEntity` base class
+- `exceptions.py` — Exception hierarchy (ApiError, AuthenticationError, etc.)
+- `types.py` — TypedDict definitions for API responses
+- `const.py` — All constants (DOMAIN, modes, features)
+- `zone_presets.py` — Zone preset management
+
+**Entity platforms:** `climate.py`, `sensor.py`, `binary_sensor.py`, `switch.py`, `number.py`
+
+**Exception → Coordinator mapping:**
+
+- `AuthenticationError` → `ConfigEntryAuthFailed` (triggers reauth)
+- `ApiError` / `DeviceOfflineError` → `UpdateFailed` (retry with backoff)
+
+## Workflow Rules
+
+1. **Small, focused changes** — avoid large refactorings unless explicitly requested
+2. **Implement features completely** — even if spanning multiple files
+   - New sensor: entity class + platform init + const entries → implement all together
+   - Bug fix touching coordinator + entity + error handling → do all at once
+3. **Multiple independent features:** implement one at a time, suggest commit between each
+4. **Large refactoring (>10 files or architectural changes):** propose plan first
+5. **Validation:** run `script/lint` before considering task complete
+
+**Important: Do NOT write tests unless explicitly requested.**
+
+**Translation strategy:**
+
+- Update `strings.json` and `translations/en.json` together
+- NEVER update other language files automatically — extremely time-consuming
+- Ask before creating new translation files
+
+## Research First
+
+**Don't guess — look it up:**
+
+1. Search [Home Assistant Developer Docs](https://developers.home-assistant.io/)
+2. Check the [developer blog](https://developers.home-assistant.io/blog/) for recent changes
+3. Look at existing patterns in similar files in the integration
+4. Run `script/lint` early and often — catch issues before they compound
+5. Consult [Ruff rules](https://docs.astral.sh/ruff/rules/) when validation fails
+
+**Home Assistant evolves rapidly** — verify current best practices.
+
+## Local Development
+
+**Always use the project's scripts** — do NOT craft your own `hass`, `pip`, `pytest`, or
+similar commands.
+
+**Start Home Assistant:**
 
 ```bash
-scripts/setup      # Initial setup
-scripts/develop    # Start Home Assistant in dev mode
-scripts/lint       # Check code quality
+script/develop
 ```
 
-### Testing and Validation
-
-- **ALWAYS** check `config/home-assistant.log` after making changes
-- Monitor the devcontainer Home Assistant instance for runtime errors
-- Verify changes don't break existing functionality
-- Test entity creation and updates
-
-### Testing
+**Validate changes:**
 
 ```bash
-python -m pytest tests/                                    # Run all tests
-python -m pytest tests/test_config_flow.py                # Run specific test
-python -m pytest --cov=custom_components/actronair_neo tests/  # With coverage
+script/lint    # Always run before considering task complete
 ```
 
-## API Integration
+**Run tests:**
 
-### ActronAir API (`api.py`)
-
-Use custom exception classes:
-- `ApiError`: General API errors
-- `AuthenticationError`: Authentication failures
-- `ConfigurationError`: Configuration issues
-- `ZoneError`: Zone-related errors
-- `DeviceOfflineError`: Device offline
-- `RateLimitError`: Rate limiting
-
-### Data Types (`types.py`)
-
-- Use TypedDict for API response structures
-- Define all data structures used by coordinator
-- Keep type definitions organized and documented
-
-## File Structure
-
-```
-custom_components/actronair_neo/
-├── __init__.py              # Integration setup
-├── api.py                   # API client
-├── base_entity.py           # Base entity class
-├── binary_sensor.py         # Binary sensor platform
-├── climate.py               # Climate platform
-├── config_flow.py           # Configuration flow
-├── const.py                 # Constants
-├── coordinator.py           # Data coordinator
-├── diagnostics.py           # Diagnostics
-├── manifest.json            # Manifest
-├── repairs.py               # Repair flows
-├── sensor.py                # Sensor platform
-├── services.yaml            # Services
-├── strings.json             # Translations
-├── switch.py                # Switch platform
-├── types.py                 # Type definitions
-├── zone_presets.py          # Zone presets
-└── translations/            # Translation files
+```bash
+script/test              # run all tests
+script/test --cov        # with coverage
 ```
 
-## Common Tasks
+**Full pre-commit check:**
 
-### Adding a New Entity Type
+```bash
+script/check   # type-check + lint-check + spell-check
+```
 
-1. Create platform file (e.g., `button.py`)
-2. Implement entity class from appropriate base
-3. Add to `PLATFORMS` list in `__init__.py`
-4. Add translations to `strings.json`
-5. Update coordinator for necessary data
-6. Run `scripts/lint`
-7. Test with `scripts/develop`
+**Other useful scripts:**
 
-### Modifying the Coordinator
+```bash
+script/clean          # clean build artifacts
+script/type-check     # Pyright type checking
+script/spell          # spell check with auto-fix
+script/help           # list all available scripts
+script/setup/reset    # reset HA config to fresh state
+```
 
-1. Update `coordinator.py` data fetching
-2. Update `types.py` if needed
-3. Update entity platforms
-4. Run `scripts/lint`
-5. Check `config/home-assistant.log`
-6. Test with `scripts/develop`
+**Logs:**
 
-### Fixing Bugs
+- Live: terminal where `script/develop` runs
+- File: `config/home-assistant.log` (most recent), `config/home-assistant.log.1` (previous)
+- Debug level: set `custom_components.actronair_neo: debug` in `config/configuration.yaml`
 
-1. Identify issue in logs or code
-2. Write test case reproducing bug
-3. Fix in appropriate module
-4. Run `scripts/lint`
-5. Run tests
-6. Check logs for side effects
+## Working With the Developer
 
-## References
+**When requests conflict with these instructions:**
 
-- [Home Assistant Developer Docs](https://developers.home-assistant.io/)
-- [Integration Development](https://developers.home-assistant.io/docs/creating_integration_manifest/)
-- [Entity Documentation](https://developers.home-assistant.io/docs/entity/)
-- [Data Coordinator](https://developers.home-assistant.io/docs/integration_fetching_data/)
-- [Python Type Hints](https://docs.python.org/3/library/typing.html)
-- [Ruff Documentation](https://docs.astral.sh/ruff/)
+1. Clarify if deviation is intentional
+2. Confirm you understood correctly
+3. Suggest updating instructions if this is a permanent change
+4. Proceed after confirmation
 
+**Documentation rules:**
+
+- ❌ **NEVER** create markdown files without explicit permission
+- ❌ **NEVER** create "helpful" READMEs, GUIDE.md, NOTES.md, etc.
+- ✅ **ALWAYS ask first** before creating permanent documentation
+- ✅ **Prefer module/class/function docstrings** over separate markdown files
+- ✅ **Use `.ai-scratch/`** for temporary planning and notes (never committed)
+
+**Session management:**
+
+- When task completes and developer moves on: suggest commit with message
+- Suggest once, don't nag if declined
+
+**Commit format:** [Conventional Commits](https://www.conventionalcommits.org/)
+
+```text
+type(scope): short summary (max 72 chars)
+
+- Optional detailed points
+- Reference issues if applicable
+```
+
+**Always check `git diff` first** — don't rely on session memory.
+
+**Common types:**
+
+- `feat:` — User-facing functionality (new sensor, service, config option)
+- `fix:` — Bug fixes (user-facing issues)
+- `chore:` — Dev tools, dependencies, devcontainer (NOT user-facing)
+- `refactor:` — Code restructuring (no functional change)
+- `docs:` — Documentation changes

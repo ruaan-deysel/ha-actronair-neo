@@ -9,11 +9,13 @@ The ActronAir Neo Integration enables seamless control and monitoring of your Ac
 
 ## Features
 
-- **Comprehensive Control**: Easily switch between modes (heat, cool, fan, auto), set temperatures, and adjust fan speeds.
-- **Real-time Monitoring**: Keep track of your home's temperature and humidity levels with up-to-date readings.
-- **Zone Control**: Manage individual zones in your home for targeted climate control.
-- **Automation Friendly**: Integrate ActronAir Neo into your Home Assistant automations to maintain optimal comfort with minimal effort.
-- **Periodic Updates**: The system state is automatically refreshed based on your configured interval, ensuring your data is always current.
+- **Comprehensive Control**: Switch between modes (heat, cool, fan, auto), set temperatures, and adjust fan speeds.
+- **Real-time Monitoring**: Indoor/outdoor temperature, humidity, compressor state, and system diagnostics.
+- **Zone Control**: Manage individual zones — enable/disable, set temperatures, and adjust damper positions via cover entities.
+- **Extended Controls**: Turbo mode, quiet mode, away mode, after-hours scheduling, and continuous fan.
+- **Que-to-Neo Support**: Systems with Que outdoor units upgraded to Neo controllers are automatically detected and routed correctly.
+- **Automation Friendly**: Integrate ActronAir Neo into your Home Assistant automations for optimal comfort.
+- **Periodic Updates**: System state refreshes every 30 seconds via cloud polling.
 
 ## Installation
 
@@ -28,11 +30,13 @@ The ActronAir Neo Integration enables seamless control and monitoring of your Ac
 
 ## Configuration
 
-1. In Home Assistant, go to Configuration > Integrations.
-2. Click the "+ ADD INTEGRATION" button.
-3. Search for "ActronAir Neo" and select it.
-4. Enter your ActronAir Neo username and password.
-5. Follow the prompts to complete the setup.
+1. In Home Assistant, go to **Settings → Devices & Services → Integrations**.
+2. Click **+ ADD INTEGRATION** and search for "ActronAir Neo".
+3. A device code and verification URL will be displayed.
+4. Open the URL in your browser, enter the code, and authorize.
+5. Select your AC system if you have multiple devices.
+
+> **Note:** This integration uses OAuth2 Device Code Flow (RFC 8628). No username or password is entered in Home Assistant.
 
 ## Usage
 
@@ -40,17 +44,22 @@ After setup, your ActronAir Neo system will appear as a climate entity in Home A
 
 ## Entities
 
-- **Controls**: Main control for your ActronAir Neo system.
-- **Sensor**: Temperature and humidity readings.
-- **Diagnostics**: System Status, System Health and Filter Status.
+| Platform          | Examples                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------- |
+| **Climate**       | Main HVAC control (mode, fan speed, temperature setpoint)                                     |
+| **Sensor**        | Indoor/outdoor temperature, humidity, compressor state, performance metrics, service reminder |
+| **Binary Sensor** | Filter status, system health, defrost, fast heating, active warnings                          |
+| **Switch**        | Zone toggles, away mode, quiet mode, continuous fan, turbo mode, after hours                  |
+| **Cover**         | Zone damper position (open/close/set position)                                                |
+| **Number**        | After-hours duration, zone temperature limits                                                 |
 
-The entities will update based on the refresh interval you have configured, providing you with the most recent data.
+Entities update automatically with the coordinator refresh interval (30 seconds).
 
 ## Options
 
-You can adjust the following options in the integration settings:
+You can adjust the following option in the integration settings:
 
-- **Refresh Interval**: How often the integration should fetch updates from the ActronAir Neo API.
+- **Enable Zone Control**: Toggle individual zone management (off by default).
 
 ## Troubleshooting
 
@@ -75,17 +84,16 @@ Contributions to this integration are welcome. Please fork the repository and su
    cd ha-actronair-neo
    ```
 
-2. Set up a virtual environment:
+2. Bootstrap the development environment (requires [uv](https://docs.astral.sh/uv/)):
 
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   script/setup/setup
    ```
 
-3. Install dependencies:
+   Or manually:
 
    ```bash
-   pip install -r requirements.txt
+   uv sync --all-groups
    ```
 
 ### Testing

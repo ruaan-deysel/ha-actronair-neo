@@ -15,7 +15,7 @@ Pull requests are the best way to propose changes to the codebase.
 
 1. Fork the repo and create your branch from `main`.
 2. If you've changed something, update the documentation.
-3. Make sure your code lints (using `scripts/lint`).
+3. Make sure your code lints (using `script/lint`).
 4. Test you contribution.
 5. Issue that pull request!
 
@@ -61,13 +61,13 @@ file.
 1. **Setup Development Environment**
 
    ```bash
-   scripts/setup
+   script/setup/setup
    ```
 
 2. **Start Development Mode**
 
    ```bash
-   scripts/develop
+   script/develop
    ```
 
    This starts Home Assistant with the integration loaded for testing.
@@ -75,7 +75,7 @@ file.
 3. **Run Linting**
 
    ```bash
-   scripts/lint
+   script/lint
    ```
 
    Always run linting before committing changes.
@@ -113,12 +113,10 @@ When preparing a release, update the version number in the following file:
 #### 1. Prepare the Release
 
 1. **Update Version Numbers**
-
    - Update `custom_components/actronair_neo/manifest.json` with the new version number
    - Ensure the version follows the `YYYY.MINOR.PATCH` format
 
 2. **Update CHANGELOG.md**
-
    - Move all items from `[Unreleased]` section to a new version section
    - Create the new version header with the release date:
      ```markdown
@@ -135,10 +133,10 @@ When preparing a release, update the version number in the following file:
 
    ```bash
    # Run linting
-   scripts/lint
+   script/lint
 
    # Start development mode and verify integration loads
-   scripts/develop
+   script/develop
 
    # Check logs for errors
    tail -f config/home-assistant.log
@@ -194,7 +192,6 @@ Once the tag is pushed, the GitHub Actions workflow (`.github/workflows/release.
 #### 5. Post-Release Tasks
 
 1. **Announce the Release**
-
    - Update any relevant documentation
    - Notify users through appropriate channels
 
@@ -235,7 +232,7 @@ Use this checklist when creating a release:
 - [ ] Version number updated in `manifest.json`
 - [ ] CHANGELOG.md updated with new version section
 - [ ] All items moved from `[Unreleased]` to new version section
-- [ ] Linting passes (`scripts/lint`)
+- [ ] Linting passes (`script/lint`)
 - [ ] Integration loads successfully in development mode
 - [ ] No errors in Home Assistant logs
 - [ ] Version changes committed and pushed

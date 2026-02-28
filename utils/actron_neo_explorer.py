@@ -2,33 +2,46 @@
 """
 ActronAir Neo API Explorer.
 
-This tool connects to the ActronAir Neo cloud API and allows exploration of the API responses.
-It can be used to better understand the API structure for documentation purposes.
+This tool connects to the ActronAir Neo cloud API and allows exploration
+of the API responses. Used for documentation and debugging.
+
+Authentication uses OAuth2 Device Code Flow, matching both:
+- The HA integration (custom_components/actronair_neo/api/auth.py)
+- The actronneoapi library (https://github.com/kclif9/actronneoapi)
+
+Tokens are loaded from (in order):
+1. config/actron_token.json (explorer's own token file)
+2. config/.storage/core.config_entries (HA config entry, as fallback)
 
 Usage:
     python actron_neo_explorer.py [options]
 
 Options:
-    -u, --username  ActronAir Neo account username
-    -p, --password  ActronAir Neo account password
     -d, --debug     Enable debug logging
-    -t, --token-file Path to token file (default: actron_token.json in script directory)
+    -t, --token-file Path to token file (default: ../config/actron_token.json)
     -g, --generate-diagnostics Generate diagnostics.md file based on system information
+    --pair          Start Device Code Flow to pair a new device
+    --status        Fetch and print the full AC status JSON (non-interactive)
+    --events        Fetch and print the latest events JSON (non-interactive)
 
 Examples:
-    python actron_neo_explorer.py                     # Interactive mode with prompts
-    python actron_neo_explorer.py -u user@email.com   # Provide username, prompt for password
+    python actron_neo_explorer.py                     # Interactive mode (uses saved tokens)
+    python actron_neo_explorer.py --pair              # Pair a new device via Device Code Flow
+    python actron_neo_explorer.py --status            # Dump full status JSON and exit
+    python actron_neo_explorer.py --events            # Dump latest events JSON and exit
     python actron_neo_explorer.py -d                  # Enable debug mode
     python actron_neo_explorer.py -g                  # Generate diagnostics.md file
 
-NOTE: Credentials are never stored, only authentication tokens are saved locally.
+NOTE: No username/password required. Uses Device Code Flow for initial pairing.
+      Tokens are persisted in the token file for subsequent runs.
+      The events API was disabled by Actron in July 2025 — events may
+      return 401/404 on newer API versions.
 
 """
 
 import argparse
 import asyncio
 import contextlib
-import getpass
 import json
 import logging
 import os
@@ -85,8 +98,13 @@ logging.basicConfig(
 )
 _LOGGER = logging.getLogger("actron_neo_explorer")
 
-# API Constants
+# API Constants — must match the integration (api/const.py) and library
 API_URL = "https://nimbus.actronair.com.au"
+CLIENT_ID = "home_assistant"
+DEVICE_CODE_SCOPE = "read write"
+DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
+TOKEN_ENDPOINT = "/api/v0/oauth/token"
+TOKEN_EXPIRY_BUFFER = 300  # Refresh 5 minutes early
 API_TIMEOUT = 30
 MAX_RETRIES = 3
 MAX_REQUESTS_PER_MINUTE = 20
@@ -142,8 +160,6 @@ class ActronNeoExplorer:
 
     def __init__(
         self,
-        username: str,
-        password: str,
         token_file_path: str | None = None,
         debug: bool = False,
     ) -> None:
@@ -151,13 +167,12 @@ class ActronNeoExplorer:
         if debug:
             _LOGGER.setLevel(logging.DEBUG)
 
-        # Authentication credentials
-        self.username = username
-        self.password = password
-
-        # Token management
+        # Token management - default to ../config/actron_token.json
         self.token_file = token_file_path or os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "actron_token.json"
+            os.path.dirname(os.path.abspath(__file__)),
+            "..",
+            "config",
+            "actron_token.json",
         )
         self.refresh_token_value: str | None = None
         self.access_token: str | None = None
@@ -195,58 +210,121 @@ class ActronNeoExplorer:
             await self.session.close()
 
     async def load_tokens(self) -> None:
-        """Load authentication tokens from storage."""
-        try:
-            if os.path.exists(self.token_file):
-                async with aiofiles.open(self.token_file) as f:
-                    data = json.loads(await f.read())
-                    self.refresh_token_value = data.get("refresh_token")
-                    self.access_token = data.get("access_token")
-                    expires_at_str = data.get("expires_at", "2000-01-01")
-                    self.token_expires_at = datetime.fromisoformat(expires_at_str)
+        """Load authentication tokens from storage.
 
-                # Verify token data is valid
-                if (
-                    not self.refresh_token_value
-                    or not self.access_token
-                    or not self.token_expires_at
-                ):
-                    _LOGGER.warning(
-                        "Token file contains incomplete data, will authenticate from scratch"
-                    )
-                    await self.clear_tokens()
+        Tries the following sources in order:
+        1. Token file (config/actron_token.json)
+        2. HA config entry storage (.storage/core.config_entries)
+        """
+        # Source 1: Token file
+        if await self._load_tokens_from_file():
+            return
+
+        # Source 2: HA config entry
+        if await self._load_tokens_from_ha_config():
+            return
+
+        _LOGGER.debug("No tokens found from any source")
+
+    async def _load_tokens_from_file(self) -> bool:
+        """Load tokens from the token file."""
+        try:
+            if not os.path.exists(self.token_file):
+                _LOGGER.debug("Token file not found: %s", self.token_file)
+                return False
+
+            async with aiofiles.open(self.token_file) as f:
+                data = json.loads(await f.read())
+                self.refresh_token_value = data.get("refresh_token")
+                self.access_token = data.get("access_token")
+
+                # Support both POSIX timestamp and ISO string format
+                expires_at = data.get("token_expires_at") or data.get("expires_at")
+                if isinstance(expires_at, (int, float)):
+                    self.token_expires_at = datetime.fromtimestamp(expires_at)
+                elif isinstance(expires_at, str):
+                    self.token_expires_at = datetime.fromisoformat(expires_at)
                 else:
-                    _LOGGER.debug("Tokens loaded successfully")
-            else:
-                _LOGGER.debug("No token file found, will authenticate from scratch")
-        except json.JSONDecodeError:
-            _LOGGER.warning("Token file is corrupted, will authenticate from scratch")
+                    self.token_expires_at = datetime(2000, 1, 1)
+
+            if not self.refresh_token_value or not self.access_token:
+                _LOGGER.warning("Token file has incomplete data")
+                await self.clear_tokens()
+                return False
+
+            _LOGGER.debug("Tokens loaded from file")
+            return True
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            _LOGGER.warning("Failed to load token file: %s", e)
             await self.clear_tokens()
-        except OSError as e:
-            _LOGGER.exception("IO error loading tokens: %s", e)
-        except ValueError as e:
-            _LOGGER.exception("Value error loading tokens: %s", e)
-            await self.clear_tokens()
+            return False
+
+    async def _load_tokens_from_ha_config(self) -> bool:
+        """Load tokens from the HA config entry storage as fallback."""
+        ha_storage = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..",
+            "config",
+            ".storage",
+            "core.config_entries",
+        )
+        try:
+            if not os.path.exists(ha_storage):
+                _LOGGER.debug("HA config entry storage not found")
+                return False
+
+            async with aiofiles.open(ha_storage) as f:
+                storage = json.loads(await f.read())
+
+            for entry in storage.get("data", {}).get("entries", []):
+                if entry.get("domain") != "actronair_neo":
+                    continue
+                entry_data = entry.get("data", {})
+                self.refresh_token_value = entry_data.get("refresh_token")
+                self.access_token = entry_data.get("access_token")
+                expires_at = entry_data.get("token_expires_at")
+                if isinstance(expires_at, (int, float)):
+                    self.token_expires_at = datetime.fromtimestamp(expires_at)
+                else:
+                    self.token_expires_at = datetime(2000, 1, 1)
+
+                # Also grab serial/system_id if available
+                if not self.actron_serial:
+                    self.actron_serial = entry_data.get("serial_number", "")
+                if not self.actron_system_id:
+                    self.actron_system_id = entry_data.get("system_id", "")
+
+                if self.refresh_token_value and self.access_token:
+                    _LOGGER.info("Tokens loaded from HA config entry")
+                    # Save to own token file for future use
+                    await self.save_tokens()
+                    return True
+
+            _LOGGER.debug("No actronair_neo entry found in HA config")
+            return False
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            _LOGGER.warning("Failed to read HA config entry: %s", e)
+            return False
 
     async def save_tokens(self) -> None:
-        """Save authentication tokens to storage."""
+        """Save authentication tokens to storage.
+
+        Uses the same key names as the integration (const.py):
+        access_token, refresh_token, token_expires_at (POSIX timestamp).
+        """
         try:
+            token_data = {
+                "access_token": self.access_token,
+                "refresh_token": self.refresh_token_value,
+                "token_expires_at": (
+                    self.token_expires_at.timestamp() if self.token_expires_at else None
+                ),
+            }
             async with aiofiles.open(self.token_file, mode="w") as f:
-                token_data = {
-                    "refresh_token": self.refresh_token_value,
-                    "access_token": self.access_token,
-                    "expires_at": (
-                        self.token_expires_at.isoformat()
-                        if self.token_expires_at
-                        else None
-                    ),
-                }
-                await f.write(json.dumps(token_data))
-            _LOGGER.debug("Tokens saved successfully")
-        except OSError as e:
-            _LOGGER.exception("IO error saving tokens: %s", e)
-        except TypeError as e:
-            _LOGGER.exception("JSON encoding error saving tokens: %s", e)
+                await f.write(json.dumps(token_data, indent=2))
+            _LOGGER.debug("Tokens saved to %s", self.token_file)
+        except (OSError, TypeError) as e:
+            _LOGGER.warning("Failed to save tokens: %s", e)
 
     async def clear_tokens(self) -> None:
         """Clear stored tokens when they become invalid."""
@@ -261,59 +339,156 @@ class ActronNeoExplorer:
                 _LOGGER.exception("Error removing token file: %s", e)
 
     async def authenticate(self) -> None:
-        """Authenticate and get the token."""
+        """Authenticate using existing refresh token."""
         _LOGGER.info("Starting authentication process")
+        if not self.refresh_token_value:
+            msg = (
+                "No refresh token available. "
+                "Run with --pair to pair a new device via Device Code Flow."
+            )
+            raise AuthenticationError(msg)
         try:
-            if not self.refresh_token_value:
-                _LOGGER.debug("No refresh token, getting a new one")
-                await self._get_refresh_token()
             await self._get_access_token()
         except AuthenticationError:
-            _LOGGER.warning(
-                "Failed to authenticate with refresh token, trying to get a new one"
-            )
-            # Clear existing tokens as they failed
-            await self.clear_tokens()
-            # Try with a fresh token
-            await self._get_refresh_token()
-            await self._get_access_token()
+            _LOGGER.warning("Refresh token is invalid or expired")
+            raise
         _LOGGER.info("Authentication process completed")
 
-    async def _get_refresh_token(self) -> None:
-        """Get the refresh token."""
-        url = f"{API_URL}/api/v0/client/user-devices"
+    async def pair_device(self) -> None:
+        """Pair a new device using OAuth2 Device Code Flow.
+
+        Uses the same client_id, scope, and grant_type as the
+        integration (api/auth.py) and library (actronneoapi/oauth.py).
+        """
+        _LOGGER.info("Starting Device Code pairing flow")
+        url = f"{API_URL}{TOKEN_ENDPOINT}"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
-            "username": self.username,
-            "password": self.password,
-            "client": "ios",
-            "deviceName": "ActronExplorer",
-            "deviceUniqueIdentifier": "ActronNeoExplorer",
+            "client_id": CLIENT_ID,
+            "scope": DEVICE_CODE_SCOPE,
         }
+
+        # Step 1: Request device code
         try:
-            _LOGGER.debug("Requesting new refresh token")
             response = await self._make_request(
                 "POST", url, headers=headers, data=data, auth_required=False
             )
-            self.refresh_token_value = response.get("pairingToken")
-            if not self.refresh_token_value:
-                msg = "No refresh token received in response"
-                raise AuthenticationError(msg)
-            await self.save_tokens()
-            _LOGGER.info("New refresh token obtained and saved")
-        except Exception as e:
-            _LOGGER.exception("Failed to get new refresh token: %s", str(e))
-            msg = f"Failed to get new refresh token: {e!s}"
+        except ApiError as e:
+            msg = f"Failed to request device code: {e}"
             raise AuthenticationError(msg) from e
 
+        device_code = response.get("device_code")
+        user_code = response.get("user_code")
+        verification_uri = response.get("verification_uri", f"{API_URL}/connect")
+        verification_uri_complete = response.get(
+            "verification_uri_complete", verification_uri
+        )
+        expires_in = response.get("expires_in", 300)
+        interval = response.get("interval", 5)
+
+        if not device_code or not user_code:
+            msg = "Incomplete device code response from API"
+            raise AuthenticationError(msg)
+
+        # Step 2: Show the user code
+        if RICH_AVAILABLE:
+            console.print(
+                Panel(
+                    f"[title]Device Code Pairing[/title]\n\n"
+                    f"Go to: [highlight]{verification_uri_complete}[/highlight]\n\n"
+                    f"Enter code: [success]{user_code}[/success]\n\n"
+                    f"[info]Waiting for authorization (expires in {expires_in}s)...[/info]",
+                    title="ActronAir Authorization",
+                    border_style="panel.border",
+                    padding=(1, 2),
+                    width=70,
+                )
+            )
+        else:
+            print(f"\nGo to: {verification_uri_complete}")
+            print(f"Enter code: {user_code}")
+            print(f"Waiting for authorization (expires in {expires_in}s)...")
+
+        # Step 3: Poll for token
+        poll_data = {
+            "grant_type": DEVICE_CODE_GRANT_TYPE,
+            "device_code": device_code,
+            "client_id": CLIENT_ID,
+        }
+        deadline = datetime.now() + timedelta(seconds=expires_in)
+        poll_interval = interval
+
+        while datetime.now() < deadline:
+            try:
+                async with self.session.post(
+                    url,
+                    headers=headers,
+                    data=poll_data,
+                    timeout=API_TIMEOUT,
+                ) as resp:
+                    body = await resp.text()
+
+                    if resp.status == 200:
+                        result = json.loads(body)
+                        self.access_token = result.get("access_token")
+                        self.refresh_token_value = result.get(
+                            "refresh_token", self.refresh_token_value
+                        )
+                        expires_in_secs = result.get("expires_in", 3600)
+                        self.token_expires_at = datetime.now() + timedelta(
+                            seconds=expires_in_secs - TOKEN_EXPIRY_BUFFER
+                        )
+                        await self.save_tokens()
+
+                        if RICH_AVAILABLE:
+                            console.print(
+                                "[success]✓ Device paired successfully![/success]"
+                            )
+                        else:
+                            print("Device paired successfully!")
+                        return
+
+                    if resp.status == 400:
+                        error_data = json.loads(body)
+                        error = error_data.get("error", "")
+
+                        if error == "authorization_pending":
+                            await asyncio.sleep(poll_interval)
+                            continue
+                        if error == "slow_down":
+                            poll_interval += 5
+                            await asyncio.sleep(poll_interval)
+                            continue
+                        if error == "expired_token":
+                            msg = "Device code expired before authorization"
+                            raise AuthenticationError(msg)
+                        if error == "access_denied":
+                            msg = "Authorization denied by user"
+                            raise AuthenticationError(msg)
+
+                        msg = f"Authorization failed: {error}"
+                        raise AuthenticationError(msg)
+
+            except AuthenticationError:
+                raise
+            except (TimeoutError, aiohttp.ClientError):
+                await asyncio.sleep(poll_interval)
+
+        msg = "Device code authorization timed out"
+        raise AuthenticationError(msg)
+
     async def _get_access_token(self) -> None:
-        """Get access token using refresh token."""
-        url = f"{API_URL}/api/v0/oauth/token"
+        """Get access token using refresh token.
+
+        Uses client_id="home_assistant" matching the integration
+        (api/auth.py) and library (actronneoapi/oauth.py).
+        """
+        url = f"{API_URL}{TOKEN_ENDPOINT}"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "grant_type": "refresh_token",
             "refresh_token": self.refresh_token_value,
-            "client_id": "app",
+            "client_id": CLIENT_ID,
         }
         try:
             _LOGGER.debug("Requesting new access token")
@@ -321,28 +496,31 @@ class ActronNeoExplorer:
                 "POST", url, headers=headers, data=data, auth_required=False
             )
             self.access_token = response.get("access_token")
+            self.refresh_token_value = response.get(
+                "refresh_token", self.refresh_token_value
+            )
             expires_in = response.get("expires_in", 3600)
             self.token_expires_at = datetime.now() + timedelta(
-                seconds=expires_in - 300
-            )  # Refresh 5 minutes early
+                seconds=expires_in - TOKEN_EXPIRY_BUFFER
+            )
             if not self.access_token:
-                _LOGGER.error("No access token received in the response")
                 msg = "No access token received in response"
                 raise AuthenticationError(msg)
             await self.save_tokens()
             _LOGGER.info(
-                "New access token obtained and valid until: %s", self.token_expires_at
+                "New access token obtained, valid until: %s", self.token_expires_at
             )
-        except AuthenticationError as e:
-            _LOGGER.exception("Authentication failed: %s", e)
+        except AuthenticationError:
             raise
         except Exception as e:
-            _LOGGER.exception("Failed to get new access token: %s", e)
             msg = f"Failed to get new access token: {e}"
             raise AuthenticationError(msg) from e
 
     async def refresh_access_token(self) -> None:
-        """Refresh the access token when it's expired."""
+        """Refresh the access token with exponential backoff retry.
+
+        Matches the retry strategy in the integration (api/auth.py).
+        """
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -356,20 +534,14 @@ class ActronNeoExplorer:
                     e,
                 )
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(5 * (2**attempt))  # Exponential backoff
+                    await asyncio.sleep(5 * (2**attempt))
                 else:
-                    _LOGGER.exception(
-                        "All token refresh attempts failed. Attempting to re-authenticate."
+                    _LOGGER.warning(
+                        "All token refresh attempts failed. "
+                        "Run with --pair to re-authenticate via Device Code Flow."
                     )
-                    await self.clear_tokens()
-                    try:
-                        await self._get_refresh_token()
-                        await self._get_access_token()
-                        return
-                    except AuthenticationError as auth_err:
-                        _LOGGER.exception("Re-authentication failed: %s", auth_err)
-                        raise
-        msg = "Failed to refresh token and re-authentication failed"
+                    raise
+        msg = "Failed to refresh access token after all retries"
         raise AuthenticationError(msg)
 
     async def _make_request(
@@ -446,18 +618,17 @@ class ActronNeoExplorer:
         _LOGGER.info("Initializing ActronNeoExplorer")
         await self.load_tokens()
         if not self.access_token or not self.refresh_token_value:
-            _LOGGER.debug("No valid tokens found, authenticating from scratch")
+            _LOGGER.debug("No valid tokens found, need to authenticate")
             await self.authenticate()
         else:
             _LOGGER.debug("Tokens found, validating")
             try:
-                # This will trigger re-authentication if tokens are invalid
                 cached_devices = await self.get_devices()
                 if not cached_devices:
                     msg = "No devices found"
                     raise ValueError(msg)
-            except AuthenticationError:
-                _LOGGER.warning("Stored tokens are invalid, re-authenticating")
+            except (AuthenticationError, ApiError):
+                _LOGGER.warning("Stored tokens may be invalid, refreshing")
                 await self.authenticate()
                 cached_devices = await self.get_devices()
                 if not cached_devices:
@@ -576,7 +747,12 @@ class ActronNeoExplorer:
         event_id: str | None = None,
         newer: bool = True,
     ) -> dict[str, Any]:
-        """Get AC system events."""
+        """Get AC system events.
+
+        NOTE: The events API was disabled by Actron in July 2025.
+        This endpoint may return 401/404 on newer API versions.
+        The actronneoapi library switched to status polling as a result.
+        """
         serial = serial or self.actron_serial
         if not serial:
             msg = "No serial number available. Call get_devices() first."
@@ -1149,17 +1325,18 @@ async def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "This tool allows you to explore the ActronAir Neo cloud API.\n"
-            "Credentials are used for authentication only and are never stored.\n"
+            "Authentication uses Device Code Flow (no username/password needed).\n"
+            "Tokens are loaded from config/actron_token.json by default.\n"
             "For more information, see README_EXPLORER.md\n"
         ),
     )
-    parser.add_argument("-u", "--username", help="ActronAir Neo account username")
-    parser.add_argument("-p", "--password", help="ActronAir Neo account password")
     parser.add_argument(
         "-d", "--debug", action="store_true", help="Enable debug logging"
     )
     parser.add_argument(
-        "-t", "--token-file", help="Path to token file (default: actron_token.json)"
+        "-t",
+        "--token-file",
+        help="Path to token file (default: ../config/actron_token.json)",
     )
     parser.add_argument(
         "--docs", action="store_true", help="Show API documentation structure"
@@ -1169,6 +1346,21 @@ async def main() -> None:
         "--generate-diagnostics",
         action="store_true",
         help="Generate diagnostics.md file based on system information",
+    )
+    parser.add_argument(
+        "--pair",
+        action="store_true",
+        help="Start Device Code Flow to pair a new device",
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Fetch and print the full AC status JSON (non-interactive)",
+    )
+    parser.add_argument(
+        "--events",
+        action="store_true",
+        help="Fetch and print the latest events JSON (non-interactive)",
     )
 
     args = parser.parse_args()
@@ -1236,17 +1428,16 @@ async def main() -> None:
 
     # Display welcome message
     if RICH_AVAILABLE:
-        # Create a beautiful welcome header
         welcome_panel = Panel(
             """[title]Welcome to the ActronAir Neo API Explorer[/title]
 
 This tool allows you to [highlight]explore the ActronAir Neo cloud API responses[/highlight].
 You can view device status, send commands, and save responses for documentation.
 
-[info]Note: Your credentials are only used for authentication and are never stored.[/info]
+[info]Authentication: Uses Device Code Flow or saved tokens from the HA integration.[/info]
             """,
             title="ActronAir Neo Explorer",
-            subtitle="Version 1.0",
+            subtitle="Version 2.0",
             border_style="panel.border",
             padding=(1, 2),
             title_align="center",
@@ -1257,38 +1448,6 @@ You can view device status, send commands, and save responses for documentation.
     else:
         pass
 
-    # Prompt for credentials if not provided
-    username = args.username
-    password = args.password
-
-    if not username:
-        if RICH_AVAILABLE:
-            username = Prompt.ask(
-                "[info]Enter ActronAir Neo username[/info]", console=console
-            )
-        else:
-            username = input("Enter ActronAir Neo username: ")
-
-    if not password:
-        if RICH_AVAILABLE:
-            console.print("[info]Enter ActronAir Neo password[/info]", end="")
-        password = getpass.getpass(
-            "" if RICH_AVAILABLE else "Enter ActronAir Neo password: "
-        )
-
-    if not username or not password:
-        if RICH_AVAILABLE:
-            console.print(
-                Panel(
-                    "[error]Username and password are required[/error]",
-                    title="Error",
-                    border_style="error",
-                )
-            )
-        else:
-            pass
-        return
-
     if RICH_AVAILABLE:
         with Progress(
             SpinnerColumn(),
@@ -1296,20 +1455,24 @@ You can view device status, send commands, and save responses for documentation.
             console=console,
         ) as progress:
             task = progress.add_task("Connecting...", total=None)
-            # Keep the spinner visible for a moment
             await asyncio.sleep(0.5)
     else:
         pass
 
     # Create and initialize explorer
     async with ActronNeoExplorer(
-        username=username,
-        password=password,
         token_file_path=args.token_file,
         debug=args.debug,
     ) as explorer:
         try:
-            await explorer.initialize()
+            # Handle --pair flag: run Device Code Flow
+            if args.pair:
+                await explorer.load_tokens()
+                await explorer.pair_device()
+                # After pairing, initialize normally
+                await explorer.initialize()
+            else:
+                await explorer.initialize()
 
             if RICH_AVAILABLE:
                 console.print(
@@ -1322,6 +1485,17 @@ You can view device status, send commands, and save responses for documentation.
                 )
             else:
                 pass
+
+            # Handle non-interactive modes
+            if args.status:
+                response = await explorer.get_ac_status()
+                print(json.dumps(response, indent=2))
+                return
+
+            if args.events:
+                response = await explorer.get_ac_events()
+                print(json.dumps(response, indent=2))
+                return
 
             # Handle the generate-diagnostics flag
             if args.generate_diagnostics:
@@ -1374,8 +1548,8 @@ You can view device status, send commands, and save responses for documentation.
                     Panel(
                         f"[error]Authentication failed: {e}[/error]\n\n"
                         "[title]Troubleshooting Tips:[/title]\n"
-                        "  • [info]Check your username and password[/info]\n"
-                        "  • [info]If you recently changed your password, delete the token file and try again[/info]\n"
+                        "  • [info]Run with --pair to re-authenticate via Device Code Flow[/info]\n"
+                        "  • [info]Delete the token file and try again[/info]\n"
                         "  • [info]Try again in a few minutes if too many auth attempts have been made[/info]",
                         title="Authentication Error",
                         border_style="error",

@@ -4,18 +4,19 @@
 # Python cache files
 __pycache__/
 *.py[cod]
+*.pyo
 
 # Custom components cache and specific files
 custom_components/.DS_Store
 custom_components/*/__pycache__/
-custom_components/*/*.py[cod]
 
 # Virtual environment
 venv/
 ENV/
 env/
 env.bak/
-*.env
+.local/
+.venv
 
 # VS Code settings
 .vscode/
@@ -25,21 +26,25 @@ env.bak/
 
 # Test coverage reports
 .coverage
-coverage/
 .coverage.*
+coverage/
+coverage.json
+coverage.xml
+htmlcov/
 
 # Cache directories
 .cache/
+.ruff_cache
+.mypy_cache/
+.pyright/
 
 # Logs
 *.log
 
 # Unit test / Coverage reports
-htmlcov/
 .tox/
 .nox/
-.cache/
-coverage.xml
+.pytest_cache/
 nosetests.xml
 test-results.xml
 
@@ -69,24 +74,15 @@ target/
 .ipynb_checkpoints
 
 # Local environment variables
-.env
+*.env
 .env.local
 .env.*.local
 
-# artifacts
-__pycache__
-.pytest*
-*.egg-info
-*/build/*
-*/dist/*
+# AI agent scratch space
+.ai-scratch/
 
-
-# misc
-.coverage
-.vscode
-coverage.xml
-.ruff_cache
-
+# uv lock file (not needed for HA custom components)
+uv.lock
 
 # Home Assistant configuration
 config/*

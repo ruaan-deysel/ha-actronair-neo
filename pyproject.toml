@@ -1,3 +1,53 @@
+[project]
+name = "ha-actronair-neo"
+version = "2026.3.0"
+description = "Home Assistant custom integration for ActronAir Neo air conditioning systems"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.13.2"
+dependencies = [
+    "colorlog>=6.10.0",
+    "homeassistant>=2025.6.3",
+]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "codespell>=2.4.0",
+    "pre-commit>=4.0.0",
+    "pyright>=1.1.400",
+    "ruff>=0.15.0",
+]
+test = [
+    "coverage>=7.0.0",
+    "pytest>=9.0.0",
+    "pytest-aiohttp>=1.0.0",
+    "pytest-asyncio>=1.0.0",
+    "pytest-cov>=7.0.0",
+    "pytest-freezer>=0.4.0",
+    "pytest-homeassistant-custom-component>=0.13.0",
+    "pytest-socket>=0.7.0",
+    "pytest-sugar>=1.0.0",
+    "pytest-timeout>=2.0.0",
+    "pytest-xdist>=3.0.0",
+]
+
 [build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["custom_components/actronair_neo"]
+
+[tool.uv]
+default-groups = ["dev", "test"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.bandit]
+targets = ["custom_components/actronair_neo"]
+skips = ["B101"]
+
+[tool.ruff]
+extend-exclude = ["*.json"]

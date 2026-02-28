@@ -5,18 +5,78 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.components.climate.const import HVACMode
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.actronair_neo.api import (
-    ActronApi,
+from custom_components.actronair_neo.api.models import ZoneCapabilities
+from custom_components.actronair_neo.coordinator import ActronDataCoordinator
+from custom_components.actronair_neo.exceptions import (
     ApiError,
     AuthenticationError,
+    ConfigurationError,
     DeviceOfflineError,
     RateLimitError,
+    ZoneError,
 )
-from custom_components.actronair_neo.coordinator import ActronDataCoordinator
+
+
+@pytest.fixture
+def coordinator_instance(
+    hass: HomeAssistant, mock_api: MagicMock
+) -> ActronDataCoordinator:
+    """Return a coordinator instance for helper-method tests."""
+    coordinator = ActronDataCoordinator(
+        hass=hass,
+        api=mock_api,
+        device_id="TEST123456",
+        update_interval=60,
+        enable_zone_control=True,
+    )
+    coordinator.data = {
+        "main": {
+            "fan_mode": "LOW",
+            "supported_fan_modes": ["LOW", "MED", "HIGH"],
+            "EnabledZones": [True, False, False, False, False, False, False, False],
+        },
+        "zones": {
+            "zone_1": {
+                "name": "Living",
+                "is_enabled": True,
+                "capabilities": ZoneCapabilities(
+                    exists=True,
+                    can_operate=True,
+                    has_temp_control=True,
+                    has_separate_targets=False,
+                    target_temp_cool=24.0,
+                    target_temp_heat=22.0,
+                    peripheral_capabilities=None,
+                ),
+            }
+        },
+        "raw_data": {
+            "RemoteZoneInfo": [
+                {
+                    "Sensors": {"test123456": {"NV_Kind": "ZS: 23E01206"}},
+                }
+            ],
+            "AirconSystem": {
+                "Peripherals": [
+                    {
+                        "SerialNumber": "23E01206",
+                        "LastConnectionTime": "2025-01-01T00:00:00Z",
+                    }
+                ]
+            },
+            "lastKnownState": {
+                "UserAirconSettings": {"FanMode": "HIGH"},
+                "AirconSystem": {"IndoorUnit": {"NV_AutoFanEnabled": True}},
+            },
+        },
+    }
+    coordinator.last_data = coordinator.data
+    return coordinator
 
 
 class TestActronDataCoordinator:
@@ -24,7 +84,7 @@ class TestActronDataCoordinator:
 
     @pytest.mark.asyncio
     async def test_coordinator_initialization(
-        self, hass: HomeAssistant, mock_api: ActronApi
+        self, hass: HomeAssistant, mock_api: MagicMock
     ) -> None:
         """Test coordinator initialization."""
         coordinator = ActronDataCoordinator(
@@ -45,7 +105,7 @@ class TestActronDataCoordinator:
     async def test_successful_data_update(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
         mock_api_response: dict[str, Any],
     ) -> None:
         """Test successful data update."""
@@ -64,15 +124,15 @@ class TestActronDataCoordinator:
 
         # Mock zone capabilities
         mock_api.get_zone_capabilities = MagicMock(
-            return_value={
-                "exists": True,
-                "can_operate": True,
-                "has_temp_control": True,
-                "has_separate_targets": False,
-                "target_temp_cool": 22.0,
-                "target_temp_heat": 20.0,
-                "peripheral_capabilities": None,
-            }
+            return_value=ZoneCapabilities(
+                exists=True,
+                can_operate=True,
+                has_temp_control=True,
+                has_separate_targets=False,
+                target_temp_cool=22.0,
+                target_temp_heat=20.0,
+                peripheral_capabilities=None,
+            )
         )
 
         # Perform update
@@ -112,7 +172,7 @@ class TestActronDataCoordinator:
     async def test_api_unhealthy_fallback(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
         mock_api_response: dict[str, Any],
     ) -> None:
         """Test fallback to cached data when API is unhealthy."""
@@ -143,7 +203,7 @@ class TestActronDataCoordinator:
     async def test_authentication_error_handling(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test authentication error handling."""
         coordinator = ActronDataCoordinator(
@@ -172,7 +232,7 @@ class TestActronDataCoordinator:
     async def test_api_error_with_cached_data(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test API error handling with cached data fallback."""
         coordinator = ActronDataCoordinator(
@@ -198,7 +258,7 @@ class TestActronDataCoordinator:
     async def test_api_error_without_cached_data(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test API error handling without cached data."""
         coordinator = ActronDataCoordinator(
@@ -224,7 +284,7 @@ class TestActronDataCoordinator:
     async def test_data_parsing_methods(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
         mock_api_response: dict[str, Any],
     ) -> None:
         """Test data parsing methods."""
@@ -238,15 +298,15 @@ class TestActronDataCoordinator:
 
         # Mock zone capabilities
         mock_api.get_zone_capabilities = MagicMock(
-            return_value={
-                "exists": True,
-                "can_operate": True,
-                "has_temp_control": True,
-                "has_separate_targets": False,
-                "target_temp_cool": 22.0,
-                "target_temp_heat": 20.0,
-                "peripheral_capabilities": None,
-            }
+            return_value=ZoneCapabilities(
+                exists=True,
+                can_operate=True,
+                has_temp_control=True,
+                has_separate_targets=False,
+                target_temp_cool=22.0,
+                target_temp_heat=20.0,
+                peripheral_capabilities=None,
+            )
         )
 
         # Test data extraction
@@ -296,7 +356,7 @@ class TestActronDataCoordinator:
     async def test_cache_management_methods(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test cache management methods."""
         coordinator = ActronDataCoordinator(
@@ -332,7 +392,7 @@ class TestActronDataCoordinator:
     async def test_cache_statistics(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test cache statistics."""
         coordinator = ActronDataCoordinator(
@@ -365,7 +425,7 @@ class TestActronDataCoordinator:
     async def test_periodic_cache_cleanup(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test periodic cache cleanup."""
         coordinator = ActronDataCoordinator(
@@ -402,7 +462,7 @@ class TestActronDataCoordinator:
     async def test_zone_control_toggle(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test zone control enable/disable."""
         coordinator = ActronDataCoordinator(
@@ -418,7 +478,7 @@ class TestActronDataCoordinator:
             coordinator, "async_request_refresh", new_callable=AsyncMock
         ) as mock_refresh:
             # Test disabling zone control
-            await coordinator.set_zone_control(False)
+            await coordinator.set_enable_zone_control(enable=False)
             assert coordinator.enable_zone_control is False
             mock_refresh.assert_called_once()
 
@@ -426,7 +486,7 @@ class TestActronDataCoordinator:
             mock_refresh.reset_mock()
 
             # Test enabling zone control
-            await coordinator.set_zone_control(True)
+            await coordinator.set_enable_zone_control(enable=True)
             assert coordinator.enable_zone_control is True
             mock_refresh.assert_called_once()
 
@@ -438,7 +498,7 @@ class TestEnhancedCoordinatorErrorHandling:
     async def test_rate_limit_error_handling(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test rate limit error handling with cached data fallback."""
         coordinator = ActronDataCoordinator(
@@ -466,7 +526,7 @@ class TestEnhancedCoordinatorErrorHandling:
     async def test_device_offline_error_handling(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test device offline error handling."""
         coordinator = ActronDataCoordinator(
@@ -494,7 +554,7 @@ class TestEnhancedCoordinatorErrorHandling:
     async def test_temporary_api_error_handling(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test temporary API error handling."""
         coordinator = ActronDataCoordinator(
@@ -521,7 +581,7 @@ class TestEnhancedCoordinatorErrorHandling:
     async def test_client_error_handling(
         self,
         hass: HomeAssistant,
-        mock_api: ActronApi,
+        mock_api: MagicMock,
     ) -> None:
         """Test client error handling."""
         coordinator = ActronDataCoordinator(
@@ -543,3 +603,573 @@ class TestEnhancedCoordinatorErrorHandling:
         # Should return cached data for client errors too
         result = await coordinator._async_update_data()
         assert result == {"cached": "data"}
+
+
+class TestCoordinatorAdditionalCoverage:
+    """Additional coordinator tests for low-coverage branches."""
+
+    def test_validate_fan_mode_and_response(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+    ) -> None:
+        assert coordinator_instance.validate_fan_mode("med") == "MED"
+        assert coordinator_instance.validate_fan_mode("invalid") == "LOW"
+        assert (
+            coordinator_instance.validate_fan_mode("high", continuous=True)
+            == "HIGH+CONT"
+        )
+        assert coordinator_instance._validate_fan_mode_response(
+            "HIGH", "HIGH+CONT", continuous=True
+        )
+
+    def test_handle_api_error_variants(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+    ) -> None:
+        coordinator_instance.last_data = {"cached": "yes"}
+        assert coordinator_instance._handle_api_error(
+            ApiError("tmp", status_code=503)
+        ) == {"cached": "yes"}
+
+        coordinator_instance.last_data = None
+        with pytest.raises(UpdateFailed):
+            coordinator_instance._handle_api_error(ApiError("client", status_code=400))
+
+        with pytest.raises(UpdateFailed):
+            coordinator_instance._handle_api_error(ApiError("server", status_code=500))
+
+    @pytest.mark.asyncio
+    async def test_parse_data_optimized_cache_hit(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+    ) -> None:
+        payload = {"lastKnownState": {"RemoteZoneInfo": []}}
+        coordinator_instance._last_memory_cleanup = datetime.now()
+        with patch.object(
+            coordinator_instance,
+            "_parse_data",
+            new_callable=AsyncMock,
+            return_value={"main": {}, "zones": {}, "raw_data": payload},
+        ) as parse_data:
+            first = await coordinator_instance._parse_data_optimized(payload)
+            second = await coordinator_instance._parse_data_optimized(payload)
+        assert first == second
+        assert parse_data.call_count >= 1
+
+    def test_fan_mode_decoding_and_parsing(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+    ) -> None:
+        modes = coordinator_instance._validate_fan_modes(0x0F)
+        assert "LOW" in modes
+        assert "MED" in modes
+        assert "HIGH" in modes
+
+        parsed = coordinator_instance._parse_fan_mode_list("low,med", ["LOW", "MED"])
+        assert parsed == ["LOW", "MED"]
+        parsed_list = coordinator_instance._parse_fan_mode_list(
+            ["auto", "bad"], ["LOW"]
+        )
+        assert parsed_list == ["AUTO"]
+
+    def test_zone_peripheral_helpers(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+    ) -> None:
+        peripheral = coordinator_instance.get_zone_peripheral("zone_1")
+        assert peripheral is not None
+        assert (
+            coordinator_instance.get_zone_last_updated("zone_1")
+            == "2025-01-01T00:00:00Z"
+        )
+        assert coordinator_instance.get_zone_peripheral("zone_99") is None
+
+    @pytest.mark.asyncio
+    async def test_set_methods_call_api(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+        mock_api: MagicMock,
+    ) -> None:
+        coordinator_instance.async_request_refresh = AsyncMock()
+        mock_api.create_command = MagicMock(return_value={"cmd": "x"})
+        mock_api.send_command = AsyncMock()
+        mock_api.set_zone_airflow = AsyncMock()
+        mock_api.set_away_mode = AsyncMock()
+        mock_api.set_quiet_mode = AsyncMock()
+        mock_api.set_turbo_mode = AsyncMock()
+        mock_api.set_after_hours = AsyncMock()
+        mock_api.set_after_hours_duration = AsyncMock()
+
+        await coordinator_instance.set_hvac_mode("COOL")
+        await coordinator_instance.set_temperature(23.0, is_cooling=True)
+        await coordinator_instance.set_climate_mode("HEAT")
+        await coordinator_instance.set_zone_airflow(0, 50)
+        await coordinator_instance.set_away_mode(state=True)
+        await coordinator_instance.set_quiet_mode(state=True)
+        await coordinator_instance.set_turbo_mode(state=True)
+        await coordinator_instance.set_after_hours(enabled=True)
+        await coordinator_instance.set_after_hours_duration(90)
+        assert mock_api.send_command.call_count >= 3
+
+    @pytest.mark.asyncio
+    async def test_set_fan_mode_path(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+    ) -> None:
+        coordinator_instance._throttle_fan_mode_change = AsyncMock()
+        coordinator_instance._send_fan_mode_with_retry = AsyncMock()
+        await coordinator_instance.set_fan_mode("LOW")
+        coordinator_instance._send_fan_mode_with_retry.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_send_fan_mode_with_retry_error_and_success(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+        mock_api: MagicMock,
+    ) -> None:
+        coordinator_instance.data["main"]["fan_mode"] = "LOW+CONT"
+        coordinator_instance.async_request_refresh = AsyncMock()
+        mock_api.create_command = MagicMock(return_value={"cmd": "fan"})
+        mock_api.send_command = AsyncMock()
+        await coordinator_instance._send_fan_mode_with_retry(
+            "LOW+CONT", continuous=True
+        )
+
+        err = ApiError("retry", status_code=429)
+        mock_api.send_command = AsyncMock(side_effect=err)
+        with pytest.raises(ApiError):
+            await coordinator_instance._send_fan_mode_with_retry(
+                "LOW", continuous=False
+            )
+
+    @pytest.mark.asyncio
+    async def test_set_zone_temperature_validations(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+        mock_api: MagicMock,
+    ) -> None:
+        coordinator_instance.async_request_refresh = AsyncMock()
+        mock_api.create_command = MagicMock(return_value={"cmd": "zone_temp"})
+        mock_api.send_command = AsyncMock()
+
+        coordinator_instance.enable_zone_control = False
+        with pytest.raises(ConfigurationError):
+            await coordinator_instance.set_zone_temperature(
+                "zone_1", 22.0, "temp_setpoint_cool"
+            )
+
+        coordinator_instance.enable_zone_control = True
+        with pytest.raises(ZoneError):
+            await coordinator_instance.set_zone_temperature(
+                "zone_2", 22.0, "temp_setpoint_cool"
+            )
+
+        with pytest.raises(ZoneError):
+            await coordinator_instance.set_zone_temperature(
+                "zone_1", 99.0, "temp_setpoint_cool"
+            )
+
+        await coordinator_instance.set_zone_temperature(
+            "zone_1", 23.0, "temp_setpoint_cool"
+        )
+        mock_api.send_command.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_zone_state_and_index_validation(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+        mock_api: MagicMock,
+    ) -> None:
+        coordinator_instance.async_request_refresh = AsyncMock()
+        mock_api.create_command = MagicMock(return_value={"cmd": "zone"})
+        mock_api.send_command = AsyncMock()
+        await coordinator_instance.set_zone_state("zone_1", enable=False)
+        await coordinator_instance.set_zone_state(0, enable=True)
+        with pytest.raises(ValueError, match="out of range"):
+            coordinator_instance._validate_zone_index(99, 2)
+
+    @pytest.mark.asyncio
+    async def test_bulk_zone_operations_and_execute(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+    ) -> None:
+        coordinator_instance.async_request_refresh = AsyncMock()
+        coordinator_instance.set_zone_state = AsyncMock()
+        coordinator_instance.set_zone_temperature = AsyncMock()
+
+        result_enable = await coordinator_instance._execute_bulk_zone_op(
+            "enable", "zone_1"
+        )
+        assert result_enable["status"] == "success"
+
+        result_no_temp = await coordinator_instance._execute_bulk_zone_op(
+            "set_temperature", "zone_1"
+        )
+        assert result_no_temp["status"] == "error"
+
+        results = await coordinator_instance.async_bulk_zone_operation(
+            "set_temperature", ["zone_1"], temperature=23.0
+        )
+        assert results[0]["status"] in {"success", "error"}
+
+        coordinator_instance.enable_zone_control = False
+        with pytest.raises(ConfigurationError):
+            await coordinator_instance.async_bulk_zone_operation("enable", ["zone_1"])
+
+        coordinator_instance.enable_zone_control = True
+        with pytest.raises(ConfigurationError):
+            await coordinator_instance.async_bulk_zone_operation("invalid", ["zone_1"])
+
+    def test_parse_and_convert_helpers(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+    ) -> None:
+        assert coordinator_instance._convert_damper_position(None) == 0
+        assert coordinator_instance._convert_damper_position(10) == 50
+        assert coordinator_instance._convert_damper_position("bad") == 0
+
+        assert coordinator_instance._parse_outdoor_temp(22.0, {}) == 22.0
+        assert (
+            coordinator_instance._parse_outdoor_temp(
+                3000.0,
+                {"AmbientSensErr": False, "AmbTemp": 18.0},
+            )
+            == 18.0
+        )
+        assert coordinator_instance._parse_outdoor_temp(3000.0, {}) is None
+
+        warnings = coordinator_instance._parse_warnings(
+            {
+                "ErrCode": 2,
+                "OutdoorUnit": {"ErrCode_1": 1, "LPErr": 3, "HPErr": 4},
+            }
+        )
+        assert len(warnings) >= 3
+
+    @pytest.mark.asyncio
+    async def test_zone_preset_management_methods(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+    ) -> None:
+        coordinator_instance.async_request_refresh = AsyncMock()
+        coordinator_instance.set_zone_state = AsyncMock()
+        coordinator_instance.set_zone_temperature = AsyncMock()
+        coordinator_instance.zone_preset_manager.async_load = AsyncMock()
+        coordinator_instance.zone_preset_manager.async_create_preset = AsyncMock()
+
+        await coordinator_instance.async_initialize_zone_management()
+        await coordinator_instance.async_create_zone_preset_from_current(
+            "Sleep", "desc"
+        )
+        coordinator_instance.zone_preset_manager.async_create_preset.assert_called_once()
+
+        preset = MagicMock()
+        preset.zones = {
+            "zone_1": {"enabled": True, "temp_cool": 23.0, "temp_heat": 21.0}
+        }
+        coordinator_instance.zone_preset_manager.get_preset = MagicMock(
+            return_value=preset
+        )
+        await coordinator_instance.async_apply_zone_preset("Sleep")
+
+        coordinator_instance.zone_preset_manager.get_preset = MagicMock(
+            return_value=None
+        )
+        with pytest.raises(ConfigurationError):
+            await coordinator_instance.async_apply_zone_preset("Missing")
+
+
+class TestCoordinatorRemainingBranches:
+    """Targeted tests for remaining uncovered coordinator branches."""
+
+    @pytest.mark.asyncio
+    async def test_update_data_error_variants(
+        self, coordinator_instance: ActronDataCoordinator, mock_api: MagicMock
+    ) -> None:
+        mock_api.is_api_healthy = MagicMock(return_value=True)
+        coordinator_instance.last_data = None
+
+        mock_api.get_ac_status = AsyncMock(side_effect=RateLimitError("rate"))
+        with pytest.raises(UpdateFailed):
+            await coordinator_instance._async_update_data()
+
+        mock_api.get_ac_status = AsyncMock(side_effect=DeviceOfflineError("offline"))
+        with pytest.raises(UpdateFailed):
+            await coordinator_instance._async_update_data()
+
+        mock_api.get_ac_status = AsyncMock(side_effect=RuntimeError("boom"))
+        with pytest.raises(UpdateFailed):
+            await coordinator_instance._async_update_data()
+
+        coordinator_instance.last_data = {"cached": True}
+        result = await coordinator_instance._async_update_data()
+        assert result == {"cached": True}
+
+    @pytest.mark.asyncio
+    async def test_parse_data_raises_update_failed(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        with (
+            patch.object(
+                coordinator_instance,
+                "_extract_data_sections",
+                side_effect=TypeError("bad"),
+            ),
+            pytest.raises(UpdateFailed),
+        ):
+            await coordinator_instance._parse_data({"lastKnownState": {}})
+
+    @pytest.mark.asyncio
+    async def test_parse_main_data_model_and_auto_modes(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        sections = {
+            "user_aircon_settings": {"FanMode": "LOW", "Mode": "COOL"},
+            "master_info": {},
+            "live_aircon": {},
+            "aircon_system": {"MasterWCModel": "NTB-10"},
+            "indoor_unit": {"NV_AutoFanEnabled": True, "NV_ModelNumber": "CRV17AS"},
+            "alerts": {},
+            "remote_zone_info": [],
+            "peripherals": [],
+        }
+        main = await coordinator_instance._parse_main_data(sections)
+        assert "AUTO" in main["supported_fan_modes"]
+        assert main["model"] == "CRV17AS"
+
+    def test_misc_helpers_remaining_branches(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        assert coordinator_instance.continuous_fan is False
+        coordinator_instance.continuous_fan = True
+        assert coordinator_instance.continuous_fan is True
+
+        assert coordinator_instance._get_zone_enabled({}, 0) is False
+
+        zone_data: dict[str, Any] = {}
+        capabilities = ZoneCapabilities(
+            exists=True,
+            can_operate=True,
+            has_temp_control=True,
+            has_separate_targets=False,
+            target_temp_cool=24.0,
+            target_temp_heat=22.0,
+            peripheral_capabilities=None,
+        )
+        coordinator_instance._enrich_zone_with_peripheral(
+            {"Sensors": {"test123456": {"NV_Kind": "invalid"}}},
+            zone_data,
+            capabilities,
+            [],
+        )
+        assert zone_data == {}
+
+        zone_data = {}
+        coordinator_instance._enrich_zone_with_peripheral(
+            {"Sensors": {"test123456": {"NV_Kind": "ZS: 23E01206"}}},
+            zone_data,
+            capabilities,
+            [{"SerialNumber": "23E01206", "ControlCapabilities": {"a": 1}}],
+        )
+        assert zone_data["capabilities"].peripheral_capabilities == {"a": 1}
+
+        assert coordinator_instance._validate_fan_modes(object()) == [
+            "LOW",
+            "MED",
+            "HIGH",
+        ]
+        assert coordinator_instance._decode_fan_mode_bitmap(
+            0, ["LOW", "MED", "HIGH"]
+        ) == ["LOW", "MED", "HIGH"]
+        coordinator_instance.data = None
+        assert coordinator_instance._is_auto_fan_enabled() is False
+        assert coordinator_instance._parse_fan_mode_list(None, ["LOW"]) == ["LOW"]
+
+        coordinator_instance.data = {"raw_data": {"RemoteZoneInfo": []}}
+        assert coordinator_instance.get_zone_peripheral("zone_1") is None
+        assert coordinator_instance.get_zone_last_updated("bad") is None
+
+    def test_validate_fan_mode_remaining_branches(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        coordinator_instance.data["main"]["supported_fan_modes"] = ["TURBO"]
+        assert coordinator_instance.validate_fan_mode("turbo") == "LOW"
+
+        coordinator_instance.data = {}
+        assert (
+            coordinator_instance.validate_fan_mode("LOW", continuous=True) == "LOW+CONT"
+        )
+
+    def test_get_zone_peripheral_non_wireless_and_last_updated_exception(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        coordinator_instance.data = {
+            "raw_data": {
+                "RemoteZoneInfo": [{"Sensors": {"test123456": {"NV_Kind": "WIRED"}}}],
+                "AirconSystem": {"Peripherals": []},
+            }
+        }
+        assert coordinator_instance.get_zone_peripheral("zone_1") is None
+
+        with patch.object(
+            coordinator_instance, "get_zone_peripheral", side_effect=ValueError
+        ):
+            assert coordinator_instance.get_zone_last_updated("zone_1") is None
+
+    @pytest.mark.asyncio
+    async def test_fan_mode_throttle_and_retry_branches(
+        self, coordinator_instance: ActronDataCoordinator, mock_api: MagicMock
+    ) -> None:
+        coordinator_instance._last_fan_mode_change = datetime.now()
+        coordinator_instance._min_fan_mode_interval = 10
+        with patch(
+            "custom_components.actronair_neo.coordinator.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as sleep_mock:
+            await coordinator_instance._throttle_fan_mode_change()
+        sleep_mock.assert_called_once()
+
+        coordinator_instance.async_request_refresh = AsyncMock()
+        coordinator_instance.data = {"main": {"fan_mode": "LOW"}}
+        mock_api.create_command = MagicMock(return_value={"cmd": "fan"})
+        mock_api.send_command = AsyncMock(return_value={})
+        with patch("custom_components.actronair_neo.coordinator.MAX_RETRIES", 1):
+            await coordinator_instance._send_fan_mode_with_retry(
+                "LOW+CONT", continuous=True
+            )
+
+        retry_error = ApiError("retry", status_code=500)
+        mock_api.send_command = AsyncMock(side_effect=retry_error)
+        with (
+            patch("custom_components.actronair_neo.coordinator.MAX_RETRIES", 2),
+            patch(
+                "custom_components.actronair_neo.coordinator.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as sleep_mock,
+            pytest.raises(ApiError),
+        ):
+            await coordinator_instance._send_fan_mode_with_retry(
+                "LOW", continuous=False
+            )
+        assert sleep_mock.call_count >= 1
+
+        coordinator_instance.data = {"main": {"fan_mode": "LOW"}}
+        mock_api.send_command = AsyncMock(return_value={})
+        with (
+            patch("custom_components.actronair_neo.coordinator.MAX_RETRIES", 2),
+            patch(
+                "custom_components.actronair_neo.coordinator.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as sleep_mock,
+        ):
+            await coordinator_instance._send_fan_mode_with_retry(
+                "LOW+CONT", continuous=True
+            )
+        assert sleep_mock.await_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_set_hvac_mode_off_branch(
+        self, coordinator_instance: ActronDataCoordinator, mock_api: MagicMock
+    ) -> None:
+        coordinator_instance.async_request_refresh = AsyncMock()
+        mock_api.create_command = MagicMock(return_value={"cmd": "off"})
+        mock_api.send_command = AsyncMock()
+        await coordinator_instance.set_hvac_mode(HVACMode.OFF)
+        mock_api.create_command.assert_called_with("OFF")
+
+    @pytest.mark.asyncio
+    async def test_zone_methods_and_presets_remaining(
+        self, coordinator_instance: ActronDataCoordinator, mock_api: MagicMock
+    ) -> None:
+        coordinator_instance.async_request_refresh = AsyncMock()
+        coordinator_instance.last_data = None
+        with pytest.raises(ZoneError):
+            await coordinator_instance.set_zone_temperature(
+                "zone_1", 22.0, "temp_setpoint_cool"
+            )
+
+        coordinator_instance.last_data = {
+            "zones": {
+                "zone_1": {
+                    "capabilities": ZoneCapabilities(
+                        exists=True,
+                        can_operate=True,
+                        has_temp_control=False,
+                        has_separate_targets=False,
+                        target_temp_cool=24.0,
+                        target_temp_heat=22.0,
+                        peripheral_capabilities=None,
+                    )
+                }
+            }
+        }
+        with pytest.raises(ZoneError):
+            await coordinator_instance.set_zone_temperature(
+                "zone_1", 22.0, "temp_setpoint_cool"
+            )
+
+        coordinator_instance.last_data = None
+        mock_api.get_zone_statuses = AsyncMock(return_value=[True, False])
+        mock_api.create_command = MagicMock(return_value={"cmd": "zone"})
+        mock_api.send_command = AsyncMock()
+        await coordinator_instance.set_zone_state("zone_1", enable=False)
+
+        coordinator_instance.zone_preset_manager.async_load = AsyncMock(
+            side_effect=RuntimeError("load")
+        )
+        await coordinator_instance.async_initialize_zone_management()
+
+        coordinator_instance.last_data = None
+        with pytest.raises(ConfigurationError):
+            await coordinator_instance.async_create_zone_preset_from_current("A")
+
+        preset = MagicMock()
+        preset.zones = {"zone_1": {"enabled": True}}
+        coordinator_instance.zone_preset_manager.get_preset = MagicMock(
+            return_value=preset
+        )
+        coordinator_instance.enable_zone_control = False
+        with pytest.raises(ConfigurationError):
+            await coordinator_instance.async_apply_zone_preset("A")
+
+        coordinator_instance.enable_zone_control = True
+        coordinator_instance.set_zone_state = AsyncMock(
+            side_effect=RuntimeError("zone")
+        )
+        coordinator_instance.last_data = {"zones": {"zone_1": {"capabilities": None}}}
+        await coordinator_instance.async_apply_zone_preset("A")
+
+        coordinator_instance.last_data = None
+        await coordinator_instance._apply_zone_preset_temps("zone_1", {"temp_cool": 22})
+        coordinator_instance.last_data = {"zones": {}}
+        await coordinator_instance._apply_zone_preset_temps("zone_1", {"temp_cool": 22})
+        coordinator_instance.last_data = {
+            "zones": {
+                "zone_1": {
+                    "capabilities": ZoneCapabilities(
+                        exists=True,
+                        can_operate=True,
+                        has_temp_control=False,
+                        has_separate_targets=False,
+                        target_temp_cool=24.0,
+                        target_temp_heat=22.0,
+                        peripheral_capabilities=None,
+                    )
+                }
+            }
+        }
+        await coordinator_instance._apply_zone_preset_temps("zone_1", {"temp_cool": 22})
+
+        coordinator_instance.enable_zone_control = True
+        original_execute = coordinator_instance._execute_bulk_zone_op
+        coordinator_instance._execute_bulk_zone_op = AsyncMock(
+            side_effect=RuntimeError("bulk")
+        )
+        results = await coordinator_instance.async_bulk_zone_operation(
+            "enable", ["zone_1"]
+        )
+        assert results[0]["status"] == "error"
+
+        coordinator_instance._execute_bulk_zone_op = original_execute
+        coordinator_instance.set_zone_state = AsyncMock()
+        await coordinator_instance._execute_bulk_zone_op("disable", "zone_1")

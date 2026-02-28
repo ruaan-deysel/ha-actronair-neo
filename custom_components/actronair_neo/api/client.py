@@ -1,0 +1,899 @@
+"""
+ActronAir Neo API client.
+
+Provides the main API client for communicating with the ActronAir Neo
+cloud service, including rate limiting, response caching, and request
+deduplication.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any, cast
+
+import aiohttp
+
+from custom_components.actronair_neo.exceptions import (
+    ApiError,
+    AuthenticationError,
+    DeviceOfflineError,
+    RateLimitError,
+)
+
+from .const import (
+    API_TIMEOUT,
+    API_URL,
+    API_URL_QUE,
+    DEFAULT_CACHE_TTL,
+    ENDPOINT_AC_COMMANDS,
+    ENDPOINT_AC_STATUS,
+    ENDPOINT_AC_SYSTEMS,
+    MAX_REQUESTS_PER_MINUTE,
+    MAX_RETRIES,
+    MIN_FAN_MODE_INTERVAL,
+    RETRYABLE_STATUS_CODES,
+    SYSTEM_TYPE_NXGEN,
+)
+from .models import (
+    CommandData,
+    DeviceInfo,
+    FanModeType,
+    HvacModeType,
+    ZoneCapabilities,
+)
+
+if TYPE_CHECKING:
+    from .auth import ActronAirNeoAuth
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class RateLimiter:
+    """Rate limiter to prevent overwhelming the API."""
+
+    def __init__(self, calls_per_minute: int) -> None:
+        """Initialize the rate limiter."""
+        self.calls_per_minute = calls_per_minute
+        self.semaphore = asyncio.Semaphore(calls_per_minute)
+        self.call_times: list[datetime] = []
+
+    async def __aenter__(self) -> None:
+        """Enter the rate limiter context."""
+        await self.acquire()
+
+    async def __aexit__(self, *_: object) -> None:
+        """Exit the rate limiter context."""
+        self.release()
+
+    async def acquire(self) -> None:
+        """Acquire a slot for making an API call."""
+        await self.semaphore.acquire()
+        now = datetime.now()  # noqa: DTZ005
+        self.call_times = [t for t in self.call_times if now - t < timedelta(minutes=1)]
+        if len(self.call_times) >= self.calls_per_minute:
+            sleep_time = 60 - (now - self.call_times[0]).total_seconds()
+            await asyncio.sleep(sleep_time)
+            now = datetime.now()  # noqa: DTZ005
+            self.call_times = [
+                t for t in self.call_times if now - t < timedelta(minutes=1)
+            ]
+        self.call_times.append(now)
+
+    def release(self) -> None:
+        """Release the acquired slot."""
+        self.semaphore.release()
+
+
+class ResponseCache:
+    """Response cache with TTL for API optimization."""
+
+    def __init__(
+        self,
+        default_ttl: timedelta | None = None,
+    ) -> None:
+        """Initialize response cache."""
+        self._cache: dict[str, tuple[Any, datetime]] = {}
+        self._default_ttl = default_ttl or timedelta(seconds=30)
+        self._lock = asyncio.Lock()
+
+    async def get(self, key: str, ttl: timedelta | None = None) -> Any | None:
+        """Get cached response if still valid."""
+        async with self._lock:
+            if key not in self._cache:
+                return None
+
+            data, timestamp = self._cache[key]
+            cache_ttl = ttl or self._default_ttl
+
+            if datetime.now() - timestamp > cache_ttl:  # noqa: DTZ005
+                del self._cache[key]
+                return None
+
+            return data
+
+    async def set(self, key: str, value: Any) -> None:
+        """Set cached response."""
+        async with self._lock:
+            self._cache[key] = (value, datetime.now())  # noqa: DTZ005
+
+    async def invalidate(self, key: str) -> None:
+        """Remove a specific key from the cache."""
+        async with self._lock:
+            self._cache.pop(key, None)
+
+    async def clear(self) -> None:
+        """Clear all cached responses."""
+        async with self._lock:
+            self._cache.clear()
+
+    async def cleanup_expired(self) -> None:
+        """Remove expired entries from cache."""
+        async with self._lock:
+            now = datetime.now()  # noqa: DTZ005
+            expired_keys = [
+                key
+                for key, (_, timestamp) in self._cache.items()
+                if now - timestamp > self._default_ttl
+            ]
+            for key in expired_keys:
+                del self._cache[key]
+
+
+class ActronAirNeoApiClient:
+    """API client for the ActronAir Neo cloud service."""
+
+    def __init__(
+        self,
+        auth: ActronAirNeoAuth,
+        session: aiohttp.ClientSession,
+    ) -> None:
+        """Initialize the API client."""
+        self.auth = auth
+        self.session = session
+
+        # Device identification
+        self.actron_serial: str = ""
+        self.actron_system_id: str = ""
+        self._base_url: str = API_URL
+        self._device_base_urls: dict[str, str] = {}
+
+        # API health tracking
+        self.error_count: int = 0
+        self.last_successful_request: datetime | None = None
+        self.cached_status: dict[str, Any] | None = None
+
+        # Rate limiting and caching
+        self.rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
+        self.response_cache = ResponseCache(
+            default_ttl=timedelta(seconds=DEFAULT_CACHE_TTL)
+        )
+
+        # Request deduplication
+        self._pending_requests: dict[str, asyncio.Future[Any]] = {}
+
+        # Fan mode management
+        self._continuous_fan: bool = False
+        self._last_fan_mode_change: datetime | None = None
+        self._fan_mode_change_lock: asyncio.Lock = asyncio.Lock()
+        self._min_fan_mode_interval: int = MIN_FAN_MODE_INTERVAL
+
+        # Zone locks
+        self._zone_locks: dict[int, asyncio.Lock] = {}
+
+    def is_api_healthy(self) -> bool:
+        """Check if the API is healthy based on recent error history."""
+        _max_errors = 5
+        _health_window_minutes = 15
+        return not (
+            self.error_count > _max_errors
+            and self.last_successful_request
+            and datetime.now() - self.last_successful_request  # noqa: DTZ005
+            < timedelta(minutes=_health_window_minutes)
+        )
+
+    async def set_system(
+        self,
+        serial_number: str,
+        system_id: str = "",
+        base_url: str = "",
+    ) -> None:
+        """
+        Set the system to use for API calls.
+
+        The base URL is resolved in order of priority:
+        1. Explicitly provided ``base_url``
+        2. Platform detected during ``get_devices()``
+        3. Default Nimbus (Neo) URL
+        """
+        self.actron_serial = serial_number
+        self.actron_system_id = system_id
+        if base_url:
+            self._base_url = base_url
+        elif serial_number in self._device_base_urls:
+            self._base_url = self._device_base_urls[serial_number]
+        # else: keep current _base_url (default API_URL)
+
+    async def initialize(self) -> None:
+        """Initialize the API client by validating authentication."""
+        await self.auth.ensure_valid_token()
+
+        # Validate by fetching devices
+        if self.auth.access_token and self.auth.refresh_token_value:
+            await self.get_devices()
+
+    # --- Core request method ---
+
+    async def _make_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        auth_required: bool = True,
+        **kwargs: Any,
+    ) -> dict[str, Any] | str:
+        """Make an API request with rate limiting and error handling."""
+        async with self.rate_limiter:
+            for attempt in range(MAX_RETRIES):
+                try:
+                    headers = dict(kwargs.pop("headers", {}))
+                    if auth_required:
+                        auth_headers = await self.auth.get_auth_headers()
+                        headers.update(auth_headers)
+                    kwargs["headers"] = headers
+
+                    response_data = await self._execute_request(
+                        method, url, attempt, **kwargs
+                    )
+                except ApiError as err:
+                    self.error_count += 1
+                    if (
+                        err.status_code is not None
+                        and err.status_code in RETRYABLE_STATUS_CODES
+                        and attempt < MAX_RETRIES - 1
+                    ):
+                        _max_wait = 60
+                        wait_time = min(5 * (2**attempt), _max_wait)
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise
+                except (
+                    TimeoutError,
+                    aiohttp.ClientError,
+                ) as err:
+                    self.error_count += 1
+                    if attempt == MAX_RETRIES - 1:
+                        _LOGGER.warning(
+                            "Unable to connect to ActronAir servers "
+                            "after multiple attempts."
+                        )
+                        msg = f"Request failed after {MAX_RETRIES} attempts: {err}"
+                        raise ApiError(msg) from err
+                    await asyncio.sleep(5 * (2**attempt))  # Exponential backoff
+                else:
+                    return response_data
+
+        msg = f"Failed to make request after {MAX_RETRIES} attempts"
+        raise ApiError(msg)
+
+    async def _execute_request(
+        self,
+        method: str,
+        url: str,
+        attempt: int,
+        **kwargs: Any,
+    ) -> dict[str, Any] | str:
+        """Execute a single HTTP request and handle the response."""
+        async with self.session.request(
+            method, url, timeout=API_TIMEOUT, **kwargs
+        ) as response:
+            response_text = await response.text()
+
+            response_json = self._try_parse_json(response_text)
+
+            if response.status == 200:  # noqa: PLR2004
+                self.error_count = 0
+                self.last_successful_request = datetime.now()  # noqa: DTZ005
+                if response_json is not None:
+                    return response_json
+                return response_text
+
+            return self._handle_error_status(response, response_text, attempt)
+
+    def _try_parse_json(self, response_text: str) -> dict[str, Any] | None:
+        """Attempt to parse response text as JSON."""
+        try:
+            result: dict[str, Any] = json.loads(response_text)
+        except json.JSONDecodeError:
+            return None
+        else:
+            return result
+
+    def _handle_error_status(
+        self,
+        response: aiohttp.ClientResponse,
+        response_text: str,
+        attempt: int,
+    ) -> Any:
+        """Handle non-200 HTTP status codes."""
+        status = response.status
+        self.error_count += 1
+
+        if status == 401:  # noqa: PLR2004
+            msg = f"Unauthorized: {response_text}"
+            raise AuthenticationError(msg)
+
+        if status == 429:  # noqa: PLR2004
+            retry_after = int(response.headers.get("Retry-After", "60"))
+            _LOGGER.warning(
+                "Rate limit exceeded, retry after %s seconds",
+                retry_after,
+            )
+            msg = f"Rate limit exceeded, retry after {retry_after} seconds"
+            raise RateLimitError(msg, retry_after=retry_after)
+
+        if status == 503:  # noqa: PLR2004
+            # Try structured JSON first (API returns {type, correlationId, …})
+            parsed = self._try_parse_json(response_text)
+            if isinstance(parsed, dict) and parsed.get("type") == "unavailable":
+                msg = (
+                    f"Device unavailable on this platform "
+                    f"(serial={self.actron_serial}, "
+                    f"base_url={self._base_url}): {response_text}"
+                )
+                raise DeviceOfflineError(
+                    msg,
+                    device_id=self.actron_serial or "unknown",
+                )
+
+            text_lower = response_text.lower()
+            if "device" in text_lower or "offline" in text_lower:
+                msg = f"Device appears to be offline: {response_text}"
+                raise DeviceOfflineError(
+                    msg,
+                    device_id=self.actron_serial or "unknown",
+                )
+            msg = f"Service unavailable: {response_text}"
+            raise ApiError(msg, status_code=status, retry_after=30)
+
+        _http_client_error_min = 400
+        _http_client_error_max = 500
+        _http_server_error_min = 500
+        _http_server_error_max = 600
+
+        if _http_client_error_min <= status < _http_client_error_max:
+            msg = f"Client error: {status}, {response_text}"
+            raise ApiError(msg, status_code=status)
+
+        if _http_server_error_min <= status < _http_server_error_max:
+            return self._handle_server_error(status, response_text, attempt)
+
+        msg = f"Unexpected status code: {status}, {response_text}"
+        raise ApiError(msg, status_code=status)
+
+    def _handle_server_error(
+        self,
+        status: int,
+        response_text: str,
+        attempt: int,
+    ) -> Any:
+        """Handle server errors with retry logic."""
+        if attempt < MAX_RETRIES - 1:
+            _max_wait = 60
+            min(5 * (2**attempt), _max_wait)
+            # Note: caller handles sleep/retry
+        msg = f"Server error after {MAX_RETRIES} attempts: {status}, {response_text}"
+        raise ApiError(msg, status_code=status)
+
+    # --- Device and status methods ---
+
+    async def get_devices(self) -> list[DeviceInfo]:
+        """
+        Fetch the list of devices from the API.
+
+        Device discovery always queries the Nimbus (Neo) endpoint with
+        ``includeNeo=true`` which returns devices from both platforms.
+        Each device's ``type`` field is inspected: NX-Gen (Que-platform)
+        systems are routed via the Que base URL for subsequent calls.
+        """
+        url = f"{API_URL}{ENDPOINT_AC_SYSTEMS}?includeNeo=true"
+        response = await self._make_request("GET", url)
+        devices: list[DeviceInfo] = []
+        if (
+            isinstance(response, dict)
+            and "_embedded" in response
+            and "ac-system" in response["_embedded"]
+        ):
+            for system in response["_embedded"]["ac-system"]:
+                device_base_url = self._resolve_base_url(system)
+                serial = system.get("serial", "Unknown")
+                device = DeviceInfo(
+                    serial=serial,
+                    name=system.get("description", "Unknown Device"),
+                    type=system.get("type", "Unknown"),
+                    id=system.get("id", "Unknown"),
+                    base_url=device_base_url,
+                )
+                devices.append(device)
+                self._device_base_urls[serial] = device_base_url
+        return devices
+
+    @staticmethod
+    def _resolve_base_url(system: dict[str, Any]) -> str:
+        """
+        Determine the correct API base URL for a system.
+
+        NX-Gen systems (Que hardware with Neo controllers) are served by
+        the Que endpoint.  All other systems use the default Nimbus (Neo)
+        endpoint.
+        """
+        raw_type = system.get("type", "")
+        normalised = raw_type.lower().replace("-", "")
+        if normalised == SYSTEM_TYPE_NXGEN:
+            return API_URL_QUE
+        return API_URL
+
+    async def get_ac_status(
+        self,
+        serial: str,
+        *,
+        use_cache: bool = True,
+    ) -> dict[str, Any]:
+        """Get the current status of the AC system."""
+        # Check API health first
+        if not self.is_api_healthy():
+            _LOGGER.warning("API is not healthy, using cached status")
+            return self.cached_status or {}
+
+        # Try cache first if enabled
+        cache_key = f"ac_status_{serial}"
+        if use_cache:
+            cached_response = await self.response_cache.get(cache_key)
+            if cached_response is not None:
+                return cast("dict[str, Any]", cached_response)
+
+        # Check for pending request (deduplication)
+        request_key = f"get_ac_status_{serial}"
+        if request_key in self._pending_requests:
+            try:
+                response = await self._pending_requests[request_key]
+                return cast("dict[str, Any]", response)
+            except (ApiError, TimeoutError, aiohttp.ClientError):
+                pass
+
+        # Create new request future
+        future: asyncio.Future[Any] = asyncio.Future()
+        self._pending_requests[request_key] = future
+
+        try:
+            url = f"{self._base_url}{ENDPOINT_AC_STATUS}?serial={serial}"
+            response = await self._make_request("GET", url)
+
+            # Update both caches
+            self.cached_status = response if isinstance(response, dict) else None
+            if use_cache:
+                await self.response_cache.set(cache_key, response)
+
+            # Complete the future for other waiting requests
+            if not future.done():
+                future.set_result(response)
+
+            return cast("dict[str, Any]", response)
+
+        except Exception as err:
+            if not future.done():
+                future.set_exception(err)
+            raise
+        finally:
+            self._pending_requests.pop(request_key, None)
+
+    async def send_command(
+        self, serial: str, command: CommandData | dict[str, Any]
+    ) -> dict[str, Any]:
+        """Send a command to the AC system and invalidate cache."""
+        url = f"{self._base_url}{ENDPOINT_AC_COMMANDS}?serial={serial}"
+
+        # Convert CommandData to dict if needed
+        cmd_dict = command.model_dump() if isinstance(command, CommandData) else command
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = await self._make_request("POST", url, json=cmd_dict)
+            except ApiError as err:
+                if (
+                    attempt < MAX_RETRIES - 1
+                    and err.status_code in RETRYABLE_STATUS_CODES
+                ):
+                    wait_time = 2**attempt
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise
+            except (
+                TimeoutError,
+                aiohttp.ClientError,
+                json.JSONDecodeError,
+            ):
+                if attempt == MAX_RETRIES - 1:
+                    raise
+            else:
+                # Invalidate cache after successful command
+                await self._invalidate_status_cache(serial)
+
+                return cast("dict[str, Any]", response)
+
+        msg = f"Failed to send command after {MAX_RETRIES} attempts"
+        raise ApiError(msg)
+
+    # --- Command creation ---
+
+    def create_command(self, command_type: str, **params: Any) -> dict[str, Any]:
+        """Create a command based on the command type and parameters."""
+        commands: dict[str, Any] = {
+            "ON": lambda: {
+                "command": {
+                    "UserAirconSettings.isOn": True,
+                    "type": "set-settings",
+                }
+            },
+            "OFF": lambda: {
+                "command": {
+                    "UserAirconSettings.isOn": False,
+                    "type": "set-settings",
+                }
+            },
+            "CLIMATE_MODE": lambda mode: {
+                "command": {
+                    "UserAirconSettings.isOn": True,
+                    "UserAirconSettings.Mode": mode,
+                    "type": "set-settings",
+                }
+            },
+            "FAN_MODE": lambda mode: {
+                "command": {
+                    "UserAirconSettings.FanMode": mode,
+                    "type": "set-settings",
+                }
+            },
+            "SET_TEMP": lambda temp, is_cool: {
+                "command": {
+                    f"UserAirconSettings.TemperatureSetpoint_"
+                    f"{'Cool' if is_cool else 'Heat'}_oC": temp,
+                    "type": "set-settings",
+                }
+            },
+            "AWAY_MODE": lambda state: {
+                "command": {
+                    "UserAirconSettings.AwayMode": state,
+                    "type": "set-settings",
+                }
+            },
+            "QUIET_MODE": lambda state: {
+                "command": {
+                    "UserAirconSettings.QuietMode": state,
+                    "type": "set-settings",
+                }
+            },
+            "SET_ZONE_TEMP": lambda zone, temp, temp_key: {
+                "command": {
+                    f"RemoteZoneInfo[{zone}].{temp_key}": temp,
+                    "type": "set-settings",
+                }
+            },
+            "SET_ZONE_STATE": lambda zones: {
+                "command": {
+                    "UserAirconSettings.EnabledZones": zones,
+                    "type": "set-settings",
+                }
+            },
+            "SET_ZONE_AIRFLOW": lambda zone, airflow: {
+                "command": {
+                    f"RemoteZoneInfo[{zone}].AirflowSetpoint": airflow,
+                    "type": "set-settings",
+                }
+            },
+            "TURBO_MODE": lambda state: {
+                "command": {
+                    "UserAirconSettings.TurboMode.Enabled": state,
+                    "type": "set-settings",
+                }
+            },
+            "AFTER_HOURS_ENABLED": lambda state: {
+                "command": {
+                    "UserAirconSettings.AfterHours.Enabled": state,
+                    "type": "set-settings",
+                }
+            },
+            "AFTER_HOURS_DURATION": lambda duration: {
+                "command": {
+                    "UserAirconSettings.AfterHours.Duration": duration,
+                    "type": "set-settings",
+                }
+            },
+        }
+        return cast("dict[str, Any]", commands[command_type](**params))
+
+    # --- Zone operations ---
+
+    async def get_zone_statuses(
+        self,
+        cached_status: dict[str, Any] | None = None,
+    ) -> list[bool]:
+        """Get the current status of all zones."""
+        if cached_status is not None:
+            status = cached_status
+        else:
+            status = await self.get_ac_status(self.actron_serial)
+
+        try:
+            enabled_zones = status["lastKnownState"]["UserAirconSettings"][
+                "EnabledZones"
+            ]
+        except (KeyError, TypeError) as err:
+            source = "cached_status" if cached_status is not None else "live API"
+            msg = (
+                f"Unable to read zone statuses for {self.actron_serial}: "
+                f"malformed response ({source})"
+            )
+            raise ApiError(msg) from err
+
+        if not isinstance(enabled_zones, list):
+            msg = (
+                f"Unable to read zone statuses for {self.actron_serial}: "
+                f"EnabledZones is {type(enabled_zones).__name__}, expected list"
+            )
+            raise ApiError(msg)
+
+        return enabled_zones
+
+    async def set_zone_state(
+        self,
+        zone_index: int,
+        *,
+        enable: bool,
+    ) -> None:
+        """Set the state of a specific zone."""
+        if not (0 <= zone_index < 8):  # noqa: PLR2004
+            msg = f"zone_index must be between 0 and 7, got {zone_index}"
+            raise ValueError(msg)
+        current_zone_status = await self.get_zone_statuses()
+        modified_statuses = current_zone_status.copy()
+        modified_statuses[zone_index] = enable
+        command = self.create_command("SET_ZONE_STATE", zones=modified_statuses)
+        await self.send_command(self.actron_serial, command)
+
+    def get_zone_capabilities(
+        self, zone_data: dict[str, str | int | bool | float]
+    ) -> ZoneCapabilities:
+        """Extract zone capabilities from zone data."""
+        return ZoneCapabilities(
+            can_operate=bool(zone_data.get("CanOperate", False)),
+            exists=bool(zone_data.get("NV_Exists", False)),
+            has_temp_control=bool(
+                zone_data.get("NV_VAV", False) and zone_data.get("NV_ITC", False)
+            ),
+            has_separate_targets=bool(
+                zone_data.get("TemperatureSetpoint_Cool_oC") is not None
+                and zone_data.get("TemperatureSetpoint_Heat_oC") is not None
+            ),
+            target_temp_cool=zone_data.get("TemperatureSetpoint_Cool_oC"),
+            target_temp_heat=zone_data.get("TemperatureSetpoint_Heat_oC"),
+        )
+
+    async def set_zone_temperature(
+        self,
+        zone_index: int,
+        temperature: float | None = None,
+        target_cool: float | None = None,
+        target_heat: float | None = None,
+    ) -> None:
+        """Set zone temperature with validation."""
+        _max_zones = 8
+        _min_temp = 10
+        _max_temp = 30
+
+        # Validate zone index
+        if not 0 <= zone_index < _max_zones:
+            msg = f"Zone index {zone_index} out of bounds"
+            raise IndexError(msg)
+
+        # Validate temperature values
+        for temp in [
+            t for t in [temperature, target_cool, target_heat] if t is not None
+        ]:
+            if not _min_temp <= temp <= _max_temp:
+                msg = f"Temperature {temp} outside valid range {_min_temp}-{_max_temp}"
+                raise ValueError(msg)
+
+        # Use a lock to prevent concurrent zone updates
+        async with self._zone_locks.setdefault(zone_index, asyncio.Lock()):
+            if temperature is not None:
+                command = self.create_command(
+                    "SET_ZONE_TEMP",
+                    zone=zone_index,
+                    temp=temperature,
+                    temp_key="TemperatureSetpoint_oC",
+                )
+            elif target_cool is not None and target_heat is not None:
+                await self.send_command(
+                    self.actron_serial,
+                    self.create_command(
+                        "SET_ZONE_TEMP",
+                        zone=zone_index,
+                        temp=target_cool,
+                        temp_key="TemperatureSetpoint_Cool_oC",
+                    ),
+                )
+                command = self.create_command(
+                    "SET_ZONE_TEMP",
+                    zone=zone_index,
+                    temp=target_heat,
+                    temp_key="TemperatureSetpoint_Heat_oC",
+                )
+            else:
+                msg = (
+                    "Must provide either temperature or both "
+                    "target_cool and target_heat"
+                )
+                raise ValueError(msg)
+
+            await self.send_command(self.actron_serial, command)
+
+    async def set_zone_airflow(self, zone_index: int, airflow_percentage: int) -> None:
+        """Set zone airflow percentage (YourZone control)."""
+        _max_zones = 8
+        _max_airflow = 100
+        _airflow_step = 5
+
+        if not 0 <= zone_index < _max_zones:
+            msg = f"Zone index {zone_index} out of bounds"
+            raise IndexError(msg)
+
+        if not 0 <= airflow_percentage <= _max_airflow:
+            msg = (
+                f"Airflow percentage {airflow_percentage} "
+                f"out of range (0-{_max_airflow})"
+            )
+            raise ValueError(msg)
+
+        if airflow_percentage % _airflow_step != 0:
+            msg = (
+                f"Airflow percentage must be in "
+                f"{_airflow_step}% increments, "
+                f"got {airflow_percentage}"
+            )
+            raise ValueError(msg)
+
+        async with self._zone_locks.setdefault(zone_index, asyncio.Lock()):
+            command = self.create_command(
+                "SET_ZONE_AIRFLOW",
+                zone=zone_index,
+                airflow=airflow_percentage,
+            )
+            await self.send_command(self.actron_serial, command)
+
+    # --- HVAC control methods ---
+
+    async def set_climate_mode(self, mode: HvacModeType) -> None:
+        """Set the climate mode."""
+        command = self.create_command("CLIMATE_MODE", mode=mode)
+        await self.send_command(self.actron_serial, command)
+
+    async def set_fan_mode(
+        self,
+        mode: FanModeType,
+        *,
+        continuous: bool | None = None,
+    ) -> None:
+        """Set fan mode with validation and retry logic."""
+        if continuous is None:
+            continuous = self._continuous_fan
+
+        async with self._fan_mode_change_lock:
+            if self._last_fan_mode_change:
+                elapsed = (
+                    datetime.now()  # noqa: DTZ005
+                    - self._last_fan_mode_change
+                ).total_seconds()
+                if elapsed < self._min_fan_mode_interval:
+                    wait_time = self._min_fan_mode_interval - elapsed
+                    await asyncio.sleep(wait_time)
+
+            validated_mode = self.validate_fan_mode(mode, continuous=continuous)
+
+            for attempt in range(MAX_RETRIES):
+                try:
+                    command = self.create_command("FAN_MODE", mode=validated_mode)
+                    await self.send_command(self.actron_serial, command)
+                except ApiError as api_err:
+                    if (
+                        api_err.status_code in RETRYABLE_STATUS_CODES
+                        and attempt < MAX_RETRIES - 1
+                    ):
+                        _max_backoff = 30
+                        wait_time = min(2**attempt, _max_backoff)
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise
+                else:
+                    self._last_fan_mode_change = (
+                        datetime.now()  # noqa: DTZ005
+                    )
+                    self._continuous_fan = continuous
+                    return
+
+    def validate_fan_mode(
+        self,
+        mode: str,
+        *,
+        continuous: bool = False,
+    ) -> str:
+        """Validate and format fan mode."""
+        try:
+            if not mode:
+                return "LOW+CONT" if continuous else "LOW"
+
+            base_mode = mode.strip().upper()
+            base_mode = base_mode.split("-")[0] if "-" in base_mode else base_mode
+            base_mode = base_mode.split("+")[0] if "+" in base_mode else base_mode
+
+            valid_modes = {"LOW", "MED", "HIGH", "AUTO"}
+            if base_mode not in valid_modes:
+                base_mode = "LOW"
+        except (ValueError, KeyError, TypeError):
+            return "LOW+CONT" if continuous else "LOW"
+        else:
+            return f"{base_mode}+CONT" if continuous else base_mode
+
+    async def set_temperature(
+        self,
+        temperature: float,
+        *,
+        is_cooling: bool,
+    ) -> None:
+        """Set the temperature."""
+        command = self.create_command("SET_TEMP", temp=temperature, is_cool=is_cooling)
+        await self.send_command(self.actron_serial, command)
+
+    async def set_away_mode(self, *, state: bool) -> None:
+        """Set away mode."""
+        command = self.create_command("AWAY_MODE", state=state)
+        await self.send_command(self.actron_serial, command)
+
+    async def set_quiet_mode(self, *, state: bool) -> None:
+        """Set quiet mode."""
+        command = self.create_command("QUIET_MODE", state=state)
+        await self.send_command(self.actron_serial, command)
+
+    async def set_turbo_mode(self, *, state: bool) -> None:
+        """Set turbo mode."""
+        command = self.create_command("TURBO_MODE", state=state)
+        await self.send_command(self.actron_serial, command)
+
+    async def set_after_hours(self, *, enabled: bool) -> None:
+        """Set after hours mode enabled/disabled."""
+        command = self.create_command("AFTER_HOURS_ENABLED", state=enabled)
+        await self.send_command(self.actron_serial, command)
+
+    async def set_after_hours_duration(self, duration: int) -> None:
+        """Set after hours duration in minutes."""
+        command = self.create_command("AFTER_HOURS_DURATION", duration=duration)
+        await self.send_command(self.actron_serial, command)
+
+    # --- Cache management ---
+
+    async def _invalidate_status_cache(self, serial: str) -> None:
+        """Invalidate cached status data after commands."""
+        cache_key = f"ac_status_{serial}"
+        await self.response_cache.invalidate(cache_key)
+        self.cached_status = None
+
+    async def clear_all_caches(self) -> None:
+        """Clear all cached data."""
+        await self.response_cache.clear()
+        self.cached_status = None
+
+    async def cleanup_expired_cache(self) -> None:
+        """Clean up expired cache entries."""
+        await self.response_cache.cleanup_expired()

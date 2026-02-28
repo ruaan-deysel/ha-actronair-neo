@@ -1,124 +1,243 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "title": "Connect to ActronAir Neo",
-                "description": "Please enter your ActronAir Neo credentials.",
-                "data": {
-                    "username": "Username",
-                    "password": "Password",
-                    "refresh_interval": "Refresh Interval (seconds)",
-                    "enable_zone_control": "Enable Zone Control",
-                    "enable_zone_analytics": "Enable Zone Analytics"
-                },
-                "data_description": {
-                    "username": "Your ActronAir Neo account username",
-                    "password": "Your ActronAir Neo account password",
-                    "refresh_interval": "How often to update data from the system (30-300 seconds)",
-                    "enable_zone_control": "Create individual zone climate entities with temperature controls (requires per-zone temperature setting capability)",
-                    "enable_zone_analytics": "Create zone runtime and efficiency sensors for performance monitoring (ideal for damper-only systems)"
-                }
-            },
-            "select_device": {
-                "title": "Select ActronAir Neo System",
-                "description": "Multiple ActronAir Neo systems found. Please select the system you want to add.",
-                "data": {
-                    "device": "System"
-                }
-            }
-        },
-        "error": {
-            "invalid_auth": "Invalid authentication",
-            "cannot_connect": "Failed to connect",
-            "no_devices": "No devices found on account",
-            "device_not_found": "Selected device not found",
-            "unknown": "Unexpected error"
-        },
-        "abort": {
-            "already_configured": "Device is already configured"
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Authorize ActronAir Neo"
+      },
+      "connection_error": {
+        "title": "Connection error",
+        "description": "Failed to connect to ActronAir Neo. Please check your internet connection and try again."
+      },
+      "timeout": {
+        "title": "Authentication timeout",
+        "description": "The authentication process timed out. Please try again."
+      },
+      "reauth_confirm": {
+        "title": "Re-authorize ActronAir Neo",
+        "description": "Your ActronAir Neo authentication has expired. Select **Submit** to re-authorize your account."
+      },
+      "select_device": {
+        "title": "Select ActronAir Neo system",
+        "description": "Multiple systems found. Select the system to add.",
+        "data": {
+          "device": "System"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure ActronAir Neo",
+        "description": "Update the integration settings."
+      }
     },
-    "options": {
-        "step": {
-            "init": {
-                "title": "ActronAir Neo Options",
-                "description": "Configure zone features and system settings. Zone Control creates individual climate entities, while Zone Analytics provides performance monitoring sensors.",
-                "data": {
-                    "refresh_interval": "Refresh Interval (seconds)",
-                    "enable_zone_control": "Enable Zone Control",
-                    "enable_zone_analytics": "Enable Zone Analytics"
-                },
-                "data_description": {
-                    "refresh_interval": "How often to update data from the system (30-300 seconds)",
-                    "enable_zone_control": "Create individual zone climate entities with temperature controls (requires per-zone temperature setting capability)",
-                    "enable_zone_analytics": "Create zone runtime and efficiency sensors for performance monitoring (ideal for damper-only systems)"
-                }
-            }
-        }
+    "progress": {
+      "wait_for_authorization": "To authenticate, open the following URL and log in at ActronAir:\n{verification_uri}\nIf the code is not automatically copied, paste the following code to authorize the integration:\n\n```{user_code}```\n\nThe login attempt will time out after {expires_minutes} minutes."
     },
-    "entity": {
-        "climate": {
-            "actronair_neo": {
-                "name": "ActronAir Neo",
-                "state_attributes": {
-                    "fan_mode": {
-                        "state": {
-                            "low": "Low",
-                            "medium": "Medium",
-                            "high": "High",
-                            "auto": "Auto"
-                        }
-                    },
-                    "hvac_mode": {
-                        "state": {
-                            "off": "Off",
-                            "heat": "Heat",
-                            "cool": "Cool",
-                            "auto": "Auto",
-                            "fan_only": "Fan Only"
-                        }
-                    }
-                }
-            }
-        },
-        "sensor": {
-            "actronair_neo_indoor_temperature": {
-                "name": "Indoor Temperature"
-            }
-        },
-        "binary_sensor": {
-            "actronair_neo_filter_status": {
-                "name": "Filter Status",
-                "state": {
-                    "on": "Needs Cleaning",
-                    "off": "Clean"
-                }
-            },
-            "actronair_neo_system_status": {
-                "name": "System Status",
-                "state": {
-                    "on": "Running",
-                    "off": "Idle"
-                }
-            },
-            "actronair_neo_system_health": {
-                "name": "System Health",
-                "state": {
-                    "on": "Issue Detected",
-                    "off": "Normal"
-                }
-            }
-        },
-        "switch": {
-            "actronair_neo_away_mode": {
-                "name": "Away Mode"
-            },
-            "actronair_neo_quiet_mode": {
-                "name": "Quiet Mode"
-            },
-            "actronair_neo_continuous_fan": {
-                "name": "Continuous Fan"
-            }
-        }
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "no_devices": "No devices found on account",
+      "device_not_found": "Selected device not found",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured",
+      "cannot_connect": "Failed to connect to the ActronAir Neo API",
+      "no_devices": "No devices found on your account",
+      "reauth_successful": "Re-authentication successful",
+      "reconfigure_successful": "Reconfiguration successful"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "ActronAir Neo options",
+        "description": "Configure the integration settings.",
+        "data": {
+          "enable_zone_control": "Enable zone control"
+        },
+        "data_description": {
+          "enable_zone_control": "Create individual zone climate entities with temperature controls"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "system_health": {
+        "name": "System health"
+      },
+      "yourzone_enabled": {
+        "name": "YourZone enabled"
+      },
+      "fast_heating": {
+        "name": "Fast heating"
+      },
+      "active_warnings": {
+        "name": "Active warnings"
+      }
+    },
+    "cover": {
+      "zone_damper": {
+        "name": "Damper"
+      }
+    },
+    "number": {
+      "after_hours_duration": {
+        "name": "After hours duration"
+      }
+    },
+    "sensor": {
+      "compressor_energy": {
+        "name": "Compressor energy"
+      },
+      "compressor_power": {
+        "name": "Compressor power"
+      },
+      "connectivity_status": {
+        "name": "Connectivity status"
+      },
+      "performance_metrics": {
+        "name": "Performance metrics"
+      },
+      "system_diagnostics": {
+        "name": "System diagnostics"
+      },
+      "outdoor_temperature": {
+        "name": "Outdoor temperature"
+      },
+      "service_reminder": {
+        "name": "Service reminder"
+      },
+      "zone_humidity": {
+        "name": "Humidity"
+      },
+      "zone_battery": {
+        "name": "Battery"
+      }
+    },
+    "switch": {
+      "away_mode": {
+        "name": "Away mode"
+      },
+      "continuous_fan": {
+        "name": "Continuous fan"
+      },
+      "quiet_mode": {
+        "name": "Quiet mode"
+      },
+      "turbo_mode": {
+        "name": "Turbo mode"
+      },
+      "after_hours": {
+        "name": "After hours"
+      },
+      "zone": {
+        "name": "Zone"
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_error": {
+      "message": "An unexpected error occurred: {error}"
+    },
+    "api_error": {
+      "message": "API request failed: {error}"
+    },
+    "authentication_error": {
+      "message": "Authentication failed: {error}"
+    },
+    "rate_limit_error": {
+      "message": "API rate limit exceeded: {error}"
+    },
+    "device_offline_error": {
+      "message": "Device is offline or unreachable: {error}"
+    },
+    "configuration_error": {
+      "message": "Configuration error: {error}"
+    },
+    "zone_error": {
+      "message": "Zone error: {error}"
+    },
+    "no_devices_configured": {
+      "message": "No ActronAir Neo devices are configured."
+    },
+    "device_not_found": {
+      "message": "Device not found."
+    },
+    "zone_control_disabled": {
+      "message": "Zone control is not enabled for this device."
+    },
+    "create_preset_failed": {
+      "message": "Failed to create zone preset: {error}"
+    },
+    "apply_preset_failed": {
+      "message": "Failed to apply zone preset: {error}"
+    },
+    "bulk_operation_failed": {
+      "message": "Failed to perform bulk zone operation: {error}"
+    }
+  },
+  "services": {
+    "force_update": {
+      "name": "Force update",
+      "description": "Force an immediate data update from the ActronAir Neo API, bypassing the normal update interval."
+    },
+    "create_zone_preset": {
+      "name": "Create zone preset",
+      "description": "Save the current zone configuration as a named preset.",
+      "fields": {
+        "device_id": {
+          "name": "Device ID",
+          "description": "The ActronAir device identifier"
+        },
+        "name": {
+          "name": "Preset name",
+          "description": "Name for the new preset"
+        },
+        "description": {
+          "name": "Description",
+          "description": "Optional description for the preset"
+        }
+      }
+    },
+    "apply_zone_preset": {
+      "name": "Apply zone preset",
+      "description": "Apply a previously saved zone preset to restore zone configuration.",
+      "fields": {
+        "device_id": {
+          "name": "Device ID",
+          "description": "The ActronAir device identifier"
+        },
+        "name": {
+          "name": "Preset name",
+          "description": "Name of the preset to apply"
+        }
+      }
+    },
+    "bulk_zone_operation": {
+      "name": "Bulk zone operation",
+      "description": "Perform operations on multiple zones simultaneously.",
+      "fields": {
+        "device_id": {
+          "name": "Device ID",
+          "description": "The ActronAir device identifier"
+        },
+        "operation": {
+          "name": "Operation",
+          "description": "The operation to perform on the zones"
+        },
+        "zones": {
+          "name": "Zone IDs",
+          "description": "List of zone identifiers to operate on"
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target temperature (required for set_temperature operation)"
+        },
+        "temp_key": {
+          "name": "Temperature type",
+          "description": "Type of temperature to set (cooling or heating)"
+        }
+      }
+    }
+  }
 }

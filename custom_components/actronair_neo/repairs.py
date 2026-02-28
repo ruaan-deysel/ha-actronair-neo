@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
@@ -20,13 +19,11 @@ if TYPE_CHECKING:
 
     from .coordinator import ActronDataCoordinator
 
-_LOGGER = logging.getLogger(__name__)
-
 
 async def async_create_fix_flow(
-    hass: HomeAssistant,
+    hass: HomeAssistant,  # noqa: ARG001
     issue_id: str,
-    data: dict[str, str | int | float | None] | None,
+    data: dict[str, str | int | float | None] | None,  # noqa: ARG001
 ) -> RepairsFlow:
     """Create flow."""
     if issue_id == "api_authentication_failed":
@@ -35,8 +32,6 @@ async def async_create_fix_flow(
         return DeviceOfflineRepairFlow()
     if issue_id == "sensor_unavailable":
         return SensorUnavailableRepairFlow()
-    if issue_id == "configuration_migration":
-        return ConfigurationMigrationRepairFlow()
     return ConfirmRepairFlow()
 
 
@@ -135,47 +130,12 @@ class SensorUnavailableRepairFlow(RepairsFlow):
         )
 
 
-class ConfigurationMigrationRepairFlow(RepairsFlow):
-    """Handler for configuration migration issues."""
-
-    async def async_step_init(
-        self, user_input: dict[str, str] | None = None
-    ) -> dict[str, Any]:
-        """Handle the initial step."""
-        if user_input is not None:
-            # Perform automatic migration
-            await self._perform_migration()
-            return self.async_create_entry(data={})
-
-        return self.async_show_form(
-            step_id="init",
-            description_placeholders={
-                "title": "ActronAir Neo Configuration Migration",
-                "description": (
-                    "The integration configuration needs to be updated "
-                    "to support new features and improvements.\n\n"
-                    "This migration will:\n"
-                    "• Update entity naming conventions\n"
-                    "• Migrate zone configuration settings\n"
-                    "• Preserve all existing data and settings\n\n"
-                    "The migration is automatic and safe. Your existing "
-                    "automations and dashboards will continue to work."
-                ),
-            },
-        )
-
-    async def _perform_migration(self) -> None:
-        """Perform the configuration migration."""
-        # Migration logic would be implemented here
-        _LOGGER.info("Configuration migration completed successfully")
-
-
 async def async_check_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Check for common issues and create repair notifications."""
-    coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: ActronDataCoordinator = entry.runtime_data
 
     # Check API authentication status
-    if coordinator.api.error_count > 5:
+    if coordinator.api.error_count > 5:  # noqa: PLR2004
         async_create_issue(
             hass,
             DOMAIN,
@@ -209,7 +169,8 @@ async def async_check_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     # Check sensor availability
     unavailable_sensors = []
-    for zone_id, zone_data in coordinator.data.get("zones", {}).items():
+    zones = coordinator.data.get("zones", {}) if coordinator.data else {}
+    for zone_id, zone_data in zones.items():
         if zone_data.get("temp") is None and zone_data.get("capabilities", {}).get(
             "exists", False
         ):
@@ -233,58 +194,73 @@ async def async_check_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
         async_delete_issue(hass, DOMAIN, "sensor_unavailable")
 
 
-async def async_health_check(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
+async def async_health_check(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:  # noqa: ARG001
     """Perform comprehensive health check."""
-    coordinator: ActronDataCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: ActronDataCoordinator = entry.runtime_data
 
-    health_status = {
+    health_status: dict[str, Any] = {
         "overall_status": "healthy",
         "issues": [],
         "recommendations": [],
         "system_info": {
             "api_error_count": coordinator.api.error_count,
             "last_successful_update": coordinator.api.last_successful_request,
-            "cache_size": len(coordinator.api.response_cache._cache),
+            "cache_size": len(
+                coordinator.api.response_cache._cache  # noqa: SLF001
+            ),
         },
     }
 
     # Check API health
-    if coordinator.api.error_count > 3:
+    if coordinator.api.error_count > 3:  # noqa: PLR2004
+        err_count = coordinator.api.error_count
+        severity = (
+            "warning" if err_count < 10 else "error"  # noqa: PLR2004
+        )
         health_status["issues"].append(
             {
                 "type": "api_errors",
-                "severity": "warning" if coordinator.api.error_count < 10 else "error",
-                "message": f"High API error count: {coordinator.api.error_count}",
-                "recommendation": "Check network connectivity and ActronAir service status",
+                "severity": severity,
+                "message": (f"High API error count: {err_count}"),
+                "recommendation": (
+                    "Check network connectivity and ActronAir service status"
+                ),
             }
         )
         health_status["overall_status"] = "degraded"
 
     # Check zone sensor health
-    for zone_id, zone_data in coordinator.data.get("zones", {}).items():
+    zones = coordinator.data.get("zones", {}) if coordinator.data else {}
+    for zone_id, zone_data in zones.items():
         if (
             zone_data.get("battery_level") is not None
-            and zone_data["battery_level"] < 20
+            and zone_data["battery_level"] < 20  # noqa: PLR2004
         ):
+            zone_name = zone_data.get("name", zone_id)
+            battery = zone_data["battery_level"]
             health_status["issues"].append(
                 {
                     "type": "low_battery",
                     "severity": "warning",
-                    "message": f"Zone {zone_data.get('name', zone_id)} has low battery: {zone_data['battery_level']}%",
+                    "message": (f"Zone {zone_name} has low battery: {battery}%"),
                     "recommendation": "Replace zone sensor battery",
                 }
             )
 
         if (
             zone_data.get("signal_strength") is not None
-            and zone_data["signal_strength"] < -70
+            and zone_data["signal_strength"] < -70  # noqa: PLR2004
         ):
+            zone_name = zone_data.get("name", zone_id)
+            signal = zone_data["signal_strength"]
             health_status["issues"].append(
                 {
                     "type": "poor_signal",
                     "severity": "warning",
-                    "message": f"Zone {zone_data.get('name', zone_id)} has poor signal: {zone_data['signal_strength']} dBm",
-                    "recommendation": "Check sensor placement and remove obstructions",
+                    "message": (f"Zone {zone_name} has poor signal: {signal} dBm"),
+                    "recommendation": (
+                        "Check sensor placement and remove obstructions"
+                    ),
                 }
             )
 

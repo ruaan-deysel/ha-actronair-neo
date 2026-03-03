@@ -82,8 +82,13 @@ async def async_setup_entry(
         )
     else:
         # Remove any existing zone climate entities
+        # Check both old and new unique_id formats
+        zone_prefixes = (
+            f"{coordinator.device_id}_zone_",
+            f"{coordinator.device_id}_climate_zone_",
+        )
         for entry in entries:
-            if entry.unique_id.startswith(f"{coordinator.device_id}_zone_"):
+            if entry.unique_id.startswith(zone_prefixes):
                 entity_registry.async_remove(entry.entity_id)
 
     async_add_entities(entities, update_before_add=True)
@@ -535,8 +540,12 @@ class ActronZoneClimate(ActronAirNeoEntity, ClimateEntity):
             "current_humidity": zone_data["humidity"],
         }
 
-        # Add capability information if relevant
+        # Add capabilities (convert to dict for serialization)
         if capabilities := zone_data.get("capabilities"):
-            data["capabilities"] = capabilities
+            data["capabilities"] = (
+                capabilities.model_dump()
+                if hasattr(capabilities, "model_dump")
+                else capabilities
+            )
 
         return data

@@ -317,8 +317,13 @@ async def update_listener(hass: HomeAssistant, entry: ActronAirNeoConfigEntry) -
     if old_zone and not new_zone:
         entity_registry = er.async_get(hass)
         entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+        # Check both old and new unique_id formats
+        zone_prefixes = (
+            f"{coordinator.device_id}_zone_",
+            f"{coordinator.device_id}_climate_zone_",
+        )
         for entity_entry in entries:
-            if entity_entry.unique_id.startswith(f"{coordinator.device_id}_zone_"):
+            if entity_entry.unique_id.startswith(zone_prefixes):
                 entity_registry.async_remove(entity_entry.entity_id)
 
         await coordinator.set_enable_zone_control(enable=new_zone)

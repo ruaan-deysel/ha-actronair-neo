@@ -24,6 +24,7 @@ from .const import (
     ADVANCE_FAN_MODES,
     DOMAIN,
     FAN_MODE_SUFFIX_CONT,
+    HUMIDITY_UNAVAILABLE,
     MAX_TEMP,
     MAX_ZONES,
     MIN_TEMP,
@@ -426,7 +427,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 "TemperatureSetpoint_Heat_oC"
             ),
             "indoor_temp": master_info.get("LiveTemp_oC"),
-            "indoor_humidity": master_info.get("LiveHumidity_pc"),
+            "indoor_humidity": self._parse_humidity(master_info.get("LiveHumidity_pc")),
             "compressor_state": live_aircon.get("CompressorMode", "OFF"),
             "EnabledZones": user_aircon_settings.get("EnabledZones", []),
             "away_mode": user_aircon_settings.get("AwayMode", False),
@@ -499,7 +500,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                         "setpoint": zone.get("TemperatureSetpoint_oC"),
                         "is_on": zone.get("CanOperate", False),
                         "capabilities": capabilities,
-                        "humidity": zone.get("LiveHumidity_pc"),
+                        "humidity": self._parse_humidity(zone.get("LiveHumidity_pc")),
                         "is_enabled": self._get_zone_enabled(user_aircon_settings, i),
                         "temp_setpoint_cool": capabilities.target_temp_cool,
                         "temp_setpoint_heat": capabilities.target_temp_heat,
@@ -1347,11 +1348,39 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         return None
 
     @staticmethod
+    def _parse_humidity(raw_value: float | None) -> float | None:
+        """
+        Parse humidity, filtering sentinel values.
+
+        The API returns 3000.0 for LiveHumidity_pc when the humidity
+        sensor is unavailable (common on zones without a humidity-capable
+        sensor or wired sensors that only report temperature).
+
+        Args:
+            raw_value: Raw humidity from LiveHumidity_pc
+
+        Returns:
+            Humidity percentage, or None if unavailable
+
+        """
+        if raw_value is not None and raw_value < HUMIDITY_UNAVAILABLE:
+            return raw_value
+        return None
+
+    @staticmethod
     def _parse_warnings(live_aircon: dict) -> list[str]:
         """
         Parse active warnings from LiveAircon data.
 
-        Checks outdoor unit error codes and other warning indicators.
+        Only includes currently active error indicators:
+        - LiveAircon.ErrCode: main system error code (0 = no error)
+        - OutdoorUnit.LPErr: active low pressure error
+        - OutdoorUnit.HPErr: active high pressure error
+
+        Note: OutdoorUnit.ErrCode_1 through ErrCode_5 are historical error
+        logs that persist after resolution. These are NOT included as active
+        warnings — they are exposed separately via extra_state_attributes
+        on the Active Warnings binary sensor.
 
         Args:
             live_aircon: LiveAircon section from API response
@@ -1363,17 +1392,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         warnings: list[str] = []
         outdoor_unit = live_aircon.get("OutdoorUnit", {})
 
-        for key in ("ErrCode_1", "ErrCode_2", "ErrCode_3", "ErrCode_4", "ErrCode_5"):
-            code = outdoor_unit.get(key, 0)
-            if code and code != 0:
-                warnings.append(f"{key}: {code}")
+        # Active error indicators only
+        if outdoor_unit.get("LPErr", False):
+            warnings.append("Low Pressure Error")
+        if outdoor_unit.get("HPErr", False):
+            warnings.append("High Pressure Error")
 
-        if outdoor_unit.get("LPErr", 0) != 0:
-            warnings.append(f"Low Pressure Error: {outdoor_unit['LPErr']}")
-        if outdoor_unit.get("HPErr", 0) != 0:
-            warnings.append(f"High Pressure Error: {outdoor_unit['HPErr']}")
-
-        # Check main error code
+        # Main system error code (0 = no error)
         err_code = live_aircon.get("ErrCode", 0)
         if err_code and err_code != 0:
             warnings.append(f"System Error: {err_code}")

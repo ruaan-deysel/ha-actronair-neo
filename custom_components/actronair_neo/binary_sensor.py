@@ -193,9 +193,30 @@ class ActronActiveWarningsSensor(ActronAirNeoEntity, BinarySensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return warning details."""
+        """Return warning details including historical error codes."""
         warnings = self.coordinator.data["main"].get("warnings", [])
-        return {
+        attrs: dict[str, Any] = {
             "warning_count": len(warnings),
             "warnings": warnings,
         }
+
+        # Expose historical error codes from outdoor unit for diagnostics
+        # (ErrCode_1-5 are stored error logs, not active warnings)
+        raw_data = self.coordinator.data.get("raw_data", {})
+        live_aircon = raw_data.get("LiveAircon", {})
+        outdoor_unit = live_aircon.get("OutdoorUnit", {})
+        historical_codes = {}
+        for key in (
+            "ErrCode_1",
+            "ErrCode_2",
+            "ErrCode_3",
+            "ErrCode_4",
+            "ErrCode_5",
+        ):
+            code = outdoor_unit.get(key, 0)
+            if code and code != 0:
+                historical_codes[key] = code
+        if historical_codes:
+            attrs["historical_error_codes"] = historical_codes
+
+        return attrs

@@ -48,10 +48,17 @@ if TYPE_CHECKING:
     from .api import ActronAirNeoApiClient
     from .api.models import (
         AcStatusResponse,
+        CloudConnectionData,
+        ConnectionMetadata,
         CoordinatorData,
         FanModeType,
+        LiveAirconData,
         MainData,
+        OutdoorUnitData,
         PeripheralData,
+        ServicingData,
+        SystemStatusData,
+        VFTData,
         ZoneCapabilities,
         ZoneData,
     )
@@ -104,6 +111,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         # Enhanced zone management
         self.zone_preset_manager = ZonePresetManager(hass, device_id)
+
+        # Raw API response (private, for diagnostics only)
+        self._last_raw_response: dict[str, Any] = {}
 
         # Performance optimization: data processing cache
         self._parsed_data_cache: CoordinatorData | None = None
@@ -272,19 +282,22 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     async def _parse_data(self, data: AcStatusResponse) -> CoordinatorData:
         """
-        Parse the data from the API into a format suitable for the climate entity.
+        Parse the data from the API into structured data for entities.
 
         Args:
             data: Raw API response data
 
         Returns:
-            Dict containing parsed data including raw data for diagnostics
+            Dict containing fully parsed data (no raw_data passthrough)
 
         Raises:
             UpdateFailed: If parsing fails
 
         """
         try:
+            # Store raw response for diagnostics access only
+            self._last_raw_response = data
+
             # Extract main data sections for easier access
             last_known_state = data.get("lastKnownState", {})
             data_sections = self._extract_data_sections(last_known_state)
@@ -295,14 +308,31 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             # Parse zone data efficiently
             zones = await self._parse_zones_data(data_sections)
 
+            # Parse new structured sub-sections
+            live_aircon_data = self._parse_live_aircon_data(data_sections)
+            outdoor_unit_data = self._parse_outdoor_unit_data(data_sections)
+            system_status_data = self._parse_system_status_data(
+                data_sections["device_section"]
+            )
+            cloud_data = self._parse_cloud_data(data_sections["device_section"])
+            servicing_data = self._parse_servicing_data(data_sections["device_section"])
+            connection_meta = self._parse_connection_metadata(data)
+            vft_data = self._parse_vft_data(data_sections)
+
             # Update internal state
             self._continuous_fan = main_data["fan_continuous"]
 
-            # Construct the final result
+            # Construct the final result — no raw_data passthrough
             result: CoordinatorData = {  # type: ignore[assignment]
                 "main": main_data,
                 "zones": zones,
-                "raw_data": data,
+                "live_aircon": live_aircon_data,
+                "outdoor_unit": outdoor_unit_data,
+                "system_status": system_status_data,
+                "cloud": cloud_data,
+                "servicing": servicing_data,
+                "connection_meta": connection_meta,
+                "vft": vft_data,
             }
 
         except Exception as e:
@@ -355,6 +385,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             Dictionary with organized data sections
 
         """
+        # Find the serial-keyed device section (e.g. "<22H09780>")
+        device_section: dict[str, Any] = {}
+        for key, value in last_known_state.items():
+            if key.startswith("<") and key.endswith(">") and isinstance(value, dict):
+                device_section = value
+                break
+
         return {
             "user_aircon_settings": last_known_state.get("UserAirconSettings", {}),
             "master_info": last_known_state.get("MasterInfo", {}),
@@ -368,6 +405,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "peripherals": last_known_state.get("AirconSystem", {}).get(
                 "Peripherals", []
             ),
+            "device_section": device_section,
         }
 
     async def _parse_main_data(self, data_sections: dict) -> MainData:
@@ -595,6 +633,202 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 )
             break
 
+    def _parse_live_aircon_data(self, data_sections: dict) -> LiveAirconData:
+        """Parse live aircon operational data."""
+        live = data_sections.get("live_aircon", {})
+        return cast(
+            "LiveAirconData",
+            {
+                "system_on": live.get("SystemOn", False),
+                "compressor_capacity": live.get("CompressorCapacity", 0),
+                "compressor_mode": live.get("CompressorMode", "OFF"),
+                "am_running_fan": live.get("AmRunningFan", False),
+                "fan_rpm": live.get("FanRPM", 0),
+                "fan_pwm": live.get("FanPWM", 0),
+                "coil_inlet": live.get("CoilInlet"),
+                "err_code": live.get("ErrCode", 0),
+                "compressor_chasing_temp": live.get("CompressorChasingTemperature"),
+                "compressor_live_temp": live.get("CompressorLiveTemperature"),
+            },
+        )
+
+    def _parse_outdoor_unit_data(self, data_sections: dict) -> OutdoorUnitData:
+        """Parse outdoor unit live and system info data."""
+        live = data_sections.get("live_aircon", {})
+        ou_live = live.get("OutdoorUnit", {})
+        aircon_system = data_sections.get("aircon_system", {})
+        ou_system = aircon_system.get("OutdoorUnit", {})
+
+        # Handle API typos in field names
+        supply_current = ou_live.get(
+            "SupplyCurrentRMS_A", ou_live.get("SuppyCurrentRMS_A", 0)
+        )
+        supply_power = ou_live.get(
+            "SupplyPowerRMS_W", ou_live.get("SuppyPowerRMS_W", 0)
+        )
+
+        return cast(
+            "OutdoorUnitData",
+            {
+                "comp_power": ou_live.get("CompPower", 0),
+                "compressor_on": ou_live.get("CompressorOn", False),
+                "comp_speed": ou_live.get("CompSpeed", 0),
+                "coil_temp": ou_live.get("CoilTemp"),
+                "amb_temp": ou_live.get("AmbTemp"),
+                "supply_voltage": ou_live.get("SupplyVoltage_Vac", 0),
+                "supply_current": supply_current,
+                "supply_power": supply_power,
+                "reverse_valve_position": ou_live.get(
+                    "ReverseValvePosition", "Unknown"
+                ),
+                "defrost_mode": ou_live.get("DefrostMode", 0),
+                "drm": ou_live.get("DRM", False),
+                "err_codes": [
+                    ou_live.get("ErrCode_1", 0),
+                    ou_live.get("ErrCode_2", 0),
+                    ou_live.get("ErrCode_3", 0),
+                    ou_live.get("ErrCode_4", 0),
+                    ou_live.get("ErrCode_5", 0),
+                ],
+                "family": ou_system.get("Family", ""),
+                "ctrl_board_type": ou_system.get("CtrlBoardType", ""),
+                "capacity_kw": ou_system.get("Capacity_kW", 0),
+            },
+        )
+
+    @staticmethod
+    def _parse_system_status_data(device_section: dict) -> SystemStatusData:
+        """Parse device system status data from serial-keyed section."""
+        sys_status = device_section.get("SystemStatus_Local", {})
+        wifi = sys_status.get("WiFi", {})
+        sensor_inputs = sys_status.get("SensorInputs", {})
+        shtc1 = sensor_inputs.get("SHTC1", {})
+
+        return cast(
+            "SystemStatusData",
+            {
+                "uptime_seconds": sys_status.get("Uptime_s", 0),
+                "board_temp": shtc1.get("Temperature_oC"),
+                "wifi_strength": sys_status.get("WifiStrength_of3"),
+                "wifi_ssid": wifi.get("ApSSID", "Unknown"),
+                "wifi_channel": str(wifi.get("RFChannel", "Unknown")),
+                "wifi_firmware": wifi.get("FirmwareVersion", "Unknown"),
+                "wifi_hw_errors": wifi.get("HardwareErrorCount", 0),
+            },
+        )
+
+    @staticmethod
+    def _parse_cloud_data(device_section: dict) -> CloudConnectionData:
+        """Parse cloud connection data from serial-keyed section."""
+        cloud = device_section.get("Cloud", {})
+        connection = cloud.get("Connection", {})
+        error_counts = connection.get("ErrorCount", {})
+
+        return cast(
+            "CloudConnectionData",
+            {
+                "connection_state": cloud.get("ConnectionState", "Unknown"),
+                "session_uptime": connection.get("UpTime", {}).get(
+                    "CurrentSession_s", 0
+                ),
+                "sent_packets": cloud.get("SentPackets", 0),
+                "received_packets": cloud.get("ReceivedPackets", 0),
+                "failed_sent_packets": cloud.get("FailedSentPackets", 0),
+                "session_count_since_reset": connection.get("SessionCount", {}).get(
+                    "SinceLastMCUReset", 0
+                ),
+                "dns_failures": error_counts.get("DNSFailures", 0),
+                "aborted_sockets": error_counts.get("AbortedSockets", 0),
+            },
+        )
+
+    @staticmethod
+    def _parse_servicing_data(device_section: dict) -> ServicingData:
+        """Parse servicing and error history data."""
+        servicing = device_section.get("Servicing", {})
+        return cast(
+            "ServicingData",
+            {
+                "error_history": servicing.get("NV_ErrorHistory", []),
+                "event_history": servicing.get("NV_AC_EventHistory", []),
+            },
+        )
+
+    @staticmethod
+    def _parse_connection_metadata(data: dict) -> ConnectionMetadata:
+        """Parse top-level connection metadata from raw API response."""
+        return cast(
+            "ConnectionMetadata",
+            {
+                "is_online": data.get("isOnline", False),
+                "last_status_update": data.get("lastStatusUpdate", "Unknown"),
+                "time_since_last_contact": data.get("timeSinceLastContact", "Unknown"),
+            },
+        )
+
+    @staticmethod
+    def _parse_vft_data(data_sections: dict) -> VFTData:
+        """Parse variable fan technology data."""
+        user_settings = data_sections.get("user_aircon_settings", {})
+        vft = user_settings.get("VFT", {})
+        return cast(
+            "VFTData",
+            {
+                "supported": vft.get("Supported", False),
+                "airflow": vft.get("Airflow", 0.0),
+            },
+        )
+
+    def get_diagnostics_snapshot(self) -> dict[str, Any]:
+        """Return raw API response for diagnostics only."""
+        return self._last_raw_response
+
+    @property
+    def api_error_count(self) -> int:
+        """Return the API error count."""
+        return self.api.error_count
+
+    @property
+    def last_successful_api_request(self) -> datetime.datetime | None:
+        """Return the timestamp of the last successful API request."""
+        return self.api.last_successful_request
+
+    @property
+    def api_cache_size(self) -> int:
+        """Return the number of entries in the API response cache."""
+        return len(self.api.response_cache._cache)  # noqa: SLF001
+
+    def supports_power_monitoring(self) -> bool:
+        """Check if the outdoor unit supports power monitoring."""
+        ou = self.data.get("outdoor_unit", {}) if self.data else {}
+        family = ou.get("family", "")
+        ctrl_board_type = ou.get("ctrl_board_type", "")
+
+        # Fixed Speed Classic units with Type 100 controllers don't support
+        # power monitoring
+        if "Fixed Speed" in family and "Type 100" in ctrl_board_type:
+            return False
+
+        # Check if power fields have meaningful values
+        comp_power = ou.get("comp_power", 0)
+        supply_voltage = ou.get("supply_voltage", 0)
+        supply_current = ou.get("supply_current", 0)
+        compressor_on = ou.get("compressor_on", False)
+
+        if comp_power and comp_power > 0:
+            return True
+        if supply_voltage and supply_voltage > 0:
+            return True
+        if supply_current and supply_current > 0:
+            return True
+
+        # Family-based heuristic for units that may not report live data
+        # at first poll but are known to support power monitoring
+        if family and "Fixed Speed" not in family:
+            return compressor_on
+
+        return False
+
     async def _maybe_cleanup_cache(self) -> None:
         """Perform periodic cache cleanup if needed."""
         now = datetime.datetime.now()  # noqa: DTZ005
@@ -738,8 +972,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         try:
             zone_index = int(zone_id.split("_")[1]) - 1
 
+            # Read from stored raw response (not from coordinator.data)
+            last_known_state = self._last_raw_response.get("lastKnownState", {})
+
             # Get zone sensor info from RemoteZoneInfo
-            remote_zone_info = self.data.get("raw_data", {}).get("RemoteZoneInfo", [])
+            remote_zone_info = last_known_state.get("RemoteZoneInfo", [])
             if zone_index >= len(remote_zone_info):
                 return None
 
@@ -760,10 +997,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             zone_serial = zone_sensor_kind.replace("ZS: ", "")
 
             # Find matching peripheral by serial number
-            peripherals = (
-                self.data.get("raw_data", {})
-                .get("AirconSystem", {})
-                .get("Peripherals", [])
+            peripherals = last_known_state.get("AirconSystem", {}).get(
+                "Peripherals", []
             )
 
             for peripheral in peripherals:

@@ -8,72 +8,53 @@ applyTo: "custom_components/**/services.yaml"
 
 **Official Documentation:** [Service Actions](https://developers.home-assistant.io/docs/dev_101_services/)
 
-## Integration Quality Scale (MANDATORY)
+## Registering Services
 
-Always follow the official rules:
-<https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
-
-## Registration Pattern Used in This Integration
-
-Services are registered once in integration-level `async_setup()` via
-`_register_services(hass)` with an idempotency guard (`has_service(...)`).
-
-**Pattern:**
+**Register in `async_setup_entry()`:**
 
 ```python
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    _register_services(hass)
-    return True
-
-def _register_services(hass: HomeAssistant) -> None:
-    if hass.services.has_service(DOMAIN, SERVICE_FORCE_UPDATE):
-        return
-
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up actronair_neo from a config entry."""
+    ...
     hass.services.async_register(
         DOMAIN,
-        SERVICE_FORCE_UPDATE,
-        _handle_force_update,
-        schema=SERVICE_FORCE_UPDATE_SCHEMA,
+        "set_away_mode",
+        handle_set_away_mode,
+        schema=vol.Schema({
+            vol.Required(CONF_DEVICE_ID): str,
+            vol.Required("away": bool,
+        }),
     )
 ```
 
-Do not switch to per-entry registration unless there is a clear architectural reason.
+**Always remove on unload:**
 
-## Current Services (Keep in Sync)
-
-- `force_update`
-- `create_zone_preset`
-- `apply_zone_preset`
-- `bulk_zone_operation`
+```python
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    ...
+    hass.services.async_remove(DOMAIN, "set_away_mode")
+```
 
 ## services.yaml Structure
 
 ```yaml
-force_update:
-  name: Force Update
-  description: Force an immediate update of ActronAir Neo data.
-  target:
-    entity:
-      integration: actronair_neo
-      domain: climate
-  fields: {}
-
-create_zone_preset:
-  name: Create Zone Preset
-  description: Save current zone settings as a preset.
+set_away_mode:
+  name: Set Away Mode
+  description: Enable or disable away mode on the ActronAir Neo system.
   fields:
     device_id:
       name: Device ID
-      description: The ActronAir device identifier.
+      description: The serial number of the AC unit.
       required: true
       selector:
         text:
-    name:
-      name: Preset Name
-      description: Name for the new preset.
+    away:
+      name: Away Mode
+      description: Enable (true) or disable (false) away mode.
       required: true
       selector:
-        text:
+        boolean:
 ```
 
 ## Error Handling
@@ -86,21 +67,26 @@ create_zone_preset:
 ```python
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
-async def _handle_service(call: ServiceCall) -> None:
-    device_id = call.data["device_id"]
-    coordinator = _find_coordinator(hass, device_id)
+async def handle_set_away_mode(call: ServiceCall) -> None:
+    """Handle set_away_mode service call."""
+    device_id = call.data[CONF_DEVICE_ID]
+    coordinator = _get_coordinator_for_device(hass, device_id)
     if coordinator is None:
         raise ServiceValidationError(f"Device '{device_id}' not found")
     try:
-        await coordinator.async_request_refresh()
-    except (ApiError, ZoneError, ConfigurationError) as err:
-        raise HomeAssistantError(f"Service call failed: {err}") from err
+        await coordinator.api.set_away_mode(call.data["away"])
+    except ApiError as err:
+        raise HomeAssistantError(f"Failed to set away mode: {err}") from err
 ```
+
+## This Project's Services
+
+Check `services.yaml` for the currently registered services and their schemas
+before adding new ones. Avoid duplicating existing functionality.
 
 ## Key Rules
 
-- Keep service names in `const.py`, `__init__.py`, and `services.yaml` aligned
-- Register services in integration-level setup with idempotency guard
+- Register in `async_setup_entry()`, unregister in `async_unload_entry()`
 - Use voluptuous schema for input validation
 - Use `ServiceValidationError` for user input errors
 - Use `HomeAssistantError` for device/API errors

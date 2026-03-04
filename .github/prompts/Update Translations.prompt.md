@@ -1,6 +1,6 @@
 ---
 agent: "agent"
-tools: ["edit", "search", "runCommands"]
+tools: ["edit", "search", "execute/runInTerminal"]
 description: "Update translation keys for config flow, entities, and actions"
 ---
 

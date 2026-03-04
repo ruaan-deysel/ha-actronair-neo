@@ -71,14 +71,6 @@ if ! python -c "import pytest" 2>/dev/null; then
 fi
 
 # Run pytest with project configuration
-# Clean up any accidental package installation from pytest/test dependencies
-# This prevents Home Assistant from loading the installed version instead of
-# the development version from custom_components/
-cleanup_test_artifacts() {
-    "$SCRIPT_DIR/clean" --minimal || true
-}
-trap cleanup_test_artifacts EXIT
-
 if [[ ${#COVERAGE_ARGS[@]} -gt 0 ]]; then
     log_header "Running tests with coverage"
 else
@@ -91,3 +83,8 @@ if [[ ${#COVERAGE_ARGS[@]} -gt 0 ]] && [[ " ${COVERAGE_ARGS[*]} " =~ " --cov-rep
     echo ""
     log_success "Coverage report generated in htmlcov/index.html"
 fi
+
+# Clean up any accidental package installation from pytest/test dependencies
+# This prevents Home Assistant from loading the installed version instead of
+# the development version from custom_components/
+"$SCRIPT_DIR/clean" --minimal

@@ -16,6 +16,7 @@ from .const import DOMAIN
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
+    from homeassistant.data_entry_flow import FlowResult
 
     from .coordinator import ActronDataCoordinator
 
@@ -40,7 +41,7 @@ class ApiAuthenticationFailedRepairFlow(RepairsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
-    ) -> dict[str, Any]:
+    ) -> FlowResult:
         """Handle the initial step."""
         if user_input is not None:
             # Mark as resolved - user will need to reconfigure integration
@@ -71,7 +72,7 @@ class DeviceOfflineRepairFlow(RepairsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
-    ) -> dict[str, Any]:
+    ) -> FlowResult:
         """Handle the initial step."""
         if user_input is not None:
             return self.async_create_entry(data={})
@@ -103,7 +104,7 @@ class SensorUnavailableRepairFlow(RepairsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
-    ) -> dict[str, Any]:
+    ) -> FlowResult:
         """Handle the initial step."""
         if user_input is not None:
             return self.async_create_entry(data={})
@@ -135,7 +136,7 @@ async def async_check_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
     coordinator: ActronDataCoordinator = entry.runtime_data
 
     # Check API authentication status
-    if coordinator.api.error_count > 5:  # noqa: PLR2004
+    if coordinator.api_error_count > 5:  # noqa: PLR2004
         async_create_issue(
             hass,
             DOMAIN,
@@ -145,7 +146,7 @@ async def async_check_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
             translation_key="api_authentication_failed",
             translation_placeholders={
                 "device_name": coordinator.device_id,
-                "error_count": str(coordinator.api.error_count),
+                "error_count": str(coordinator.api_error_count),
             },
         )
     else:
@@ -203,17 +204,15 @@ async def async_health_check(hass: HomeAssistant, entry: ConfigEntry) -> dict[st
         "issues": [],
         "recommendations": [],
         "system_info": {
-            "api_error_count": coordinator.api.error_count,
-            "last_successful_update": coordinator.api.last_successful_request,
-            "cache_size": len(
-                coordinator.api.response_cache._cache  # noqa: SLF001
-            ),
+            "api_error_count": coordinator.api_error_count,
+            "last_successful_update": coordinator.last_successful_api_request,
+            "cache_size": coordinator.api_cache_size,
         },
     }
 
     # Check API health
-    if coordinator.api.error_count > 3:  # noqa: PLR2004
-        err_count = coordinator.api.error_count
+    if coordinator.api_error_count > 3:  # noqa: PLR2004
+        err_count = coordinator.api_error_count
         severity = (
             "warning" if err_count < 10 else "error"  # noqa: PLR2004
         )

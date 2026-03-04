@@ -55,7 +55,9 @@ def coordinator_instance(
                 ),
             }
         },
-        "raw_data": {
+    }
+    coordinator._last_raw_response = {
+        "lastKnownState": {
             "RemoteZoneInfo": [
                 {
                     "Sensors": {"test123456": {"NV_Kind": "ZS: 23E01206"}},
@@ -69,10 +71,7 @@ def coordinator_instance(
                     }
                 ]
             },
-            "lastKnownState": {
-                "UserAirconSettings": {"FanMode": "HIGH"},
-                "AirconSystem": {"IndoorUnit": {"NV_AutoFanEnabled": True}},
-            },
+            "UserAirconSettings": {"FanMode": "HIGH"},
         },
     }
     coordinator.last_data = coordinator.data
@@ -141,7 +140,7 @@ class TestActronDataCoordinator:
         # Verify result structure
         assert "main" in result
         assert "zones" in result
-        assert "raw_data" in result
+        assert "live_aircon" in result
 
         # Verify main data
         main_data = result["main"]
@@ -649,7 +648,7 @@ class TestCoordinatorAdditionalCoverage:
             coordinator_instance,
             "_parse_data",
             new_callable=AsyncMock,
-            return_value={"main": {}, "zones": {}, "raw_data": payload},
+            return_value={"main": {}, "zones": {}, "live_aircon": {}},
         ) as parse_data:
             first = await coordinator_instance._parse_data_optimized(payload)
             second = await coordinator_instance._parse_data_optimized(payload)
@@ -974,7 +973,9 @@ class TestCoordinatorRemainingBranches:
         ) == ["LOW", "MED", "HIGH"]
         assert coordinator_instance._parse_fan_mode_list(None, ["LOW"]) == ["LOW"]
 
-        coordinator_instance.data = {"raw_data": {"RemoteZoneInfo": []}}
+        coordinator_instance._last_raw_response = {
+            "lastKnownState": {"RemoteZoneInfo": []}
+        }
         assert coordinator_instance.get_zone_peripheral("zone_1") is None
         assert coordinator_instance.get_zone_last_updated("bad") is None
 
@@ -992,8 +993,8 @@ class TestCoordinatorRemainingBranches:
     def test_get_zone_peripheral_non_wireless_and_last_updated_exception(
         self, coordinator_instance: ActronDataCoordinator
     ) -> None:
-        coordinator_instance.data = {
-            "raw_data": {
+        coordinator_instance._last_raw_response = {
+            "lastKnownState": {
                 "RemoteZoneInfo": [{"Sensors": {"test123456": {"NV_Kind": "WIRED"}}}],
                 "AirconSystem": {"Peripherals": []},
             }

@@ -93,7 +93,9 @@ async def test_diagnostics_includes_zone_wireless_sensor(
                 "humidity": 45.0,
             }
         },
-        "raw_data": {
+    }
+    coordinator.get_diagnostics_snapshot = MagicMock(
+        return_value={
             "lastKnownState": {
                 "<ABC123>": {"SystemStatus_Local": {}, "Cloud": {}},
                 "AirconSystem": {
@@ -104,8 +106,8 @@ async def test_diagnostics_includes_zone_wireless_sensor(
                 "LiveAircon": {},
                 "RemoteZoneInfo": [{"NV_Title": "Living"}],
             }
-        },
-    }
+        }
+    )
     coordinator.get_zone_peripheral = MagicMock(
         return_value={
             "DeviceType": "WallSensor",
@@ -132,8 +134,8 @@ async def test_diagnostics_type_error_path(hass, mock_config_entry):
     mock_config_entry.runtime_data.data = {
         "main": None,
         "zones": {},
-        "raw_data": {},
     }
+    mock_config_entry.runtime_data.get_diagnostics_snapshot = MagicMock(return_value={})
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert result["error"]["type"] == "unexpected"
@@ -145,8 +147,10 @@ async def test_diagnostics_key_error_path(hass, mock_config_entry):
     mock_config_entry.runtime_data.data = {
         "main": {},
         "zones": {},
-        "raw_data": {"lastKnownState": {}},
     }
+    mock_config_entry.runtime_data.get_diagnostics_snapshot = MagicMock(
+        return_value={"lastKnownState": {}}
+    )
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert result["error"]["type"] == "KeyError"
@@ -173,14 +177,16 @@ async def test_diagnostics_value_error_path(hass, mock_config_entry):
                 "humidity": 45.0,
             }
         },
-        "raw_data": {
+    }
+    mock_config_entry.runtime_data.get_diagnostics_snapshot = MagicMock(
+        return_value={
             "lastKnownState": {
                 "<ABC123>": {},
                 "AirconSystem": {},
                 "LiveAircon": {},
             }
-        },
-    }
+        }
+    )
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert result["error"]["type"] == "ValueError"

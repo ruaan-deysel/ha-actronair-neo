@@ -6,17 +6,12 @@ applyTo: "custom_components/**/diagnostics.py"
 
 **Applies to:** `diagnostics.py`
 
-## Integration Quality Scale (MANDATORY)
-
-Always follow the official rules:
-<https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
-
 ## Critical: Always Redact Sensitive Data
 
 **Use `async_redact_data()` for all user data:**
 
 ```python
-from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.helpers.redact import async_redact_data
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 
 TO_REDACT = {

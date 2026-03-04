@@ -124,7 +124,7 @@ async def test_async_check_issues_creates_and_deletes_issue_paths():
     """Test issue checks for auth/device/sensor branches."""
     hass = MagicMock()
     coordinator = MagicMock()
-    coordinator.api.error_count = 6
+    coordinator.api_error_count = 6
     coordinator.device_id = "ABC123"
     coordinator.last_update_success = False
     coordinator.data = {
@@ -170,7 +170,7 @@ async def test_async_check_issues_delete_paths():
     """Test issue checks remove issues when healthy."""
     hass = MagicMock()
     coordinator = MagicMock()
-    coordinator.api.error_count = 0
+    coordinator.api_error_count = 0
     coordinator.device_id = "ABC123"
     coordinator.last_update_success = True
     coordinator.data = {"zones": {"zone_1": {"name": "Living", "temp": 22}}}
@@ -199,10 +199,9 @@ async def test_async_health_check_degraded_and_unhealthy():
     """Test health check includes issues and status transitions."""
     hass = MagicMock()
     coordinator = MagicMock()
-    coordinator.api.error_count = 12
-    coordinator.api.last_successful_request = "2025-01-01T00:00:00Z"
-    coordinator.api.response_cache = MagicMock()
-    coordinator.api.response_cache._cache = {"a": 1}
+    coordinator.api_error_count = 12
+    coordinator.last_successful_api_request = "2025-01-01T00:00:00Z"
+    coordinator.api_cache_size = 1
     coordinator.data = {
         "zones": {
             "zone_1": {"name": "Living", "battery_level": 10, "signal_strength": -80}
@@ -221,10 +220,9 @@ async def test_async_health_check_degraded_warning_only():
     """Test health check returns degraded when only warning issues exist."""
     hass = MagicMock()
     coordinator = MagicMock()
-    coordinator.api.error_count = 4
-    coordinator.api.last_successful_request = "2025-01-01T00:00:00Z"
-    coordinator.api.response_cache = MagicMock()
-    coordinator.api.response_cache._cache = {}
+    coordinator.api_error_count = 4
+    coordinator.last_successful_api_request = "2025-01-01T00:00:00Z"
+    coordinator.api_cache_size = 0
     coordinator.data = {
         "zones": {
             "zone_1": {"name": "Living", "battery_level": 50, "signal_strength": -60}

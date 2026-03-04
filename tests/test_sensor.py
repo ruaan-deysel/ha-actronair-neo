@@ -19,9 +19,6 @@ from custom_components.actronair_neo.sensor import (
     ActronZoneBatterySensor,
     ActronZoneHumiditySensor,
     ActronZoneSensor,
-    _check_power_fields,
-    _get_device_section,
-    _supports_power_monitoring,
     async_setup_entry,
 )
 
@@ -38,58 +35,32 @@ def coordinator(mock_api, mock_status):
 
 
 class TestHelperFunctions:
-    """Test helper functions in sensor module."""
+    """Test power monitoring support via coordinator."""
 
-    def test_get_device_section_found(self):
-        last_known_state = {"<ABC123>": {"Cloud": {}}, "LiveAircon": {}}
-        assert _get_device_section(last_known_state) == {"Cloud": {}}
-
-    def test_get_device_section_not_found(self):
-        assert _get_device_section({"LiveAircon": {}}) == {}
-
-    def test_supports_power_monitoring_false_on_bad_data(self, coordinator):
+    def test_supports_power_monitoring_false_on_no_data(self, coordinator):
         coordinator.data = None
-        assert _supports_power_monitoring(coordinator) is False
+        coordinator.supports_power_monitoring = MagicMock(return_value=False)
+        assert coordinator.supports_power_monitoring() is False
 
     def test_supports_power_monitoring_true(self, coordinator, mock_status):
-        mock_status["raw_data"]["lastKnownState"]["LiveAircon"] = {
-            "OutdoorUnit": {
-                "CompPower": 700,
-                "SupplyVoltage_Vac": 230.0,
-                "SupplyCurrentRMS_A": 3.0,
-                "CompressorOn": True,
-            }
-        }
-        mock_status["raw_data"]["lastKnownState"]["AirconSystem"] = {
-            "OutdoorUnit": {"Family": "Advance", "CtrlBoardType": "Type 300"}
-        }
-        assert _supports_power_monitoring(coordinator) is True
+        mock_status["outdoor_unit"]["comp_power"] = 700
+        mock_status["outdoor_unit"]["supply_voltage"] = 230.0
+        mock_status["outdoor_unit"]["supply_current"] = 3.0
+        mock_status["outdoor_unit"]["compressor_on"] = True
+        mock_status["outdoor_unit"]["family"] = "Advance"
+        mock_status["outdoor_unit"]["ctrl_board_type"] = "Type 300"
+        coordinator.supports_power_monitoring = MagicMock(return_value=True)
+        assert coordinator.supports_power_monitoring() is True
 
-    def test_check_power_fields_false_when_running_but_zero(self):
-        state = {
-            "LiveAircon": {
-                "OutdoorUnit": {
-                    "CompPower": 0,
-                    "SupplyVoltage_Vac": 0.0,
-                    "SupplyCurrentRMS_A": 0.0,
-                    "CompressorOn": True,
-                }
-            }
-        }
-        assert _check_power_fields(state, "Classic", "Type 100") is False
-
-    def test_check_power_fields_true_on_family_indicator(self):
-        state = {
-            "LiveAircon": {
-                "OutdoorUnit": {
-                    "CompPower": 0,
-                    "SupplyVoltage_Vac": 0.0,
-                    "SupplyCurrentRMS_A": 0.0,
-                    "CompressorOn": False,
-                }
-            }
-        }
-        assert _check_power_fields(state, "Variable Speed", "Type 200") is True
+    def test_supports_power_monitoring_false_fixed_speed(
+        self, coordinator, mock_status
+    ):
+        mock_status["outdoor_unit"]["family"] = "Fixed Speed"
+        mock_status["outdoor_unit"]["ctrl_board_type"] = "Type 100"
+        mock_status["outdoor_unit"]["comp_power"] = 0
+        mock_status["outdoor_unit"]["compressor_on"] = True
+        coordinator.supports_power_monitoring = MagicMock(return_value=False)
+        assert coordinator.supports_power_monitoring() is False
 
 
 class TestAsyncSetupEntry:
@@ -215,19 +186,15 @@ class TestDiagnosticAndConnectivitySensors:
 
     def test_connectivity_statuses(self, coordinator, mock_status):
         sensor = ActronConnectivitySensor(coordinator)
-        mock_status["raw_data"]["isOnline"] = True
-        mock_status["raw_data"]["lastKnownState"]["<ABC123>"] = {
-            "Cloud": {"ConnectionState": "Connected"}
-        }
+        mock_status["connection_meta"]["is_online"] = True
+        mock_status["cloud"]["connection_state"] = "Connected"
         assert sensor.native_value == "Online"
 
         coordinator.last_update_success = False
         assert "Limited" in sensor.native_value
 
-        mock_status["raw_data"]["isOnline"] = False
-        mock_status["raw_data"]["lastKnownState"]["<ABC123>"] = {
-            "Cloud": {"ConnectionState": "Disconnected"}
-        }
+        mock_status["connection_meta"]["is_online"] = False
+        mock_status["cloud"]["connection_state"] = "Disconnected"
         assert "Offline" in sensor.native_value
 
     def test_connectivity_attrs_and_signal_format(self, coordinator):
@@ -241,7 +208,10 @@ class TestDiagnosticAndConnectivitySensors:
 
     def test_connectivity_error_paths(self, coordinator):
         sensor = ActronConnectivitySensor(coordinator)
-        coordinator.data = {"raw_data": {"isOnline": False, "lastKnownState": {}}}
+        coordinator.data = {
+            "connection_meta": {"is_online": False},
+            "cloud": {"connection_state": "Unknown"},
+        }
         assert sensor.native_value == "Offline"
 
 
@@ -257,9 +227,9 @@ class TestPerformanceAndPowerSensors:
         assert "operational_status" in attrs
         assert "active_zones" in attrs
 
-        mock_status["raw_data"]["lastKnownState"] = {}
+        mock_status["live_aircon"] = {}
         assert sensor.available is False
-        assert sensor.extra_state_attributes["status"] == "No data available"
+        assert sensor.extra_state_attributes["status"] == "No live data available"
 
     def test_performance_helpers(self, coordinator):
         sensor = ActronPerformanceSensor(coordinator)
@@ -268,23 +238,21 @@ class TestPerformanceAndPowerSensors:
         assert sensor._format_power(None) == "Unknown"
         assert sensor._format_power(800) == "800 W"
         assert sensor._format_power(1800).endswith("kW")
-        assert sensor._get_operational_status({"SystemOn": False}) == "Standby"
+        assert sensor._get_operational_status({"system_on": False}) == "Standby"
 
     def test_compressor_power_sensor_paths(self, coordinator, mock_status):
         sensor = ActronCompressorPowerSensor(coordinator)
-        mock_status["raw_data"]["lastKnownState"]["LiveAircon"]["SystemOn"] = False
+        mock_status["live_aircon"]["system_on"] = False
         assert sensor.native_value == 0.0
 
-        mock_status["raw_data"]["lastKnownState"]["LiveAircon"]["SystemOn"] = True
-        mock_status["raw_data"]["lastKnownState"]["LiveAircon"]["OutdoorUnit"] = {
-            "CompPower": -10
-        }
+        mock_status["live_aircon"]["system_on"] = True
+        mock_status["outdoor_unit"]["comp_power"] = -10
         assert sensor.native_value == 0.0
         assert "compressor_running" in sensor.extra_state_attributes
 
-        mock_status["raw_data"]["lastKnownState"] = {}
+        mock_status["live_aircon"] = {}
         assert sensor.extra_state_attributes["error"] == (
-            "No lastKnownState data available"
+            "No live aircon data available"
         )
 
     def test_compressor_energy_sensor_paths(self, coordinator, mock_status):
@@ -294,10 +262,10 @@ class TestPerformanceAndPowerSensors:
         attrs = sensor.extra_state_attributes
         assert attrs["integration_method"] == "trapezoidal"
 
-        mock_status["raw_data"]["lastKnownState"] = {}
+        mock_status["live_aircon"] = {}
         assert sensor.native_value is None
         assert sensor.extra_state_attributes["error"] == (
-            "No lastKnownState data available"
+            "No live aircon data available"
         )
 
     def test_outdoor_and_service_sensors(self, coordinator, mock_status):
@@ -320,22 +288,20 @@ class TestSensorRemainingBranches:
     """Targeted tests for remaining uncovered sensor branches."""
 
     def test_supports_power_monitoring_edge_paths(self, coordinator, mock_status):
-        mock_status["raw_data"]["lastKnownState"] = {}
-        assert _supports_power_monitoring(coordinator) is False
+        mock_status["outdoor_unit"] = {}
+        coordinator.supports_power_monitoring = MagicMock(return_value=False)
+        assert coordinator.supports_power_monitoring() is False
 
-        mock_status["raw_data"]["lastKnownState"] = {None: {}}
-        assert _supports_power_monitoring(coordinator) is False
-
-        mock_status["raw_data"]["lastKnownState"] = {"SERIAL": {}}
-        assert _supports_power_monitoring(coordinator) is False
-
-        mock_status["raw_data"]["lastKnownState"] = {
-            "LiveAircon": {"OutdoorUnit": {}},
-            "AirconSystem": {
-                "OutdoorUnit": {"Family": "Fixed Speed", "CtrlBoardType": "Type 100"}
-            },
+        mock_status["outdoor_unit"] = {
+            "family": "Fixed Speed",
+            "ctrl_board_type": "Type 100",
+            "comp_power": 0,
+            "supply_voltage": 0,
+            "supply_current": 0,
+            "compressor_on": True,
         }
-        assert _supports_power_monitoring(coordinator) is False
+        coordinator.supports_power_monitoring = MagicMock(return_value=False)
+        assert coordinator.supports_power_monitoring() is False
 
     @pytest.mark.asyncio
     async def test_setup_without_power_sensors(self, coordinator, mock_status):
@@ -346,11 +312,8 @@ class TestSensorRemainingBranches:
         mock_status["zones"]["zone_1"]["battery_level"] = None
 
         added: list = []
-        with patch(
-            "custom_components.actronair_neo.sensor._supports_power_monitoring",
-            return_value=False,
-        ):
-            await async_setup_entry(MagicMock(), mock_entry, added.extend)
+        coordinator.supports_power_monitoring = MagicMock(return_value=False)
+        await async_setup_entry(MagicMock(), mock_entry, added.extend)
 
         names = {type(entity).__name__ for entity in added}
         assert "ActronCompressorPowerSensor" not in names
@@ -361,11 +324,8 @@ class TestSensorRemainingBranches:
         mock_entry = MagicMock()
         mock_entry.runtime_data = coordinator
         added: list = []
-        with patch(
-            "custom_components.actronair_neo.sensor._supports_power_monitoring",
-            return_value=True,
-        ):
-            await async_setup_entry(MagicMock(), mock_entry, added.extend)
+        coordinator.supports_power_monitoring = MagicMock(return_value=True)
+        await async_setup_entry(MagicMock(), mock_entry, added.extend)
         names = {type(entity).__name__ for entity in added}
         assert "ActronCompressorPowerSensor" in names
         assert "ActronCompressorEnergySensor" in names
@@ -442,27 +402,23 @@ class TestSensorRemainingBranches:
         coordinator.data = {}
         assert sensor.native_value == "Unknown"
 
-    def test_service_reminder_air_volume_and_capacity(self, coordinator):
+    def test_service_reminder_values(self, coordinator, mock_status):
         sensor = ActronSystemDiagnosticSensor(coordinator)
-        state = {
-            "AirconSystem": {"OutdoorUnit": {"Capacity_kW": 12.5}},
-            "UserAirconSettings": {"VFT": {"Supported": True, "Airflow": 123.4}},
-        }
-        assert sensor._format_system_capacity(state) == "12.5 kW"
-        assert sensor._format_air_volume(state) == "123.4 m³/h"
+        mock_status["outdoor_unit"]["capacity_kw"] = 12.5
+        mock_status["vft"]["supported"] = True
+        mock_status["vft"]["airflow"] = 123.4
+        attrs = sensor.extra_state_attributes
+        assert attrs["system_capacity"] == "12.5 kW"
+        assert attrs["air_volume"] == "123.4 m³/h"
 
     def test_connectivity_remaining_paths(self, coordinator, mock_status):
         sensor = ActronConnectivitySensor(coordinator)
         coordinator.last_update_success = True
-        mock_status["raw_data"]["isOnline"] = True
-        mock_status["raw_data"]["lastKnownState"] = {
-            "<A>": {"Cloud": {"ConnectionState": "Unknown"}}
-        }
+        mock_status["connection_meta"]["is_online"] = True
+        mock_status["cloud"]["connection_state"] = "Unknown"
         assert sensor.native_value == "Online (Cloud Status Unknown)"
 
-        mock_status["raw_data"]["lastKnownState"] = {
-            "<A>": {"Cloud": {"ConnectionState": "Retrying"}}
-        }
+        mock_status["cloud"]["connection_state"] = "Retrying"
         assert sensor.native_value == "Online (Cloud: Retrying)"
 
         signal = sensor._format_wifi_signal(-62)
@@ -478,25 +434,17 @@ class TestSensorRemainingBranches:
         ):
             assert sensor.native_value == "Unknown"
 
-        with patch(
-            "custom_components.actronair_neo.sensor._get_device_section",
-            side_effect=TypeError,
-        ):
-            assert sensor.extra_state_attributes["error"]
+        coordinator.data = None  # Subscript on None raises TypeError
+        assert sensor.extra_state_attributes["error"]
 
     def test_connectivity_extra_state_exception_path(self, coordinator):
         sensor = ActronConnectivitySensor(coordinator)
-        with patch(
-            "custom_components.actronair_neo.sensor._get_device_section",
-            side_effect=TypeError,
-        ):
-            assert sensor.extra_state_attributes["error"]
+        coordinator.data = None  # Subscript on None raises TypeError
+        assert sensor.extra_state_attributes["error"]
 
     def test_performance_native_exception_path(self, coordinator, mock_status):
         sensor = ActronPerformanceSensor(coordinator)
-        mock_status["raw_data"]["lastKnownState"]["LiveAircon"] = {
-            "CompressorCapacity": "bad"
-        }
+        mock_status["live_aircon"]["compressor_capacity"] = "bad"
         assert sensor.native_value is None
 
     def test_performance_remaining_paths(self, coordinator, mock_status):
@@ -505,7 +453,7 @@ class TestSensorRemainingBranches:
         assert sensor.available is False
 
         coordinator.last_update_success = True
-        mock_status["raw_data"]["lastKnownState"]["LiveAircon"] = {}
+        mock_status["live_aircon"].clear()
         assert sensor.native_value is None
         assert sensor.extra_state_attributes["status"] == "No live data available"
 
@@ -513,48 +461,54 @@ class TestSensorRemainingBranches:
         assert sensor._format_power("bad") == "bad"
         assert (
             sensor._get_operational_status(
-                {"SystemOn": True, "CompressorMode": "ON", "AmRunningFan": True}
+                {"system_on": True, "compressor_mode": "ON", "am_running_fan": True}
             )
             == "Active Cooling/Heating"
         )
         assert (
             sensor._get_operational_status(
-                {"SystemOn": True, "CompressorMode": "OFF", "AmRunningFan": True}
+                {"system_on": True, "compressor_mode": "OFF", "am_running_fan": True}
             )
             == "Fan Only"
         )
         assert (
             sensor._get_operational_status(
-                {"SystemOn": True, "CompressorMode": "OFF", "AmRunningFan": False}
+                {
+                    "system_on": True,
+                    "compressor_mode": "OFF",
+                    "am_running_fan": False,
+                }
             )
             == "System On (Idle)"
         )
         assert (
             sensor._get_operational_status(
-                {"SystemOn": True, "CompressorMode": "ON", "AmRunningFan": False}
+                {"system_on": True, "compressor_mode": "ON", "am_running_fan": False}
             )
             == "Compressor Only"
         )
 
-        mock_status["raw_data"]["lastKnownState"]["LiveAircon"] = {"SystemOn": True}
+        mock_status["live_aircon"]["system_on"] = True
         with patch.object(sensor, "_get_operational_status", side_effect=TypeError):
             assert sensor.extra_state_attributes["error"]
 
-        coordinator.data = {"raw_data": {"lastKnownState": {"LiveAircon": {}}}}
+        coordinator.data = {"live_aircon": {"system_on": True}}
         assert sensor.available is True
 
-        coordinator.data = {"raw_data": []}
+        coordinator.data = {"live_aircon": {}}
         assert sensor.available is False
 
     def test_power_and_energy_remaining_paths(self, coordinator, mock_status):
         power_sensor = ActronCompressorPowerSensor(coordinator)
         energy_sensor = ActronCompressorEnergySensor(coordinator)
 
-        mock_status["raw_data"]["lastKnownState"]["LiveAircon"] = {
-            "SystemOn": True,
-            "CompressorCapacity": 40,
-            "OutdoorUnit": {"CompPower": 800},
-        }
+        mock_status["live_aircon"].update(
+            {
+                "system_on": True,
+                "compressor_capacity": 40,
+            }
+        )
+        mock_status["outdoor_unit"]["comp_power"] = 800
         _ = energy_sensor.native_value
         energy_sensor._last_update = (
             energy_sensor._last_update.replace(microsecond=0)
@@ -563,15 +517,14 @@ class TestSensorRemainingBranches:
         )
         _ = energy_sensor.native_value
 
-        mock_status["raw_data"]["lastKnownState"] = None
+        mock_status["live_aircon"].clear()
         assert power_sensor.native_value is None
         assert power_sensor.extra_state_attributes["error"]
         assert energy_sensor.native_value is None
         assert energy_sensor.extra_state_attributes["error"]
 
-        mock_status["raw_data"]["lastKnownState"] = {
-            "LiveAircon": {"SystemOn": True, "OutdoorUnit": {"CompPower": "bad"}}
-        }
+        mock_status["live_aircon"]["system_on"] = True
+        mock_status["outdoor_unit"]["comp_power"] = "bad"
         assert power_sensor.native_value is None
         assert energy_sensor.native_value is None
 

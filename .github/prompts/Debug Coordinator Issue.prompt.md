@@ -4,8 +4,8 @@ tools:
   [
     "search/codebase",
     "search",
-    "runCommands",
-    "runCommands/terminalLastCommand",
+    "execute/runInTerminal",
+    "read/terminalLastCommand",
   ]
 description: "Diagnose coordinator update failures and stale data issues"
 ---

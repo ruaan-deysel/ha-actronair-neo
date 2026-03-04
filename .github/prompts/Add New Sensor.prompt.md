@@ -1,6 +1,6 @@
 ---
 agent: "agent"
-tools: ["search/codebase", "edit", "search", "runCommands"]
+tools: ["search/codebase", "edit", "search", "execute/runInTerminal"]
 description: "Add a new sensor entity to ActronAir Neo"
 ---
 

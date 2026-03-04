@@ -6,9 +6,16 @@ applyTo: "tests/**/*.py"
 
 **Applies to:** All test files under `tests/`
 
+## Integration Quality Scale (MANDATORY)
+
+Always follow the official rules:
+<https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
+
 ## General Rules
 
-- **Do NOT write tests unless explicitly requested.** The user will ask when tests are needed.
+- **Default:** Do NOT write tests unless explicitly requested.
+- **Exception:** If tests are needed to satisfy applicable Integration Quality Scale
+  rules for the requested change, add targeted tests or explicitly call out the gap.
 - Mirror the integration structure: one test file per module (e.g. `test_coordinator.py` → `coordinator.py`)
 - Use real HA test fixtures — do NOT mock `hass` itself
 
@@ -78,7 +85,7 @@ async def test_coordinator_update(hass: HomeAssistant, mock_entry) -> None:
 
 ```python
 with patch(
-    "custom_components.actronair_neo.api_wrapper.ActronNeoApiWrapper.get_ac_status",
+    "custom_components.actronair_neo.api.client.ActronAirNeoApiClient.get_ac_status",
     return_value={"some": "data"},
 ):
     ...
@@ -100,7 +107,7 @@ Common fixtures belong in `tests/conftest.py`:
 
 - `hass` — provided by `pytest-homeassistant-custom-component`
 - `mock_config_entry` — standard `MockConfigEntry` for `actronair_neo`
-- `mock_api_wrapper` — `AsyncMock` of `ActronNeoApiWrapper`
+- `mock_api_client` — `AsyncMock`/double for `ActronAirNeoApiClient`
 
 ## Naming Conventions
 

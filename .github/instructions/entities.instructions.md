@@ -1,21 +1,27 @@
 ---
-applyTo: "custom_components/**/climate.py, custom_components/**/sensor.py, custom_components/**/binary_sensor.py, custom_components/**/switch.py, custom_components/**/number.py, custom_components/**/base_entity.py"
+applyTo: "custom_components/**/climate.py, custom_components/**/sensor.py, custom_components/**/binary_sensor.py, custom_components/**/switch.py, custom_components/**/number.py, custom_components/**/cover.py, custom_components/**/entity.py"
 ---
 
 # Entity Platform Instructions
 
 **Applies to:** All entity platform implementations (climate, sensor, binary_sensor,
-switch, number) and the base entity class.
+switch, number, cover) and the shared entity base class.
+
+## Integration Quality Scale (MANDATORY)
+
+Always follow the official rules:
+<https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
 
 ## Shared Infrastructure
 
-- **`base_entity.py`** — `ActronAirNeoBaseEntity` base class (inherit from this)
+- **`entity.py`** — `ActronAirNeoEntity` base class (inherit from this)
 - **`coordinator.py`** — Data fetching (entities never call API directly)
-- **`types.py`** — TypedDict definitions for coordinator data
+- **`api/models.py` / `types.py`** — Typed coordinator/API structures
 
 ## Base Entity Inheritance
 
-**MUST inherit from:** `(PlatformEntity, ActronAirNeoBaseEntity)` — order matters for MRO
+**MUST inherit from:** `(ActronAirNeoEntity, PlatformEntity)` as used in this
+integration's current platforms.
 
 **Base class provides:** Coordinator integration, device info, unique ID, attribution,
 entity naming
@@ -73,8 +79,8 @@ async def async_setup_entry(
 ActronAir Neo has per-zone entities (switches, climate control per zone):
 
 - Create one entity instance per zone
-- Use zone index in unique_id: `{entry.entry_id}_zone_{zone_index}_{key}`
-- Zone data is in `coordinator.data["zones"][zone_index]`
+- Zone keys are currently string IDs like `zone_1`, `zone_2`, ...
+- Zone data is in `coordinator.data["zones"][zone_id]`
 
 ## Platform-Required Methods
 
@@ -86,6 +92,7 @@ ActronAir Neo has per-zone entities (switches, climate control per zone):
 - Numbers: `native_value`, `async_set_native_value()`
 - Climate: `hvac_mode`, `hvac_modes`, `current_temperature`,
   `async_set_hvac_mode()`, `async_set_temperature()`
+- Covers: `current_cover_position`, `is_closed`, and set/open/close methods when supported
 
 ## Custom State Attributes
 
@@ -116,6 +123,6 @@ if TYPE_CHECKING:
 **✅ Do:**
 
 - Use coordinator data exclusively
-- Generate unique IDs from `entry_id + description.key` (or zone index)
+- Generate stable unique IDs from device id + entity type (+ zone context as needed)
 - Log only in async methods or `__init__`
 - Consult HA docs for platform-specific patterns

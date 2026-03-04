@@ -12,6 +12,12 @@ Read `AGENTS.md` completely before starting any work. It contains:
 - Error recovery strategy and breaking change policy
 - Workflow rules (scope management, translations, documentation)
 
+## Mandatory Quality Rules
+
+Always follow Home Assistant's Integration Quality Scale rules:
+
+- <https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
+
 ## Quick Reference
 
 - **Domain:** `actronair_neo`

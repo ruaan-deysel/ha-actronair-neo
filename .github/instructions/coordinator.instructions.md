@@ -4,36 +4,52 @@ applyTo: "custom_components/**/coordinator.py"
 
 # Coordinator Instructions
 
-**Applies to:** `coordinator.py` (always read together with `api.instructions.md`)
+**Applies to:** `coordinator.py` (read together with `api.instructions.md`)
+
+## Integration Quality Scale (MANDATORY)
+
+Always follow the official rules:
+<https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
 
 ## Using the Coordinator
 
 ✅ **Correct:** `self.coordinator.data["temperature"]` (in entity properties)
 
-❌ **Wrong:** `await self.api_client.get_data()` (never fetch directly in entities)
+❌ **Wrong:** `await self.api.get_ac_status(...)` in entity code
 
 ## Pattern
 
 ```python
-class ActronDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+class ActronDataCoordinator(DataUpdateCoordinator):
     """Coordinator fetching ActronAir Neo data."""
 
-    def __init__(self, hass: HomeAssistant, api_wrapper: ActronApiWrapper) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api: ActronAirNeoApiClient,
+        device_id: str,
+        update_interval: int,
+        *,
+        enable_zone_control: bool,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=30),
+            update_interval=timedelta(seconds=update_interval),
         )
-        self.api = api_wrapper
+        self.api = api
+        self.device_id = device_id
+        self.enable_zone_control = enable_zone_control
 
-    async def _async_update_data(self) -> dict[str, Any]:
+    async def _async_update_data(self) -> CoordinatorData:
         """Fetch data from API."""
         try:
-            return await self.api.get_status()
+            status = await self.api.get_ac_status(self.device_id, use_cache=True)
+            return await self._parse_data_optimized(status)
         except AuthenticationError as err:
             raise ConfigEntryAuthFailed from err
-        except (ApiError, DeviceOfflineError) as err:
+        except (ApiError, DeviceOfflineError, RateLimitError) as err:
             raise UpdateFailed(str(err)) from err
 ```
 
@@ -43,7 +59,7 @@ class ActronDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
 - `AuthenticationError` → `raise ConfigEntryAuthFailed from err` (triggers reauth)
 - `ApiError` / `DeviceOfflineError` → `raise UpdateFailed("message") from err`
-- `RateLimitError` → `raise UpdateFailed(retry_after=60) from err`
+- `RateLimitError` → `raise UpdateFailed("message") from err`
 
 **Automatic handling:** `TimeoutError` and `aiohttp.ClientError` handled by base class
 
@@ -67,15 +83,17 @@ Don't poll faster than necessary — the ActronAir cloud API has rate limits.
 
 ## Data Transformation
 
-**Coordinator responsibility:** Transform raw API response into a flat, typed dict
-that entities can read directly. Entities should read `coordinator.data["key"]`, not
-deeply nested API structures.
+Coordinator is responsible for parsing API payloads into `coordinator.data`:
+
+- Keep `main`, `zones`, and `raw_data` keys stable for entities
+- Keep entity-facing reads simple (`self.coordinator.data[...]`)
+- Avoid pushing API shape complexity into entity classes
 
 ## Common Mistakes
 
 **❌ Don't:**
 
-- Call `api_wrapper` from entities
+- Call API methods from entities
 - Catch `TimeoutError`/`ClientError` in coordinator (base class handles)
 - Log setup/update failures manually
 
@@ -83,7 +101,8 @@ deeply nested API structures.
 
 - Transform data in coordinator before storing
 - Use specific exception types for different failures
-- Let coordinator handle retries and timing
+- Preserve last known good data when temporary failures occur
+- Let coordinator handle retries and polling timing
 
 ## Reference
 

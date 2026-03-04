@@ -8,6 +8,11 @@ applyTo: "custom_components/**/repairs.py"
 
 **Official Documentation:** [Repairs Framework](https://developers.home-assistant.io/docs/core/platform/repairs)
 
+## Integration Quality Scale (MANDATORY)
+
+Always follow the official rules:
+<https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
+
 ## Overview
 
 Repair Flows guide users through fixing issues (expired credentials, deprecated

@@ -16,9 +16,22 @@
 - **iot_class:** `cloud_polling`
 - **Validate:** `script/lint` (ruff format + ruff check --fix)
 - **Start HA:** `script/develop`
-- **Tests:** `uv run python -m pytest tests/`
+- **Tests:** `script/test`
 
 Use these exact identifiers throughout the codebase. Never hardcode different values.
+
+## Integration Quality Scale Rules (MANDATORY)
+
+Always comply with the official Home Assistant Integration Quality Scale rules:
+
+- <https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
+
+Requirements:
+
+1. Treat the rules page as source of truth for quality expectations
+2. Apply all rules relevant to the files/behavior being changed
+3. Do not introduce known rule violations
+4. If a requested change conflicts with a rule, flag it and ask for explicit direction
 
 ## Code Quality Baseline
 
@@ -36,24 +49,25 @@ Generate code that passes these checks on first run. Aim for zero validation err
 
 ## Architecture (Quick Reference)
 
-**Data Flow:** Entities → Coordinator → API Wrapper (never skip layers)
+**Data Flow:** Entities → Coordinator → API Client (never skip layers)
 
 **Key files:**
 
 - `coordinator.py` — `ActronDataCoordinator` (DataUpdateCoordinator subclass)
-- `api_wrapper.py` — Primary API client (prefer this over legacy `api.py`)
-- `base_entity.py` — `ActronAirNeoBaseEntity` base class
+- `api/client.py` — `ActronAirNeoApiClient` transport/caching/rate limit handling
+- `api/auth.py` — OAuth2 device-code authentication + token refresh
+- `api/models.py` — API/coordinator models
+- `entity.py` — `ActronAirNeoEntity` base class
 - `exceptions.py` — Exception hierarchy (ApiError, AuthenticationError, etc.)
-- `types.py` — TypedDict definitions for API responses
 - `const.py` — All constants (DOMAIN, modes, features)
 - `zone_presets.py` — Zone preset management
 
-**Entity platforms:** `climate.py`, `sensor.py`, `binary_sensor.py`, `switch.py`, `number.py`
+**Entity platforms:** `climate.py`, `sensor.py`, `binary_sensor.py`, `switch.py`, `number.py`, `cover.py`
 
 **Exception → Coordinator mapping:**
 
 - `AuthenticationError` → `ConfigEntryAuthFailed` (triggers reauth)
-- `ApiError` / `DeviceOfflineError` → `UpdateFailed` (retry with backoff)
+- `ApiError` / `DeviceOfflineError` / `RateLimitError` → `UpdateFailed` (retry/backoff)
 
 ## Workflow Rules
 

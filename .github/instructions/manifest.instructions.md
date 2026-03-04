@@ -6,7 +6,12 @@ applyTo: "**/manifest.json"
 
 **Applies to:** `custom_components/actronair_neo/manifest.json`
 
-## Required Fields
+## Integration Quality Scale (MANDATORY)
+
+Always follow the official rules:
+<https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
+
+## Current Baseline (Keep in Sync)
 
 ```json
 {
@@ -15,41 +20,39 @@ applyTo: "**/manifest.json"
   "codeowners": ["@ruaan-deysel"],
   "config_flow": true,
   "documentation": "https://github.com/ruaan-deysel/ha-actronair-neo",
-  "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ruaan-deysel/ha-actronair-neo/issues",
-  "requirements": ["actron-neo-api==0.4.1"],
+  "requirements": [],
   "version": "x.x.x"
 }
 ```
 
-## Integration Type
+Keep manifest values aligned with actual implementation and project strategy.
 
-`integration_type: "hub"` — ActronAir Neo is a hub because it controls multiple
-zone devices through a central AC unit connected to the ActronAir cloud.
+## Domain and Identity
+
+- `domain` must always match `custom_components/actronair_neo`
+- `name` should stay `ActronAir Neo`
+- `config_flow` remains `true` (device-code OAuth setup flow)
 
 ## IoT Class
 
-`iot_class: "cloud_polling"` — Data is fetched by polling the ActronAir cloud API
-at regular intervals.
+`iot_class` is `cloud_polling` and should only change if integration behavior changes.
 
 ## Requirements
 
-Use exact versions for `actron-neo-api` to ensure reproducibility:
+Current manifest uses an empty `requirements` list.
 
-```json
-"requirements": ["actron-neo-api==0.4.1"]
-```
+If requirements are added in future:
 
-Update version only after testing with the new library release.
+- Pin versions explicitly
+- Ensure runtime imports actually depend on those packages
+- Validate setup and startup paths after changes
 
 ## Version
 
-Use semantic versioning: `YEAR.MINOR.PATCH` (Home Assistant convention: `2025.1.0`)
-
-- Increment last segment for bug fixes
-- Increment middle for new features
-- First segment is the year
+Use semantic versioning in this project's current scheme (`YYYY.MINOR.PATCH`),
+for example `2026.3.0`.
 
 ## Common Mistakes
 
@@ -57,7 +60,8 @@ Use semantic versioning: `YEAR.MINOR.PATCH` (Home Assistant convention: `2025.1.
 - ❌ Missing `issue_tracker` (required for HACS)
 - ❌ Wrong `domain` (must match directory name `actronair_neo`)
 - ❌ Trailing commas in JSON
-- ❌ Changing `integration_type` or `iot_class` without explicit reason
+- ❌ Adding discovery keys (`zeroconf`, `ssdp`, `dhcp`, etc.) without implementing matching flow steps
+- ❌ Changing `iot_class` without explicit behavior change
 
 ## References
 

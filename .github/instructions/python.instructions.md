@@ -6,6 +6,11 @@ applyTo: "**/*.py"
 
 **Applies to:** All Python files in the integration
 
+## Integration Quality Scale (MANDATORY)
+
+Always follow the official rules:
+<https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
+
 ## File Structure
 
 ### Module Organization
@@ -104,7 +109,7 @@ Use `if TYPE_CHECKING:` block for type-only imports.
 
 **Structure requirements:**
 
-- Inherit from both platform entity and `ActronAirNeoBaseEntity` (order matters for MRO)
+- Inherit from both platform entity and `ActronAirNeoEntity` from `entity.py`
 - Set `_attr_unique_id` in `__init__`
 - Use coordinator data only — Never call API directly
 - Handle unavailability via `_attr_available`

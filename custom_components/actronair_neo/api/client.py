@@ -883,11 +883,14 @@ class ActronAirNeoApiClient:
 
     # --- Cache management ---
 
-    async def _invalidate_status_cache(self, serial: str) -> None:
+    async def invalidate_status_cache(self, serial: str) -> None:
         """Invalidate cached status data after commands."""
         cache_key = f"ac_status_{serial}"
         await self.response_cache.invalidate(cache_key)
         self.cached_status = None
+
+    # Backward-compatible alias for internal/test usage
+    _invalidate_status_cache = invalidate_status_cache
 
     async def clear_all_caches(self) -> None:
         """Clear all cached data."""

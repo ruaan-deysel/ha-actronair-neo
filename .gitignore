@@ -80,6 +80,11 @@ target/
 
 # AI agent scratch space
 .ai-scratch/
+.claude/
+
+# Playwright browser automation artifacts
+.playwright/
+.playwright-cli/
 
 # uv lock file (not needed for HA custom components)
 uv.lock
@@ -90,3 +95,4 @@ config/*
 
 # ActronAir API tokens (contains sensitive authentication data)
 utils/actron_token.json
+config/actron_token.json

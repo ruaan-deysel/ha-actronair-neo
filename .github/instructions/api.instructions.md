@@ -1,23 +1,39 @@
 ---
-applyTo: "custom_components/**/api_wrapper.py, custom_components/**/api.py"
+applyTo: "custom_components/**/api/*.py"
 ---
 
 # API Client Instructions
 
-**Applies to:** `api_wrapper.py` (primary) and `api.py` (legacy)
+**Applies to:** `custom_components/actronair_neo/api/` (`auth.py`, `client.py`,
+`const.py`, `models.py`)
+
+## Integration Quality Scale (MANDATORY)
+
+Always follow the official rules:
+<https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
 
 ## Three-Layer Architecture (CRITICAL)
 
-**Entities → Coordinator → API Wrapper** — Never skip layers
+**Entities → Coordinator → API Client** — Never skip layers
 
 - **Entities:** Read `coordinator.data` only, never call API
-- **Coordinator:** Calls `api_wrapper.py`, transforms data, handles errors/timing
-- **API Wrapper:** HTTP communication, auth, exception translation
+- **Coordinator:** Calls `api/client.py`, transforms data, handles timing/errors
+- **API package:** HTTP communication, auth, transport-level exception translation
 
-## Prefer api_wrapper.py
+## Module Responsibilities
 
-`api_wrapper.py` is the primary API client. `api.py` is legacy and should not
-receive new features. All new API functionality goes in `api_wrapper.py`.
+- `auth.py`:
+  - OAuth2 device-code flow (`request_device_code`, `poll_for_token`)
+  - Token validation/refresh lifecycle
+  - Token refresh callback for persistence
+- `client.py`:
+  - Core HTTP requests, retries, rate limiting, and response caching
+  - Device/platform resolution and command dispatch
+  - Transport/auth error translation to integration exceptions
+- `models.py`:
+  - Typed runtime models used by coordinator/API interactions
+- `const.py`:
+  - API endpoints, timeouts, retry constants, and OAuth constants
 
 ## API Client Rules
 
@@ -29,14 +45,14 @@ receive new features. All new API functionality goes in `api_wrapper.py`.
 
 **Timeout handling:**
 
-- Use `asyncio.timeout()` not `async_timeout`
-- Set reasonable timeout per request (10-30s typical)
+- Use `aiohttp.ClientTimeout(...)` or `asyncio.timeout(...)`
+- Set reasonable timeout per request (typically 10-30s)
 
 **Return values:**
 
-- Return raw API response data
-- Let coordinator transform data for entities
-- Don't process/restructure in API client
+- Return API data that coordinator can parse into entity-ready state
+- Keep Home Assistant entity semantics out of API layer
+- Leave coordinator-level flattening/normalization in `coordinator.py`
 
 ## Exception Hierarchy
 
@@ -49,16 +65,16 @@ Defined in `exceptions.py`:
 - `DeviceOfflineError` — Device unreachable / network failure
 - `RateLimitError` — API rate limiting (429)
 
-**Always translate HTTP errors to these integration-specific exceptions.**
+Always translate HTTP/network/auth failures to integration-specific exceptions.
 
 ## Coordinator Exception Mapping
 
-| API Exception | Coordinator Exception | HA Behavior |
-| ------------- | --------------------- | ----------- |
-| `AuthenticationError` | `ConfigEntryAuthFailed` | Triggers reauth |
-| `DeviceOfflineError` | `UpdateFailed(...)` | Retry with backoff |
-| `RateLimitError` | `UpdateFailed(retry_after=60)` | Wait before retry |
-| `ApiError` | `UpdateFailed(...)` | Retry with backoff |
+| API Exception         | Coordinator Exception   | HA Behavior        |
+| --------------------- | ----------------------- | ------------------ |
+| `AuthenticationError` | `ConfigEntryAuthFailed` | Triggers reauth    |
+| `DeviceOfflineError`  | `UpdateFailed(...)`     | Retry with backoff |
+| `RateLimitError`      | `UpdateFailed(...)`     | Retry with backoff |
+| `ApiError`            | `UpdateFailed(...)`     | Retry with backoff |
 
 ## Zone Commands
 
@@ -74,12 +90,12 @@ ActronAir Neo uses zone-based commands:
 
 - Create `aiohttp.ClientSession()` in API client
 - Call API directly from entities
-- Return transformed/restructured data from API client
-- Implement retry logic in API client (coordinator does this)
+- Raise `ConfigEntryAuthFailed` / `UpdateFailed` in API package
+- Put Home Assistant-specific logic in API package
 
 **✅ Do:**
 
 - Accept session parameter in `__init__`
 - Translate all HTTP/network exceptions to integration-specific types
-- Return raw data to coordinator
+- Keep transport/auth logic isolated from entity behavior
 - Use specific exception types for different failure modes

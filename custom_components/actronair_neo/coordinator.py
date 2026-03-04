@@ -19,7 +19,7 @@ from homeassistant.helpers.update_coordinator import (  # type: ignore[import-un
     UpdateFailed,
 )
 
-from .api.const import MAX_RETRIES, MIN_FAN_MODE_INTERVAL, RETRYABLE_STATUS_CODES
+from .api.const import MIN_FAN_MODE_INTERVAL
 from .const import (
     ADVANCE_FAN_MODES,
     DOMAIN,
@@ -390,11 +390,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         # Get supported modes
         supported_fan_modes: list[str] | frozenset[str]
-        if indoor_unit.get("NV_AutoFanEnabled", False):
+        auto_fan_enabled = indoor_unit.get("NV_AutoFanEnabled", False)
+        if auto_fan_enabled:
             supported_fan_modes = ADVANCE_FAN_MODES
         else:
+            fan_mode = user_aircon_settings.get("FanMode", "")
             supported_fan_modes = self._validate_fan_modes(
-                indoor_unit.get("NV_SupportedFanModes", 0)
+                indoor_unit.get("NV_SupportedFanModes", 0),
+                current_fan_mode=fan_mode,
+                auto_fan_enabled=auto_fan_enabled,
             )
 
         # Get fan mode and check for continuous state using '+CONT'
@@ -628,7 +632,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
             self._last_memory_cleanup = now
 
-    def _validate_fan_modes(self, modes: Any) -> list[str]:
+    def _validate_fan_modes(
+        self,
+        modes: Any,
+        *,
+        current_fan_mode: str | None = None,
+        auto_fan_enabled: bool = False,
+    ) -> list[str]:
         """
         Validate and normalize supported fan modes.
 
@@ -644,15 +654,25 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         try:
             if isinstance(modes, int):
-                return self._decode_fan_mode_bitmap(modes, default_modes)
+                return self._decode_fan_mode_bitmap(
+                    modes,
+                    default_modes,
+                    current_fan_mode=current_fan_mode,
+                    auto_fan_enabled=auto_fan_enabled,
+                )
 
             return self._parse_fan_mode_list(modes, default_modes)
 
         except (KeyError, TypeError, ValueError):
             return default_modes
 
+    @staticmethod
     def _decode_fan_mode_bitmap(
-        self, modes: int, default_modes: list[str]
+        modes: int,
+        default_modes: list[str],
+        *,
+        current_fan_mode: str | None = None,
+        auto_fan_enabled: bool = False,
     ) -> list[str]:
         """
         Decode fan mode bitmap value from the API.
@@ -660,13 +680,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         Args:
             modes: Bitmap integer (1=LOW, 2=MED, 4=HIGH, 8=AUTO)
             default_modes: Fallback modes if decoding fails
+            current_fan_mode: The current fan mode string from the API
+            auto_fan_enabled: Whether AUTO fan mode is enabled
 
         Returns:
             List of supported fan mode strings
 
         """
-        # Get current fan mode to check for HIGH support
-        current_mode = self._get_current_fan_mode()
+        # Extract base mode (strip +CONT suffix)
+        current_mode = current_fan_mode.split("+")[0] if current_fan_mode else None
 
         # Process bitmap
         supported: list[str] = []
@@ -676,40 +698,14 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             supported.append("MED")
         if modes & 4:
             supported.append("HIGH")
-        if modes & 8:
-            auto_enabled = self._is_auto_fan_enabled()
-            if auto_enabled:
-                supported.append("AUTO")
+        if modes & 8 and auto_fan_enabled:
+            supported.append("AUTO")
 
         # Use defaults if HIGH mode active or basic modes set without AUTO
         if current_mode == "HIGH" or (modes & 0x03 and not (modes & 0x08)):
             return default_modes
 
         return supported or default_modes
-
-    def _get_current_fan_mode(self) -> str | None:
-        """Get the current fan mode from coordinator data."""
-        if not (hasattr(self, "data") and self.data is not None):
-            return None
-
-        user_settings = (
-            self.data.get("raw_data", {})
-            .get("lastKnownState", {})
-            .get("UserAirconSettings", {})
-        )
-        return user_settings.get("FanMode", "")
-
-    def _is_auto_fan_enabled(self) -> bool:
-        """Check if AUTO fan mode is enabled on the indoor unit."""
-        if not (hasattr(self, "data") and self.data is not None):
-            return False
-        indoor_unit = (
-            self.data.get("raw_data", {})
-            .get("lastKnownState", {})
-            .get("AirconSystem", {})
-            .get("IndoorUnit", {})
-        )
-        return indoor_unit.get("NV_AutoFanEnabled", False)
 
     @staticmethod
     def _parse_fan_mode_list(modes: Any, default_modes: list[str]) -> list[str]:
@@ -799,6 +795,18 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         await self.api.send_command(self.device_id, command)
         await self.async_request_refresh()
 
+    async def turn_on(self) -> None:
+        """Turn the AC system on."""
+        command = self.api.create_command("ON")
+        await self.api.send_command(self.device_id, command)
+        await self.async_request_refresh()
+
+    async def turn_off(self) -> None:
+        """Turn the AC system off."""
+        command = self.api.create_command("OFF")
+        await self.api.send_command(self.device_id, command)
+        await self.async_request_refresh()
+
     async def set_temperature(self, temperature: float, *, is_cooling: bool) -> None:
         """Set temperature."""
         command = self.api.create_command(
@@ -852,64 +860,68 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         self, validated_mode: str, *, continuous: bool
     ) -> None:
         """
-        Send fan mode command with retry logic.
+        Send fan mode command with verification retry.
+
+        Sends the command via the API (which handles its own transport-level
+        retries) then verifies continuous mode was applied correctly.
 
         Args:
             validated_mode: The validated fan mode string
             continuous: Whether continuous fan mode is enabled
 
         """
-        for attempt in range(MAX_RETRIES):
-            try:
-                command = self.api.create_command("FAN_MODE", mode=validated_mode)
+        max_verify_attempts = 3
+        for attempt in range(max_verify_attempts):
+            command = self.api.create_command("FAN_MODE", mode=validated_mode)
+            await self.api.send_command(self.device_id, command)
 
-                await self.api.send_command(self.device_id, command)
+            # Update state tracking
+            self._last_fan_mode_change = (
+                datetime.datetime.now()  # noqa: DTZ005
+            )
+            self._continuous_fan = continuous
 
-                # Update state tracking
-                self._last_fan_mode_change = (
-                    datetime.datetime.now()  # noqa: DTZ005
-                )
-                self._continuous_fan = continuous
+            # Force immediate refresh (blocking to ensure fresh data
+            # before verification)
+            await self.async_refresh()
 
-                # Force immediate refresh (blocking to ensure fresh data
-                # before verification)
-                await self.async_refresh()
+            # Verify the change
+            new_mode = self.data["main"].get("fan_mode", "")
 
-                # Verify the change
-                new_mode = self.data["main"].get("fan_mode", "")
-
-                # Validate continuous mode was set correctly
-                if continuous and "+CONT" not in new_mode:
-                    if attempt < MAX_RETRIES - 1:
-                        await asyncio.sleep(2**attempt)
-                        continue
-                    _LOGGER.warning(
-                        "Failed to set continuous mode after %d attempts",
-                        MAX_RETRIES,
-                    )
-
-                break
-
-            except ApiError as e:
-                if (
-                    e.status_code in RETRYABLE_STATUS_CODES
-                    and attempt < MAX_RETRIES - 1
-                ):
-                    wait_time = 2**attempt
-                    await asyncio.sleep(wait_time)
+            # Validate continuous mode was set correctly
+            if continuous and "+CONT" not in new_mode:
+                if attempt < max_verify_attempts - 1:
+                    await asyncio.sleep(2**attempt)
                     continue
-                raise
+                _LOGGER.warning(
+                    "Failed to set continuous mode after %d attempts",
+                    max_verify_attempts,
+                )
+
+            break
 
     async def set_zone_temperature(
-        self, zone_id: str, temperature: float, temp_key: str
+        self,
+        zone_id: str,
+        temperature: float | None = None,
+        *,
+        target_cool: float | None = None,
+        target_heat: float | None = None,
     ) -> None:
         """
         Set temperature for a specific zone with comprehensive validation.
 
+        Supports two calling conventions:
+        - Single target: ``set_zone_temperature(zone_id, temperature=22.0)``
+        - Separate targets: ``set_zone_temperature(zone_id, target_cool=24.0,
+          target_heat=20.0)``
+
         Args:
-            zone_id: Identifier for the zone
-            temperature: Target temperature
-            temp_key: Temperature key for heating or cooling
+            zone_id: Identifier for the zone (e.g. ``"zone_1"``)
+            temperature: Single target temperature (mutually exclusive with
+                target_cool/target_heat)
+            target_cool: Cooling setpoint (use with target_heat)
+            target_heat: Heating setpoint (use with target_cool)
 
         Raises:
             ZoneError: If zone-specific validation fails
@@ -936,16 +948,16 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         # ActronAir API supports this. It's useful for pre-setting
         # temperatures before enabling zones.
 
-        # Validate temperature range
-        if not (MIN_TEMP <= temperature <= MAX_TEMP):
-            msg = (
-                f"Temperature {temperature} outside "
-                f"valid range [{MIN_TEMP}, {MAX_TEMP}]"
-            )
-            raise ZoneError(
-                msg,
-                zone_id=zone_id,
-            )
+        # Validate temperature range for all provided values
+        for temp_val in [
+            t for t in [temperature, target_cool, target_heat] if t is not None
+        ]:
+            if not (MIN_TEMP <= temp_val <= MAX_TEMP):
+                msg = (
+                    f"Temperature {temp_val} outside "
+                    f"valid range [{MIN_TEMP}, {MAX_TEMP}]"
+                )
+                raise ZoneError(msg, zone_id=zone_id)
 
         # Check zone capabilities
         capabilities = zone_data.get("capabilities")
@@ -954,13 +966,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise ZoneError(msg, zone_id=zone_id)
 
         zone_index = int(zone_id.split("_")[1]) - 1
-        command = self.api.create_command(
-            "SET_ZONE_TEMP",
-            zone=zone_index,
-            temp=temperature,
-            temp_key=temp_key,
+
+        # Delegate to the API client which handles locking and
+        # command construction for both single and separate targets.
+        await self.api.set_zone_temperature(
+            zone_index=zone_index,
+            temperature=temperature,
+            target_cool=target_cool,
+            target_heat=target_heat,
         )
-        await self.api.send_command(self.device_id, command)
         await self.async_request_refresh()
 
     async def set_zone_state(self, zone_id: str | int, *, enable: bool) -> None:
@@ -1053,9 +1067,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     async def invalidate_cache(self) -> None:
         """Invalidate cached data to force fresh API calls."""
-        await self.api._invalidate_status_cache(  # noqa: SLF001
-            self.device_id
-        )
+        await self.api.invalidate_status_cache(self.device_id)
 
     async def cleanup_expired_cache(self) -> None:
         """Clean up expired cache entries."""
@@ -1198,14 +1210,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         if zone_config.get("temp_cool") is not None:
             await self.set_zone_temperature(
                 zone_id,
-                zone_config["temp_cool"],
-                "temp_setpoint_cool",
+                target_cool=zone_config["temp_cool"],
             )
         if zone_config.get("temp_heat") is not None:
             await self.set_zone_temperature(
                 zone_id,
-                zone_config["temp_heat"],
-                "temp_setpoint_heat",
+                target_heat=zone_config["temp_heat"],
             )
 
     async def async_bulk_zone_operation(
@@ -1280,14 +1290,20 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.set_zone_state(zone_id, enable=False)
         elif operation == "set_temperature":
             temperature = kwargs.get("temperature")
-            temp_key = kwargs.get("temp_key", "temp_setpoint_cool")
-            if temperature is None:
+            target_cool = kwargs.get("target_cool")
+            target_heat = kwargs.get("target_heat")
+            if temperature is None and target_cool is None and target_heat is None:
                 return {
                     "zone_id": zone_id,
                     "status": "error",
                     "error": "No temperature provided",
                 }
-            await self.set_zone_temperature(zone_id, temperature, temp_key)
+            await self.set_zone_temperature(
+                zone_id,
+                temperature=temperature,
+                target_cool=target_cool,
+                target_heat=target_heat,
+            )
         return {"zone_id": zone_id, "status": "success"}
 
     def _convert_damper_position(self, api_position: int | None) -> int:

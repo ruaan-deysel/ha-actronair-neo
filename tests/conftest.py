@@ -93,6 +93,7 @@ def create_mock_coordinator(
     coord.set_temperature = AsyncMock()
     coord.set_fan_mode = AsyncMock()
     coord.set_zone_state = AsyncMock()
+    coord.set_zone_temperature = AsyncMock()
     coord.set_away_mode = AsyncMock()
     coord.set_quiet_mode = AsyncMock()
     coord.set_enable_zone_control = AsyncMock()

@@ -191,15 +191,10 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
             return  # No change needed
 
         if hvac_mode == HVACMode.OFF:
-            command = self.coordinator.api.create_command("OFF")
+            await self.coordinator.turn_off()
         else:
             actron_mode = self._ha_to_actron_hvac_mode(hvac_mode)
-            command = self.coordinator.api.create_command(
-                "CLIMATE_MODE", mode=actron_mode
-            )
-
-        await self.coordinator.api.send_command(self.coordinator.device_id, command)
-        await self.coordinator.async_request_refresh()
+            await self.coordinator.set_hvac_mode(actron_mode)
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set fan mode with model-specific validation."""
@@ -235,18 +230,14 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
         if self.hvac_mode != HVACMode.OFF:
             return  # Already on
 
-        command = self.coordinator.api.create_command("ON")
-        await self.coordinator.api.send_command(self.coordinator.device_id, command)
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.turn_on()
 
     async def async_turn_off(self) -> None:
         """Turn the entity off."""
         if self.hvac_mode == HVACMode.OFF:
             return  # Already off
 
-        command = self.coordinator.api.create_command("OFF")
-        await self.coordinator.api.send_command(self.coordinator.device_id, command)
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.turn_off()
 
     def _actron_to_ha_hvac_mode(self, mode: str) -> HVACMode:
         """Convert Actron HVAC mode to HA HVAC mode."""
@@ -451,16 +442,14 @@ class ActronZoneClimate(ActronAirNeoEntity, ClimateEntity):
         if not self.coordinator.enable_zone_control:
             return
 
-        zone_index = int(self.zone_id.split("_")[1]) - 1
-
         if self._has_separate_targets:
             # Handle separate heat/cool targets
             target_high = kwargs.get("target_temp_high")
             target_low = kwargs.get("target_temp_low")
 
             if target_high is not None or target_low is not None:
-                await self.coordinator.api.set_zone_temperature(
-                    zone_index=zone_index,
+                await self.coordinator.set_zone_temperature(
+                    self.zone_id,
                     target_cool=target_high,
                     target_heat=target_low,
                 )
@@ -469,8 +458,8 @@ class ActronZoneClimate(ActronAirNeoEntity, ClimateEntity):
                 # Handle single target when separate targets are supported
                 temperature = kwargs.get(ATTR_TEMPERATURE)
                 if temperature is not None:
-                    await self.coordinator.api.set_zone_temperature(
-                        zone_index=zone_index,
+                    await self.coordinator.set_zone_temperature(
+                        self.zone_id,
                         target_cool=temperature,
                         target_heat=temperature,
                     )
@@ -479,14 +468,10 @@ class ActronZoneClimate(ActronAirNeoEntity, ClimateEntity):
             # Handle single target
             temperature = kwargs.get(ATTR_TEMPERATURE)
             if temperature is not None:
-                if not MIN_TEMP <= temperature <= MAX_TEMP:
-                    return
-
-                await self.coordinator.api.set_zone_temperature(
-                    zone_index=zone_index, temperature=temperature
+                await self.coordinator.set_zone_temperature(
+                    self.zone_id,
+                    temperature=temperature,
                 )
-
-        await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:
         """Turn the entity on."""

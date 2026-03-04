@@ -19,7 +19,11 @@ env.bak/
 .venv
 
 # VS Code settings
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.default.jsonc
+!.vscode/tasks.json
 
 # IDE files
 .idea/

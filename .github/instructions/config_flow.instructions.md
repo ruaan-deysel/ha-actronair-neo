@@ -11,11 +11,6 @@ applyTo: "custom_components/**/config_flow.py"
 - [Config Flow Handler](https://developers.home-assistant.io/docs/config_entries_config_flow_handler)
 - [Data Entry Flow](https://developers.home-assistant.io/docs/data_entry_flow_index)
 
-## Integration Quality Scale (MANDATORY)
-
-Always follow the official rules:
-<https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
-
 ## File Organization
 
 This integration uses a single `config_flow.py` file (not a package). Keep all
@@ -53,16 +48,21 @@ config flow logic here unless it grows beyond ~400 lines.
 
 ```python
 async def async_step_user(self, user_input=None):
-    # Request device code, wait for auth completion, then fetch devices.
-    ...
-
-async def async_step_finish_auth(self, user_input=None):
-    devices = await api.get_devices()
-    if len(devices) == 1:
-        await self.async_set_unique_id(devices[0].serial)
-        self._abort_if_unique_id_configured()
-        return self.async_create_entry(...)
-    return await self.async_step_select_device()
+    errors = {}
+    if user_input is not None:
+        try:
+            serial = await validate_credentials(user_input)
+            await self.async_set_unique_id(serial)
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(title=serial, data=user_input)
+        except AuthenticationError:
+            errors["base"] = "invalid_auth"
+        except ApiError:
+            errors["base"] = "cannot_connect"
+        except Exception:
+            _LOGGER.exception("Unexpected exception")
+            errors["base"] = "unknown"
+    return self.async_show_form(step_id="user", data_schema=SCHEMA, errors=errors)
 ```
 
 **Common error keys:** `cannot_connect`, `invalid_auth`, `unknown`

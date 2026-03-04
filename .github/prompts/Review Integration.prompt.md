@@ -1,6 +1,6 @@
 ---
 agent: "agent"
-tools: ["search/codebase", "search", "runCommands"]
+tools: ["search/codebase", "search", "execute/runInTerminal"]
 description: "Perform a quality and architecture review of the integration"
 ---
 

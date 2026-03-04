@@ -60,15 +60,12 @@ class ActronHealthMonitorSensor(ActronAirNeoEntity, BinarySensorEntity):
     def is_on(self) -> bool:
         """Return True if there are system issues."""
         try:
-            raw_data = self.coordinator.data["raw_data"]
-            last_known_state = raw_data.get("lastKnownState", {}).get(
-                f"<{self.coordinator.device_id.upper()}>", {}
-            )
-            live_aircon = last_known_state.get("LiveAircon", {})
+            live_aircon = self.coordinator.data["live_aircon"]
+            servicing = self.coordinator.data["servicing"]
 
             # Check for various error conditions
-            return bool(live_aircon.get("ErrCode", 0) != 0) or bool(
-                last_known_state.get("Servicing", {}).get("NV_ErrorHistory", [])
+            return bool(live_aircon.get("err_code", 0) != 0) or bool(
+                servicing.get("error_history", [])
             )
 
         except (KeyError, TypeError, ValueError):
@@ -78,15 +75,12 @@ class ActronHealthMonitorSensor(ActronAirNeoEntity, BinarySensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return simplified health-related attributes focusing on unique data."""
         try:
-            raw_data = self.coordinator.data["raw_data"]
-            last_known_state = raw_data.get("lastKnownState", {}).get(
-                f"<{self.coordinator.device_id.upper()}>", {}
-            )
-            servicing = last_known_state.get("Servicing", {})
+            servicing = self.coordinator.data["servicing"]
+            connection_meta = self.coordinator.data["connection_meta"]
 
             # Focus on unique health data not available in enhanced sensors
-            error_history = servicing.get("NV_ErrorHistory", [])
-            recent_events = servicing.get("NV_AC_EventHistory", [])[:5]
+            error_history = servicing.get("error_history", [])
+            recent_events = servicing.get("event_history", [])[:5]
 
             return {
                 # Unique health monitoring data
@@ -96,7 +90,9 @@ class ActronHealthMonitorSensor(ActronAirNeoEntity, BinarySensorEntity):
                 "last_error": error_history[-1] if error_history else "None",
                 # Health status summary
                 "health_status": "Issues Detected" if self.is_on else "Healthy",
-                "last_health_check": raw_data.get("lastStatusUpdate", "Unknown"),
+                "last_health_check": connection_meta.get(
+                    "last_status_update", "Unknown"
+                ),
                 # Note: error_code now available in system_diagnostics sensor
                 "note": "Current error code available in system_diagnostics sensor",
             }
@@ -201,21 +197,13 @@ class ActronActiveWarningsSensor(ActronAirNeoEntity, BinarySensorEntity):
         }
 
         # Expose historical error codes from outdoor unit for diagnostics
-        # (ErrCode_1-5 are stored error logs, not active warnings)
-        raw_data = self.coordinator.data.get("raw_data", {})
-        live_aircon = raw_data.get("LiveAircon", {})
-        outdoor_unit = live_aircon.get("OutdoorUnit", {})
+        # (err_codes are stored error logs, not active warnings)
+        outdoor_unit = self.coordinator.data.get("outdoor_unit", {})
+        err_codes = outdoor_unit.get("err_codes", [])
         historical_codes = {}
-        for key in (
-            "ErrCode_1",
-            "ErrCode_2",
-            "ErrCode_3",
-            "ErrCode_4",
-            "ErrCode_5",
-        ):
-            code = outdoor_unit.get(key, 0)
+        for i, code in enumerate(err_codes, start=1):
             if code and code != 0:
-                historical_codes[key] = code
+                historical_codes[f"ErrCode_{i}"] = code
         if historical_codes:
             attrs["historical_error_codes"] = historical_codes
 

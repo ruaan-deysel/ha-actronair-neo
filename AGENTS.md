@@ -87,23 +87,6 @@ types. This document serves as the primary reference for all agents.
 - **GitHub Copilot:** See [`.github/copilot-instructions.md`](.github/copilot-instructions.md)
   (compact version of this file)
 
-## Integration Quality Scale Compliance (MANDATORY)
-
-All AI agents working in this repository MUST follow Home Assistant's official
-Integration Quality Scale rules:
-
-- [Integration Quality Scale Rules](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules)
-
-**Required behavior:**
-
-1. Treat the rules page above as the source of truth for quality requirements
-2. Apply all rules relevant to the files and behavior you are changing
-3. Do not introduce changes that knowingly violate applicable IQS rules
-4. If local project guidance conflicts with IQS, call it out and ask for explicit
-   developer direction
-5. If IQS compliance requires tests or validation updates, include them (or clearly
-   explain the gap if deferred by the developer)
-
 ---
 
 ## Working With Developers
@@ -171,30 +154,24 @@ This integration controls ActronAir Neo HVAC systems via cloud polling.
 
 ```text
 custom_components/actronair_neo/
-├── __init__.py          # Integration setup, config migration, services registration
-├── api/
-│   ├── __init__.py      # API package exports
-│   ├── auth.py          # OAuth2 device-code auth + token refresh
-│   ├── client.py        # ActronAirNeoApiClient transport, caching, retries
-│   ├── const.py         # API-specific constants/endpoints
-│   └── models.py        # API/coordinator models and typed structures
+├── __init__.py          # Integration setup (async_setup_entry, async_unload_entry)
+├── api.py               # Legacy API client (prefer api_wrapper.py for new code)
+├── api_wrapper.py       # Primary API client (zone management, AC commands)
+├── base_entity.py       # ActronAirNeoBaseEntity base class
 ├── binary_sensor.py     # Binary sensor platform
-├── climate.py           # Main climate + optional per-zone climate entities
-├── config_flow.py       # Device-code OAuth config + reauth + options
-├── const.py             # Integration constants (DOMAIN, PLATFORMS, services)
+├── climate.py           # Main climate platform (HVAC control)
+├── config_flow.py       # Configuration flow
+├── const.py             # All constants (DOMAIN, modes, features)
 ├── coordinator.py       # DataUpdateCoordinator (ActronDataCoordinator)
-├── cover.py             # Zone damper (YourZone airflow) entities
-├── diagnostics.py       # Diagnostics payloads (must redact sensitive data)
-├── entity.py            # ActronAirNeoEntity shared base class
+├── diagnostics.py       # Diagnostics (redact sensitive data!)
 ├── exceptions.py        # Custom exception hierarchy
 ├── manifest.json        # Integration metadata
-├── number.py            # Number entities (after-hours duration)
-├── repairs.py           # Repair flows and issue checks
-├── sensor.py            # Sensor platform (temperature, humidity, diagnostics)
-├── services.yaml        # Service action schemas
+├── number.py            # Number platform (temperature setpoints, zone limits)
+├── repairs.py           # Repair flows for issue recovery
+├── sensor.py            # Sensor platform (temperature, humidity, status)
 ├── strings.json         # Translation source
-├── switch.py            # Switch platform (zone toggles, modes)
-├── types.py             # Legacy TypedDict compatibility types
+├── switch.py            # Switch platform (zone toggles, continuous fan, etc.)
+├── types.py             # TypedDict definitions for API responses
 ├── zone_presets.py      # Zone preset management
 └── translations/
     └── en.json          # English translations
@@ -202,11 +179,11 @@ custom_components/actronair_neo/
 
 ### Data Flow (CRITICAL)
 
-Entities → Coordinator → API Client — Never skip layers
+Entities → Coordinator → API Wrapper — Never skip layers
 
 - **Entities:** Read `coordinator.data` only, never call API directly
-- **Coordinator:** Calls `api/client.py`, transforms/parses data, handles errors
-- **API Client:** HTTP communication with ActronAir cloud, auth, command dispatch
+- **Coordinator:** Calls `api_wrapper.py`, transforms data, handles errors
+- **API Wrapper:** HTTP communication with ActronAir cloud, auth, command dispatch
 
 ### Entity Platforms
 
@@ -216,8 +193,7 @@ Entities → Coordinator → API Client — Never skip layers
 | `sensor.py`        | Temperature, humidity, compressor, indoor/outdoor readings |
 | `binary_sensor.py` | On/off states (defrost, compressor on, away mode, etc.)    |
 | `switch.py`        | Zone toggles, continuous fan, quiet mode, away mode        |
-| `number.py`        | After-hours duration configuration                         |
-| `cover.py`         | Zone damper position (YourZone airflow control)            |
+| `number.py`        | Zone temperature limits, fan time settings                 |
 
 ### Zone Architecture
 
@@ -296,15 +272,14 @@ This integration uses the following identifiers consistently:
 Always import from `const.py` rather than hardcoding:
 
 - `DOMAIN` — `"actronair_neo"`
-- `DEVICE_MANUFACTURER` — `"ActronAir"`
+- `MANUFACTURER` — `"ActronAir"`
 - AC mode constants, feature flags, service names
 
-### Types and Models
+### Types (types.py)
 
-- Primary runtime/API models are in `api/models.py`
-- `types.py` exists for TypedDict compatibility and tests
+- All API response structures use `TypedDict` from `types.py`
 - Coordinator data structures should be typed
-- Do NOT add new untyped dicts for API data — extend typed models
+- Do NOT add new untyped dicts for API data — extend `types.py`
 
 ### Diagnostics (diagnostics.py)
 
@@ -320,7 +295,7 @@ See `.github/instructions/diagnostics.instructions.md` for patterns.
 
 Located in `config_flow.py` (single file, not a package — current project structure).
 
-- Supports device-code OAuth setup, reauth, and options flow
+- Supports user setup and options flow
 - Unique ID must be the AC serial number or account identifier
 - Never use IP addresses or hostnames as unique IDs
 
@@ -333,15 +308,14 @@ Located in `coordinator.py` as `ActronDataCoordinator`.
 - Maps API exceptions to `ConfigEntryAuthFailed` / `UpdateFailed`
 - Use `async_config_entry_first_refresh()` on setup
 
-### API Package (`api/`)
+### API Wrapper (api_wrapper.py)
 
-Primary API layer responsibilities:
+Primary API client. Key responsibilities:
 
 - Authentication with ActronAir cloud
 - Fetching AC system status and zone data
 - Sending commands (mode changes, setpoint, zone toggles)
 - Session management (accept session from `async_get_clientsession(hass)`)
-- Exposing `ActronAirNeoApiClient` and `ActronAirNeoAuth`
 
 ---
 
@@ -354,7 +328,7 @@ Primary API layer responsibilities:
 
 **Entities:**
 
-- Inherit from platform base + `ActronAirNeoEntity` (from `entity.py`)
+- Inherit from platform base + `ActronAirNeoBaseEntity` (from `base_entity.py`)
 - Read from `coordinator.data`, never call API directly
 - Use `EntityDescription` dataclasses for static entity metadata
 
@@ -454,9 +428,7 @@ See `.github/instructions/tests.instructions.md` for comprehensive patterns.
 - Propose a plan first before starting implementation
 - Get explicit confirmation from developer
 
-**Default:** Do NOT create or modify tests unless explicitly requested.
-**Exception:** If required to satisfy applicable Integration Quality Scale rules,
-add targeted tests or explicitly flag the compliance gap.
+**Important: Do NOT create or modify tests unless explicitly requested.**
 
 **Translation strategy:**
 
@@ -496,7 +468,7 @@ add targeted tests or explicitly flag the compliance gap.
 ## Additional Resources
 
 - [Home Assistant Developer Docs](https://developers.home-assistant.io/)
-- [Integration Quality Scale Rules](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules)
+- [Integration Quality Scale](https://developers.home-assistant.io/docs/integration_quality_scale_index)
 - [Ruff Rules](https://docs.astral.sh/ruff/rules/)
 - [pytest Documentation](https://docs.pytest.org/)
 - See `CONTRIBUTING.md` for contribution guidelines

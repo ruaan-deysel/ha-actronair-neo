@@ -477,7 +477,15 @@ async def _handle_bulk_zone_operation(call: ServiceCall) -> None:
         results = await coordinator.async_bulk_zone_operation(
             operation, zones, **kwargs
         )
-        sum(1 for r in results if r["status"] == "success")
+        failed = [r["zone"] for r in results if r["status"] != "success"]
+        if failed:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="bulk_operation_failed",
+                translation_placeholders={
+                    "error": f"Zones failed: {', '.join(str(z) for z in failed)}"
+                },
+            )
     except (ConfigurationError, ZoneError) as err:
         raise HomeAssistantError(
             translation_domain=DOMAIN,

@@ -126,6 +126,102 @@ class MainData(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class LiveAirconData(BaseModel):
+    """Live aircon operational data."""
+
+    model_config = ConfigDict(frozen=False)
+
+    system_on: bool = False
+    compressor_capacity: int = 0
+    compressor_mode: str = "OFF"
+    am_running_fan: bool = False
+    fan_rpm: int = 0
+    fan_pwm: int = 0
+    coil_inlet: float | None = None
+    err_code: int = 0
+    compressor_chasing_temp: float | None = None
+    compressor_live_temp: float | None = None
+
+
+class OutdoorUnitData(BaseModel):
+    """Outdoor unit live and system data."""
+
+    model_config = ConfigDict(frozen=False)
+
+    comp_power: float = 0.0
+    compressor_on: bool = False
+    comp_speed: int = 0
+    coil_temp: float | None = None
+    amb_temp: float | None = None
+    supply_voltage: float = 0.0
+    supply_current: float = 0.0
+    supply_power: float = 0.0
+    reverse_valve_position: str = "Unknown"
+    defrost_mode: int = 0
+    drm: bool = False
+    err_codes: list[int] = Field(default_factory=lambda: [0, 0, 0, 0, 0])
+    family: str = ""
+    ctrl_board_type: str = ""
+    capacity_kw: float = 0.0
+
+
+class SystemStatusData(BaseModel):
+    """Device system status data."""
+
+    model_config = ConfigDict(frozen=False)
+
+    uptime_seconds: int = 0
+    board_temp: float | None = None
+    wifi_strength: int | None = None
+    wifi_ssid: str = "Unknown"
+    wifi_channel: str = "Unknown"
+    wifi_firmware: str = "Unknown"
+    wifi_hw_errors: int = 0
+
+
+class CloudConnectionData(BaseModel):
+    """Cloud connection data."""
+
+    model_config = ConfigDict(frozen=False)
+
+    connection_state: str = "Unknown"
+    session_uptime: int = 0
+    sent_packets: int = 0
+    received_packets: int = 0
+    failed_sent_packets: int = 0
+    session_count_since_reset: int = 0
+    dns_failures: int = 0
+    aborted_sockets: int = 0
+
+
+class ServicingData(BaseModel):
+    """Servicing and error history data."""
+
+    model_config = ConfigDict(frozen=False)
+
+    error_history: list[Any] = Field(default_factory=list)
+    event_history: list[Any] = Field(default_factory=list)
+
+
+class ConnectionMetadata(BaseModel):
+    """Top-level connection metadata."""
+
+    model_config = ConfigDict(frozen=False)
+
+    is_online: bool = False
+    last_status_update: str = "Unknown"
+    time_since_last_contact: str = "Unknown"
+
+
+class VFTData(BaseModel):
+    """Variable fan technology data."""
+
+    model_config = ConfigDict(frozen=False)
+
+    supported: bool = False
+    airflow: float = 0.0
+
+
 class CoordinatorData(BaseModel):
     """Top-level data structure held by the coordinator."""
 
@@ -133,7 +229,13 @@ class CoordinatorData(BaseModel):
 
     main: MainData = Field(default_factory=MainData)
     zones: dict[str, ZoneData] = Field(default_factory=dict)
-    raw_data: dict[str, Any] = Field(default_factory=dict)
+    live_aircon: LiveAirconData = Field(default_factory=LiveAirconData)
+    outdoor_unit: OutdoorUnitData = Field(default_factory=OutdoorUnitData)
+    system_status: SystemStatusData = Field(default_factory=SystemStatusData)
+    cloud: CloudConnectionData = Field(default_factory=CloudConnectionData)
+    servicing: ServicingData = Field(default_factory=ServicingData)
+    connection_meta: ConnectionMetadata = Field(default_factory=ConnectionMetadata)
+    vft: VFTData = Field(default_factory=VFTData)
 
 
 # --- Raw API response type-hint models ---

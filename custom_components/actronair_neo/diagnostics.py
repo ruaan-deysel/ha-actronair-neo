@@ -40,8 +40,9 @@ async def async_get_config_entry_diagnostics(
         raise ValueError(msg)
 
     try:
-        # First get the correct path to the data
-        raw_data = coordinator.data.get("raw_data", {})
+        # Get raw API response snapshot for diagnostics
+        # (private, not in coordinator.data)
+        raw_data = coordinator.get_diagnostics_snapshot()
         full_state = raw_data.get("lastKnownState", {})
         # Use device serial to access the serial-keyed device section
         # (contains SystemStatus_Local, Cloud, etc.)

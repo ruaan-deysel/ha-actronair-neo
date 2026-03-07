@@ -19,11 +19,12 @@ from homeassistant.helpers.update_coordinator import (  # type: ignore[import-un
     UpdateFailed,
 )
 
-from .api.const import MAX_RETRIES, MIN_FAN_MODE_INTERVAL, RETRYABLE_STATUS_CODES
+from .api.const import MIN_FAN_MODE_INTERVAL
 from .const import (
     ADVANCE_FAN_MODES,
     DOMAIN,
     FAN_MODE_SUFFIX_CONT,
+    HUMIDITY_UNAVAILABLE,
     MAX_TEMP,
     MAX_ZONES,
     MIN_TEMP,
@@ -47,10 +48,17 @@ if TYPE_CHECKING:
     from .api import ActronAirNeoApiClient
     from .api.models import (
         AcStatusResponse,
+        CloudConnectionData,
+        ConnectionMetadata,
         CoordinatorData,
         FanModeType,
+        LiveAirconData,
         MainData,
+        OutdoorUnitData,
         PeripheralData,
+        ServicingData,
+        SystemStatusData,
+        VFTData,
         ZoneCapabilities,
         ZoneData,
     )
@@ -103,6 +111,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         # Enhanced zone management
         self.zone_preset_manager = ZonePresetManager(hass, device_id)
+
+        # Raw API response (private, for diagnostics only)
+        self._last_raw_response: dict[str, Any] = {}
 
         # Performance optimization: data processing cache
         self._parsed_data_cache: CoordinatorData | None = None
@@ -271,19 +282,22 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     async def _parse_data(self, data: AcStatusResponse) -> CoordinatorData:
         """
-        Parse the data from the API into a format suitable for the climate entity.
+        Parse the data from the API into structured data for entities.
 
         Args:
             data: Raw API response data
 
         Returns:
-            Dict containing parsed data including raw data for diagnostics
+            Dict containing fully parsed data (no raw_data passthrough)
 
         Raises:
             UpdateFailed: If parsing fails
 
         """
         try:
+            # Store raw response for diagnostics access only
+            self._last_raw_response = data
+
             # Extract main data sections for easier access
             last_known_state = data.get("lastKnownState", {})
             data_sections = self._extract_data_sections(last_known_state)
@@ -294,14 +308,31 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             # Parse zone data efficiently
             zones = await self._parse_zones_data(data_sections)
 
+            # Parse new structured sub-sections
+            live_aircon_data = self._parse_live_aircon_data(data_sections)
+            outdoor_unit_data = self._parse_outdoor_unit_data(data_sections)
+            system_status_data = self._parse_system_status_data(
+                data_sections["device_section"]
+            )
+            cloud_data = self._parse_cloud_data(data_sections["device_section"])
+            servicing_data = self._parse_servicing_data(data_sections["device_section"])
+            connection_meta = self._parse_connection_metadata(data)
+            vft_data = self._parse_vft_data(data_sections)
+
             # Update internal state
             self._continuous_fan = main_data["fan_continuous"]
 
-            # Construct the final result
+            # Construct the final result — no raw_data passthrough
             result: CoordinatorData = {  # type: ignore[assignment]
                 "main": main_data,
                 "zones": zones,
-                "raw_data": data,
+                "live_aircon": live_aircon_data,
+                "outdoor_unit": outdoor_unit_data,
+                "system_status": system_status_data,
+                "cloud": cloud_data,
+                "servicing": servicing_data,
+                "connection_meta": connection_meta,
+                "vft": vft_data,
             }
 
         except Exception as e:
@@ -354,6 +385,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             Dictionary with organized data sections
 
         """
+        # Find the serial-keyed device section (e.g. "<22H09780>")
+        device_section: dict[str, Any] = {}
+        for key, value in last_known_state.items():
+            if key.startswith("<") and key.endswith(">") and isinstance(value, dict):
+                device_section = value
+                break
+
         return {
             "user_aircon_settings": last_known_state.get("UserAirconSettings", {}),
             "master_info": last_known_state.get("MasterInfo", {}),
@@ -367,6 +405,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "peripherals": last_known_state.get("AirconSystem", {}).get(
                 "Peripherals", []
             ),
+            "device_section": device_section,
         }
 
     async def _parse_main_data(self, data_sections: dict) -> MainData:
@@ -389,11 +428,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         # Get supported modes
         supported_fan_modes: list[str] | frozenset[str]
-        if indoor_unit.get("NV_AutoFanEnabled", False):
+        auto_fan_enabled = indoor_unit.get("NV_AutoFanEnabled", False)
+        if auto_fan_enabled:
             supported_fan_modes = ADVANCE_FAN_MODES
         else:
+            fan_mode = user_aircon_settings.get("FanMode", "")
             supported_fan_modes = self._validate_fan_modes(
-                indoor_unit.get("NV_SupportedFanModes", 0)
+                indoor_unit.get("NV_SupportedFanModes", 0),
+                current_fan_mode=fan_mode,
+                auto_fan_enabled=auto_fan_enabled,
             )
 
         # Get fan mode and check for continuous state using '+CONT'
@@ -426,7 +469,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 "TemperatureSetpoint_Heat_oC"
             ),
             "indoor_temp": master_info.get("LiveTemp_oC"),
-            "indoor_humidity": master_info.get("LiveHumidity_pc"),
+            "indoor_humidity": self._parse_humidity(master_info.get("LiveHumidity_pc")),
             "compressor_state": live_aircon.get("CompressorMode", "OFF"),
             "EnabledZones": user_aircon_settings.get("EnabledZones", []),
             "away_mode": user_aircon_settings.get("AwayMode", False),
@@ -499,7 +542,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                         "setpoint": zone.get("TemperatureSetpoint_oC"),
                         "is_on": zone.get("CanOperate", False),
                         "capabilities": capabilities,
-                        "humidity": zone.get("LiveHumidity_pc"),
+                        "humidity": self._parse_humidity(zone.get("LiveHumidity_pc")),
                         "is_enabled": self._get_zone_enabled(user_aircon_settings, i),
                         "temp_setpoint_cool": capabilities.target_temp_cool,
                         "temp_setpoint_heat": capabilities.target_temp_heat,
@@ -590,6 +633,202 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 )
             break
 
+    def _parse_live_aircon_data(self, data_sections: dict) -> LiveAirconData:
+        """Parse live aircon operational data."""
+        live = data_sections.get("live_aircon", {})
+        return cast(
+            "LiveAirconData",
+            {
+                "system_on": live.get("SystemOn", False),
+                "compressor_capacity": live.get("CompressorCapacity", 0),
+                "compressor_mode": live.get("CompressorMode", "OFF"),
+                "am_running_fan": live.get("AmRunningFan", False),
+                "fan_rpm": live.get("FanRPM", 0),
+                "fan_pwm": live.get("FanPWM", 0),
+                "coil_inlet": live.get("CoilInlet"),
+                "err_code": live.get("ErrCode", 0),
+                "compressor_chasing_temp": live.get("CompressorChasingTemperature"),
+                "compressor_live_temp": live.get("CompressorLiveTemperature"),
+            },
+        )
+
+    def _parse_outdoor_unit_data(self, data_sections: dict) -> OutdoorUnitData:
+        """Parse outdoor unit live and system info data."""
+        live = data_sections.get("live_aircon", {})
+        ou_live = live.get("OutdoorUnit", {})
+        aircon_system = data_sections.get("aircon_system", {})
+        ou_system = aircon_system.get("OutdoorUnit", {})
+
+        # Handle API typos in field names
+        supply_current = ou_live.get(
+            "SupplyCurrentRMS_A", ou_live.get("SuppyCurrentRMS_A", 0)
+        )
+        supply_power = ou_live.get(
+            "SupplyPowerRMS_W", ou_live.get("SuppyPowerRMS_W", 0)
+        )
+
+        return cast(
+            "OutdoorUnitData",
+            {
+                "comp_power": ou_live.get("CompPower", 0),
+                "compressor_on": ou_live.get("CompressorOn", False),
+                "comp_speed": ou_live.get("CompSpeed", 0),
+                "coil_temp": ou_live.get("CoilTemp"),
+                "amb_temp": ou_live.get("AmbTemp"),
+                "supply_voltage": ou_live.get("SupplyVoltage_Vac", 0),
+                "supply_current": supply_current,
+                "supply_power": supply_power,
+                "reverse_valve_position": ou_live.get(
+                    "ReverseValvePosition", "Unknown"
+                ),
+                "defrost_mode": ou_live.get("DefrostMode", 0),
+                "drm": ou_live.get("DRM", False),
+                "err_codes": [
+                    ou_live.get("ErrCode_1", 0),
+                    ou_live.get("ErrCode_2", 0),
+                    ou_live.get("ErrCode_3", 0),
+                    ou_live.get("ErrCode_4", 0),
+                    ou_live.get("ErrCode_5", 0),
+                ],
+                "family": ou_system.get("Family", ""),
+                "ctrl_board_type": ou_system.get("CtrlBoardType", ""),
+                "capacity_kw": ou_system.get("Capacity_kW", 0),
+            },
+        )
+
+    @staticmethod
+    def _parse_system_status_data(device_section: dict) -> SystemStatusData:
+        """Parse device system status data from serial-keyed section."""
+        sys_status = device_section.get("SystemStatus_Local", {})
+        wifi = sys_status.get("WiFi", {})
+        sensor_inputs = sys_status.get("SensorInputs", {})
+        shtc1 = sensor_inputs.get("SHTC1", {})
+
+        return cast(
+            "SystemStatusData",
+            {
+                "uptime_seconds": sys_status.get("Uptime_s", 0),
+                "board_temp": shtc1.get("Temperature_oC"),
+                "wifi_strength": sys_status.get("WifiStrength_of3"),
+                "wifi_ssid": wifi.get("ApSSID", "Unknown"),
+                "wifi_channel": str(wifi.get("RFChannel", "Unknown")),
+                "wifi_firmware": wifi.get("FirmwareVersion", "Unknown"),
+                "wifi_hw_errors": wifi.get("HardwareErrorCount", 0),
+            },
+        )
+
+    @staticmethod
+    def _parse_cloud_data(device_section: dict) -> CloudConnectionData:
+        """Parse cloud connection data from serial-keyed section."""
+        cloud = device_section.get("Cloud", {})
+        connection = cloud.get("Connection", {})
+        error_counts = connection.get("ErrorCount", {})
+
+        return cast(
+            "CloudConnectionData",
+            {
+                "connection_state": cloud.get("ConnectionState", "Unknown"),
+                "session_uptime": connection.get("UpTime", {}).get(
+                    "CurrentSession_s", 0
+                ),
+                "sent_packets": cloud.get("SentPackets", 0),
+                "received_packets": cloud.get("ReceivedPackets", 0),
+                "failed_sent_packets": cloud.get("FailedSentPackets", 0),
+                "session_count_since_reset": connection.get("SessionCount", {}).get(
+                    "SinceLastMCUReset", 0
+                ),
+                "dns_failures": error_counts.get("DNSFailures", 0),
+                "aborted_sockets": error_counts.get("AbortedSockets", 0),
+            },
+        )
+
+    @staticmethod
+    def _parse_servicing_data(device_section: dict) -> ServicingData:
+        """Parse servicing and error history data."""
+        servicing = device_section.get("Servicing", {})
+        return cast(
+            "ServicingData",
+            {
+                "error_history": servicing.get("NV_ErrorHistory", []),
+                "event_history": servicing.get("NV_AC_EventHistory", []),
+            },
+        )
+
+    @staticmethod
+    def _parse_connection_metadata(data: dict) -> ConnectionMetadata:
+        """Parse top-level connection metadata from raw API response."""
+        return cast(
+            "ConnectionMetadata",
+            {
+                "is_online": data.get("isOnline", False),
+                "last_status_update": data.get("lastStatusUpdate", "Unknown"),
+                "time_since_last_contact": data.get("timeSinceLastContact", "Unknown"),
+            },
+        )
+
+    @staticmethod
+    def _parse_vft_data(data_sections: dict) -> VFTData:
+        """Parse variable fan technology data."""
+        user_settings = data_sections.get("user_aircon_settings", {})
+        vft = user_settings.get("VFT", {})
+        return cast(
+            "VFTData",
+            {
+                "supported": vft.get("Supported", False),
+                "airflow": vft.get("Airflow", 0.0),
+            },
+        )
+
+    def get_diagnostics_snapshot(self) -> dict[str, Any]:
+        """Return raw API response for diagnostics only."""
+        return self._last_raw_response
+
+    @property
+    def api_error_count(self) -> int:
+        """Return the API error count."""
+        return self.api.error_count
+
+    @property
+    def last_successful_api_request(self) -> datetime.datetime | None:
+        """Return the timestamp of the last successful API request."""
+        return self.api.last_successful_request
+
+    @property
+    def api_cache_size(self) -> int:
+        """Return the number of entries in the API response cache."""
+        return len(self.api.response_cache._cache)  # noqa: SLF001
+
+    def supports_power_monitoring(self) -> bool:
+        """Check if the outdoor unit supports power monitoring."""
+        ou = self.data.get("outdoor_unit", {}) if self.data else {}
+        family = ou.get("family", "")
+        ctrl_board_type = ou.get("ctrl_board_type", "")
+
+        # Fixed Speed Classic units with Type 100 controllers don't support
+        # power monitoring
+        if "Fixed Speed" in family and "Type 100" in ctrl_board_type:
+            return False
+
+        # Check if power fields have meaningful values
+        comp_power = ou.get("comp_power", 0)
+        supply_voltage = ou.get("supply_voltage", 0)
+        supply_current = ou.get("supply_current", 0)
+        compressor_on = ou.get("compressor_on", False)
+
+        if comp_power and comp_power > 0:
+            return True
+        if supply_voltage and supply_voltage > 0:
+            return True
+        if supply_current and supply_current > 0:
+            return True
+
+        # Family-based heuristic for units that may not report live data
+        # at first poll but are known to support power monitoring
+        if family and "Fixed Speed" not in family:
+            return compressor_on
+
+        return False
+
     async def _maybe_cleanup_cache(self) -> None:
         """Perform periodic cache cleanup if needed."""
         now = datetime.datetime.now()  # noqa: DTZ005
@@ -627,7 +866,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
             self._last_memory_cleanup = now
 
-    def _validate_fan_modes(self, modes: Any) -> list[str]:
+    def _validate_fan_modes(
+        self,
+        modes: Any,
+        *,
+        current_fan_mode: str | None = None,
+        auto_fan_enabled: bool = False,
+    ) -> list[str]:
         """
         Validate and normalize supported fan modes.
 
@@ -643,15 +888,25 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         try:
             if isinstance(modes, int):
-                return self._decode_fan_mode_bitmap(modes, default_modes)
+                return self._decode_fan_mode_bitmap(
+                    modes,
+                    default_modes,
+                    current_fan_mode=current_fan_mode,
+                    auto_fan_enabled=auto_fan_enabled,
+                )
 
             return self._parse_fan_mode_list(modes, default_modes)
 
         except (KeyError, TypeError, ValueError):
             return default_modes
 
+    @staticmethod
     def _decode_fan_mode_bitmap(
-        self, modes: int, default_modes: list[str]
+        modes: int,
+        default_modes: list[str],
+        *,
+        current_fan_mode: str | None = None,
+        auto_fan_enabled: bool = False,
     ) -> list[str]:
         """
         Decode fan mode bitmap value from the API.
@@ -659,13 +914,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         Args:
             modes: Bitmap integer (1=LOW, 2=MED, 4=HIGH, 8=AUTO)
             default_modes: Fallback modes if decoding fails
+            current_fan_mode: The current fan mode string from the API
+            auto_fan_enabled: Whether AUTO fan mode is enabled
 
         Returns:
             List of supported fan mode strings
 
         """
-        # Get current fan mode to check for HIGH support
-        current_mode = self._get_current_fan_mode()
+        # Extract base mode (strip +CONT suffix)
+        current_mode = current_fan_mode.split("+")[0] if current_fan_mode else None
 
         # Process bitmap
         supported: list[str] = []
@@ -675,40 +932,14 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             supported.append("MED")
         if modes & 4:
             supported.append("HIGH")
-        if modes & 8:
-            auto_enabled = self._is_auto_fan_enabled()
-            if auto_enabled:
-                supported.append("AUTO")
+        if modes & 8 and auto_fan_enabled:
+            supported.append("AUTO")
 
         # Use defaults if HIGH mode active or basic modes set without AUTO
         if current_mode == "HIGH" or (modes & 0x03 and not (modes & 0x08)):
             return default_modes
 
         return supported or default_modes
-
-    def _get_current_fan_mode(self) -> str | None:
-        """Get the current fan mode from coordinator data."""
-        if not (hasattr(self, "data") and self.data is not None):
-            return None
-
-        user_settings = (
-            self.data.get("raw_data", {})
-            .get("lastKnownState", {})
-            .get("UserAirconSettings", {})
-        )
-        return user_settings.get("FanMode", "")
-
-    def _is_auto_fan_enabled(self) -> bool:
-        """Check if AUTO fan mode is enabled on the indoor unit."""
-        if not (hasattr(self, "data") and self.data is not None):
-            return False
-        indoor_unit = (
-            self.data.get("raw_data", {})
-            .get("lastKnownState", {})
-            .get("AirconSystem", {})
-            .get("IndoorUnit", {})
-        )
-        return indoor_unit.get("NV_AutoFanEnabled", False)
 
     @staticmethod
     def _parse_fan_mode_list(modes: Any, default_modes: list[str]) -> list[str]:
@@ -741,8 +972,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         try:
             zone_index = int(zone_id.split("_")[1]) - 1
 
+            # Read from stored raw response (not from coordinator.data)
+            last_known_state = self._last_raw_response.get("lastKnownState", {})
+
             # Get zone sensor info from RemoteZoneInfo
-            remote_zone_info = self.data.get("raw_data", {}).get("RemoteZoneInfo", [])
+            remote_zone_info = last_known_state.get("RemoteZoneInfo", [])
             if zone_index >= len(remote_zone_info):
                 return None
 
@@ -763,10 +997,8 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             zone_serial = zone_sensor_kind.replace("ZS: ", "")
 
             # Find matching peripheral by serial number
-            peripherals = (
-                self.data.get("raw_data", {})
-                .get("AirconSystem", {})
-                .get("Peripherals", [])
+            peripherals = last_known_state.get("AirconSystem", {}).get(
+                "Peripherals", []
             )
 
             for peripheral in peripherals:
@@ -795,6 +1027,18 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             command = self.api.create_command("OFF")
         else:
             command = self.api.create_command("CLIMATE_MODE", mode=hvac_mode)
+        await self.api.send_command(self.device_id, command)
+        await self.async_request_refresh()
+
+    async def turn_on(self) -> None:
+        """Turn the AC system on."""
+        command = self.api.create_command("ON")
+        await self.api.send_command(self.device_id, command)
+        await self.async_request_refresh()
+
+    async def turn_off(self) -> None:
+        """Turn the AC system off."""
+        command = self.api.create_command("OFF")
         await self.api.send_command(self.device_id, command)
         await self.async_request_refresh()
 
@@ -851,64 +1095,68 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         self, validated_mode: str, *, continuous: bool
     ) -> None:
         """
-        Send fan mode command with retry logic.
+        Send fan mode command with verification retry.
+
+        Sends the command via the API (which handles its own transport-level
+        retries) then verifies continuous mode was applied correctly.
 
         Args:
             validated_mode: The validated fan mode string
             continuous: Whether continuous fan mode is enabled
 
         """
-        for attempt in range(MAX_RETRIES):
-            try:
-                command = self.api.create_command("FAN_MODE", mode=validated_mode)
+        max_verify_attempts = 3
+        for attempt in range(max_verify_attempts):
+            command = self.api.create_command("FAN_MODE", mode=validated_mode)
+            await self.api.send_command(self.device_id, command)
 
-                await self.api.send_command(self.device_id, command)
+            # Update state tracking
+            self._last_fan_mode_change = (
+                datetime.datetime.now()  # noqa: DTZ005
+            )
+            self._continuous_fan = continuous
 
-                # Update state tracking
-                self._last_fan_mode_change = (
-                    datetime.datetime.now()  # noqa: DTZ005
-                )
-                self._continuous_fan = continuous
+            # Force immediate refresh (blocking to ensure fresh data
+            # before verification)
+            await self.async_refresh()
 
-                # Force immediate refresh (blocking to ensure fresh data
-                # before verification)
-                await self.async_refresh()
+            # Verify the change
+            new_mode = self.data["main"].get("fan_mode", "")
 
-                # Verify the change
-                new_mode = self.data["main"].get("fan_mode", "")
-
-                # Validate continuous mode was set correctly
-                if continuous and "+CONT" not in new_mode:
-                    if attempt < MAX_RETRIES - 1:
-                        await asyncio.sleep(2**attempt)
-                        continue
-                    _LOGGER.warning(
-                        "Failed to set continuous mode after %d attempts",
-                        MAX_RETRIES,
-                    )
-
-                break
-
-            except ApiError as e:
-                if (
-                    e.status_code in RETRYABLE_STATUS_CODES
-                    and attempt < MAX_RETRIES - 1
-                ):
-                    wait_time = 2**attempt
-                    await asyncio.sleep(wait_time)
+            # Validate continuous mode was set correctly
+            if continuous and "+CONT" not in new_mode:
+                if attempt < max_verify_attempts - 1:
+                    await asyncio.sleep(2**attempt)
                     continue
-                raise
+                _LOGGER.warning(
+                    "Failed to set continuous mode after %d attempts",
+                    max_verify_attempts,
+                )
+
+            break
 
     async def set_zone_temperature(
-        self, zone_id: str, temperature: float, temp_key: str
+        self,
+        zone_id: str,
+        temperature: float | None = None,
+        *,
+        target_cool: float | None = None,
+        target_heat: float | None = None,
     ) -> None:
         """
         Set temperature for a specific zone with comprehensive validation.
 
+        Supports two calling conventions:
+        - Single target: ``set_zone_temperature(zone_id, temperature=22.0)``
+        - Separate targets: ``set_zone_temperature(zone_id, target_cool=24.0,
+          target_heat=20.0)``
+
         Args:
-            zone_id: Identifier for the zone
-            temperature: Target temperature
-            temp_key: Temperature key for heating or cooling
+            zone_id: Identifier for the zone (e.g. ``"zone_1"``)
+            temperature: Single target temperature (mutually exclusive with
+                target_cool/target_heat)
+            target_cool: Cooling setpoint (use with target_heat)
+            target_heat: Heating setpoint (use with target_cool)
 
         Raises:
             ZoneError: If zone-specific validation fails
@@ -935,16 +1183,16 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         # ActronAir API supports this. It's useful for pre-setting
         # temperatures before enabling zones.
 
-        # Validate temperature range
-        if not (MIN_TEMP <= temperature <= MAX_TEMP):
-            msg = (
-                f"Temperature {temperature} outside "
-                f"valid range [{MIN_TEMP}, {MAX_TEMP}]"
-            )
-            raise ZoneError(
-                msg,
-                zone_id=zone_id,
-            )
+        # Validate temperature range for all provided values
+        for temp_val in [
+            t for t in [temperature, target_cool, target_heat] if t is not None
+        ]:
+            if not (MIN_TEMP <= temp_val <= MAX_TEMP):
+                msg = (
+                    f"Temperature {temp_val} outside "
+                    f"valid range [{MIN_TEMP}, {MAX_TEMP}]"
+                )
+                raise ZoneError(msg, zone_id=zone_id)
 
         # Check zone capabilities
         capabilities = zone_data.get("capabilities")
@@ -953,13 +1201,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             raise ZoneError(msg, zone_id=zone_id)
 
         zone_index = int(zone_id.split("_")[1]) - 1
-        command = self.api.create_command(
-            "SET_ZONE_TEMP",
-            zone=zone_index,
-            temp=temperature,
-            temp_key=temp_key,
+
+        # Delegate to the API client which handles locking and
+        # command construction for both single and separate targets.
+        await self.api.set_zone_temperature(
+            zone_index=zone_index,
+            temperature=temperature,
+            target_cool=target_cool,
+            target_heat=target_heat,
         )
-        await self.api.send_command(self.device_id, command)
         await self.async_request_refresh()
 
     async def set_zone_state(self, zone_id: str | int, *, enable: bool) -> None:
@@ -1052,9 +1302,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     async def invalidate_cache(self) -> None:
         """Invalidate cached data to force fresh API calls."""
-        await self.api._invalidate_status_cache(  # noqa: SLF001
-            self.device_id
-        )
+        await self.api.invalidate_status_cache(self.device_id)
 
     async def cleanup_expired_cache(self) -> None:
         """Clean up expired cache entries."""
@@ -1197,14 +1445,12 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         if zone_config.get("temp_cool") is not None:
             await self.set_zone_temperature(
                 zone_id,
-                zone_config["temp_cool"],
-                "temp_setpoint_cool",
+                target_cool=zone_config["temp_cool"],
             )
         if zone_config.get("temp_heat") is not None:
             await self.set_zone_temperature(
                 zone_id,
-                zone_config["temp_heat"],
-                "temp_setpoint_heat",
+                target_heat=zone_config["temp_heat"],
             )
 
     async def async_bulk_zone_operation(
@@ -1279,14 +1525,20 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             await self.set_zone_state(zone_id, enable=False)
         elif operation == "set_temperature":
             temperature = kwargs.get("temperature")
-            temp_key = kwargs.get("temp_key", "temp_setpoint_cool")
-            if temperature is None:
+            target_cool = kwargs.get("target_cool")
+            target_heat = kwargs.get("target_heat")
+            if temperature is None and target_cool is None and target_heat is None:
                 return {
                     "zone_id": zone_id,
                     "status": "error",
                     "error": "No temperature provided",
                 }
-            await self.set_zone_temperature(zone_id, temperature, temp_key)
+            await self.set_zone_temperature(
+                zone_id,
+                temperature=temperature,
+                target_cool=target_cool,
+                target_heat=target_heat,
+            )
         return {"zone_id": zone_id, "status": "success"}
 
     def _convert_damper_position(self, api_position: int | None) -> int:
@@ -1347,11 +1599,39 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         return None
 
     @staticmethod
+    def _parse_humidity(raw_value: float | None) -> float | None:
+        """
+        Parse humidity, filtering sentinel values.
+
+        The API returns 3000.0 for LiveHumidity_pc when the humidity
+        sensor is unavailable (common on zones without a humidity-capable
+        sensor or wired sensors that only report temperature).
+
+        Args:
+            raw_value: Raw humidity from LiveHumidity_pc
+
+        Returns:
+            Humidity percentage, or None if unavailable
+
+        """
+        if raw_value is not None and raw_value < HUMIDITY_UNAVAILABLE:
+            return raw_value
+        return None
+
+    @staticmethod
     def _parse_warnings(live_aircon: dict) -> list[str]:
         """
         Parse active warnings from LiveAircon data.
 
-        Checks outdoor unit error codes and other warning indicators.
+        Only includes currently active error indicators:
+        - LiveAircon.ErrCode: main system error code (0 = no error)
+        - OutdoorUnit.LPErr: active low pressure error
+        - OutdoorUnit.HPErr: active high pressure error
+
+        Note: OutdoorUnit.ErrCode_1 through ErrCode_5 are historical error
+        logs that persist after resolution. These are NOT included as active
+        warnings — they are exposed separately via extra_state_attributes
+        on the Active Warnings binary sensor.
 
         Args:
             live_aircon: LiveAircon section from API response
@@ -1363,17 +1643,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         warnings: list[str] = []
         outdoor_unit = live_aircon.get("OutdoorUnit", {})
 
-        for key in ("ErrCode_1", "ErrCode_2", "ErrCode_3", "ErrCode_4", "ErrCode_5"):
-            code = outdoor_unit.get(key, 0)
-            if code and code != 0:
-                warnings.append(f"{key}: {code}")
+        # Active error indicators only
+        if outdoor_unit.get("LPErr", False):
+            warnings.append("Low Pressure Error")
+        if outdoor_unit.get("HPErr", False):
+            warnings.append("High Pressure Error")
 
-        if outdoor_unit.get("LPErr", 0) != 0:
-            warnings.append(f"Low Pressure Error: {outdoor_unit['LPErr']}")
-        if outdoor_unit.get("HPErr", 0) != 0:
-            warnings.append(f"High Pressure Error: {outdoor_unit['HPErr']}")
-
-        # Check main error code
+        # Main system error code (0 = no error)
         err_code = live_aircon.get("ErrCode", 0)
         if err_code and err_code != 0:
             warnings.append(f"System Error: {err_code}")

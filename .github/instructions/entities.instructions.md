@@ -73,7 +73,7 @@ async def async_setup_entry(
 ActronAir Neo has per-zone entities (switches, climate control per zone):
 
 - Create one entity instance per zone
-- Use zone index in unique_id: `{entry.entry_id}_zone_{zone_index}_{key}`
+- Use zone index in unique*id: `{entry.entry_id}\_zone*{zone*index}*{key}`
 - Zone data is in `coordinator.data["zones"][zone_index]`
 
 ## Platform-Required Methods

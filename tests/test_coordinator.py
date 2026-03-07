@@ -55,7 +55,9 @@ def coordinator_instance(
                 ),
             }
         },
-        "raw_data": {
+    }
+    coordinator._last_raw_response = {
+        "lastKnownState": {
             "RemoteZoneInfo": [
                 {
                     "Sensors": {"test123456": {"NV_Kind": "ZS: 23E01206"}},
@@ -69,10 +71,7 @@ def coordinator_instance(
                     }
                 ]
             },
-            "lastKnownState": {
-                "UserAirconSettings": {"FanMode": "HIGH"},
-                "AirconSystem": {"IndoorUnit": {"NV_AutoFanEnabled": True}},
-            },
+            "UserAirconSettings": {"FanMode": "HIGH"},
         },
     }
     coordinator.last_data = coordinator.data
@@ -141,7 +140,7 @@ class TestActronDataCoordinator:
         # Verify result structure
         assert "main" in result
         assert "zones" in result
-        assert "raw_data" in result
+        assert "live_aircon" in result
 
         # Verify main data
         main_data = result["main"]
@@ -369,7 +368,7 @@ class TestActronDataCoordinator:
 
         # Mock API methods
         mock_api.clear_all_caches = AsyncMock()
-        mock_api._invalidate_status_cache = AsyncMock()
+        mock_api.invalidate_status_cache = AsyncMock()
         mock_api.cleanup_expired_cache = AsyncMock()
 
         # Test force update
@@ -382,7 +381,7 @@ class TestActronDataCoordinator:
 
         # Test cache invalidation
         await coordinator.invalidate_cache()
-        mock_api._invalidate_status_cache.assert_called_once_with("TEST123456")
+        mock_api.invalidate_status_cache.assert_called_once_with("TEST123456")
 
         # Test cache cleanup
         await coordinator.cleanup_expired_cache()
@@ -649,7 +648,7 @@ class TestCoordinatorAdditionalCoverage:
             coordinator_instance,
             "_parse_data",
             new_callable=AsyncMock,
-            return_value={"main": {}, "zones": {}, "raw_data": payload},
+            return_value={"main": {}, "zones": {}, "live_aircon": {}},
         ) as parse_data:
             first = await coordinator_instance._parse_data_optimized(payload)
             second = await coordinator_instance._parse_data_optimized(payload)
@@ -749,30 +748,21 @@ class TestCoordinatorAdditionalCoverage:
         mock_api: MagicMock,
     ) -> None:
         coordinator_instance.async_request_refresh = AsyncMock()
-        mock_api.create_command = MagicMock(return_value={"cmd": "zone_temp"})
-        mock_api.send_command = AsyncMock()
+        mock_api.set_zone_temperature = AsyncMock()
 
         coordinator_instance.enable_zone_control = False
         with pytest.raises(ConfigurationError):
-            await coordinator_instance.set_zone_temperature(
-                "zone_1", 22.0, "temp_setpoint_cool"
-            )
+            await coordinator_instance.set_zone_temperature("zone_1", 22.0)
 
         coordinator_instance.enable_zone_control = True
         with pytest.raises(ZoneError):
-            await coordinator_instance.set_zone_temperature(
-                "zone_2", 22.0, "temp_setpoint_cool"
-            )
+            await coordinator_instance.set_zone_temperature("zone_2", 22.0)
 
         with pytest.raises(ZoneError):
-            await coordinator_instance.set_zone_temperature(
-                "zone_1", 99.0, "temp_setpoint_cool"
-            )
+            await coordinator_instance.set_zone_temperature("zone_1", 99.0)
 
-        await coordinator_instance.set_zone_temperature(
-            "zone_1", 23.0, "temp_setpoint_cool"
-        )
-        mock_api.send_command.assert_called()
+        await coordinator_instance.set_zone_temperature("zone_1", 23.0)
+        mock_api.set_zone_temperature.assert_called()
 
     @pytest.mark.asyncio
     async def test_zone_state_and_index_validation(
@@ -978,14 +968,14 @@ class TestCoordinatorRemainingBranches:
             "MED",
             "HIGH",
         ]
-        assert coordinator_instance._decode_fan_mode_bitmap(
+        assert ActronDataCoordinator._decode_fan_mode_bitmap(
             0, ["LOW", "MED", "HIGH"]
         ) == ["LOW", "MED", "HIGH"]
-        coordinator_instance.data = None
-        assert coordinator_instance._is_auto_fan_enabled() is False
         assert coordinator_instance._parse_fan_mode_list(None, ["LOW"]) == ["LOW"]
 
-        coordinator_instance.data = {"raw_data": {"RemoteZoneInfo": []}}
+        coordinator_instance._last_raw_response = {
+            "lastKnownState": {"RemoteZoneInfo": []}
+        }
         assert coordinator_instance.get_zone_peripheral("zone_1") is None
         assert coordinator_instance.get_zone_last_updated("bad") is None
 
@@ -1003,8 +993,8 @@ class TestCoordinatorRemainingBranches:
     def test_get_zone_peripheral_non_wireless_and_last_updated_exception(
         self, coordinator_instance: ActronDataCoordinator
     ) -> None:
-        coordinator_instance.data = {
-            "raw_data": {
+        coordinator_instance._last_raw_response = {
+            "lastKnownState": {
                 "RemoteZoneInfo": [{"Sensors": {"test123456": {"NV_Kind": "WIRED"}}}],
                 "AirconSystem": {"Peripherals": []},
             }
@@ -1033,35 +1023,26 @@ class TestCoordinatorRemainingBranches:
         coordinator_instance.data = {"main": {"fan_mode": "LOW"}}
         mock_api.create_command = MagicMock(return_value={"cmd": "fan"})
         mock_api.send_command = AsyncMock(return_value={})
-        with patch("custom_components.actronair_neo.coordinator.MAX_RETRIES", 1):
-            await coordinator_instance._send_fan_mode_with_retry(
-                "LOW+CONT", continuous=True
-            )
+        await coordinator_instance._send_fan_mode_with_retry(
+            "LOW+CONT", continuous=True
+        )
 
+        # Test that ApiError from send_command propagates directly
+        # (no duplicate retry — API layer handles retries)
         retry_error = ApiError("retry", status_code=500)
         mock_api.send_command = AsyncMock(side_effect=retry_error)
-        with (
-            patch("custom_components.actronair_neo.coordinator.MAX_RETRIES", 2),
-            patch(
-                "custom_components.actronair_neo.coordinator.asyncio.sleep",
-                new_callable=AsyncMock,
-            ) as sleep_mock,
-            pytest.raises(ApiError),
-        ):
+        with pytest.raises(ApiError):
             await coordinator_instance._send_fan_mode_with_retry(
                 "LOW", continuous=False
             )
-        assert sleep_mock.call_count >= 1
 
+        # Test continuous mode verification retry
         coordinator_instance.data = {"main": {"fan_mode": "LOW"}}
         mock_api.send_command = AsyncMock(return_value={})
-        with (
-            patch("custom_components.actronair_neo.coordinator.MAX_RETRIES", 2),
-            patch(
-                "custom_components.actronair_neo.coordinator.asyncio.sleep",
-                new_callable=AsyncMock,
-            ) as sleep_mock,
-        ):
+        with patch(
+            "custom_components.actronair_neo.coordinator.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as sleep_mock:
             await coordinator_instance._send_fan_mode_with_retry(
                 "LOW+CONT", continuous=True
             )
@@ -1084,9 +1065,7 @@ class TestCoordinatorRemainingBranches:
         coordinator_instance.async_request_refresh = AsyncMock()
         coordinator_instance.last_data = None
         with pytest.raises(ZoneError):
-            await coordinator_instance.set_zone_temperature(
-                "zone_1", 22.0, "temp_setpoint_cool"
-            )
+            await coordinator_instance.set_zone_temperature("zone_1", 22.0)
 
         coordinator_instance.last_data = {
             "zones": {
@@ -1104,9 +1083,7 @@ class TestCoordinatorRemainingBranches:
             }
         }
         with pytest.raises(ZoneError):
-            await coordinator_instance.set_zone_temperature(
-                "zone_1", 22.0, "temp_setpoint_cool"
-            )
+            await coordinator_instance.set_zone_temperature("zone_1", 22.0)
 
         coordinator_instance.last_data = None
         mock_api.get_zone_statuses = AsyncMock(return_value=[True, False])

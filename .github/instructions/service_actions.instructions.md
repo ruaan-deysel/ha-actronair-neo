@@ -59,10 +59,10 @@ set_away_mode:
 
 ## Error Handling
 
-| Error type | Use when |
-| -------------------------------- | ------------------------------------------ |
-| `ServiceValidationError` | Bad user input (wrong device ID, etc.) |
-| `HomeAssistantError` | Device error (API failure, device offline) |
+| Error type               | Use when                                   |
+| ------------------------ | ------------------------------------------ |
+| `ServiceValidationError` | Bad user input (wrong device ID, etc.)     |
+| `HomeAssistantError`     | Device error (API failure, device offline) |
 
 ```python
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError

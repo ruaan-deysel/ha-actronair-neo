@@ -4,19 +4,19 @@
 # Python cache files
 __pycache__/
 *.py[cod]
-*.pyo
 
 # Custom components cache and specific files
 custom_components/.DS_Store
 custom_components/*/__pycache__/
+custom_components/*/*.py[cod]
 
 # Virtual environment
 venv/
+.venv/
 ENV/
 env/
 env.bak/
-.local/
-.venv
+*.env
 
 # VS Code settings
 .vscode/
@@ -26,25 +26,21 @@ env.bak/
 
 # Test coverage reports
 .coverage
-.coverage.*
 coverage/
-coverage.json
-coverage.xml
-htmlcov/
+.coverage.*
 
 # Cache directories
 .cache/
-.ruff_cache
-.mypy_cache/
-.pyright/
 
 # Logs
 *.log
 
 # Unit test / Coverage reports
+htmlcov/
 .tox/
 .nox/
-.pytest_cache/
+.cache/
+coverage.xml
 nosetests.xml
 test-results.xml
 
@@ -74,19 +70,35 @@ target/
 .ipynb_checkpoints
 
 # Local environment variables
-*.env
+.env
 .env.local
 .env.*.local
 
-# AI agent scratch space
-.ai-scratch/
+# artifacts
+__pycache__
+.pytest*
+*.egg-info
+*/build/*
+*/dist/*
 
-# uv lock file (not needed for HA custom components)
-uv.lock
+
+# misc
+.coverage
+.vscode
+coverage.xml
+.ruff_cache
+
 
 # Home Assistant configuration
 config/*
 !config/configuration.yaml
 
+# Virtual environment (managed by script/setup/bootstrap)
+.local/
+
 # ActronAir API tokens (contains sensitive authentication data)
 utils/actron_token.json
+
+# AI scratch directory (temporary notes — not committed)
+.ai-scratch/*
+!.ai-scratch/README.md

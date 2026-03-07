@@ -53,12 +53,12 @@ Defined in `exceptions.py`:
 
 ## Coordinator Exception Mapping
 
-| API Exception | Coordinator Exception | HA Behavior |
-| ------------- | --------------------- | ----------- |
-| `AuthenticationError` | `ConfigEntryAuthFailed` | Triggers reauth |
-| `DeviceOfflineError` | `UpdateFailed(...)` | Retry with backoff |
-| `RateLimitError` | `UpdateFailed(retry_after=60)` | Wait before retry |
-| `ApiError` | `UpdateFailed(...)` | Retry with backoff |
+| API Exception         | Coordinator Exception          | HA Behavior        |
+| --------------------- | ------------------------------ | ------------------ |
+| `AuthenticationError` | `ConfigEntryAuthFailed`        | Triggers reauth    |
+| `DeviceOfflineError`  | `UpdateFailed(...)`            | Retry with backoff |
+| `RateLimitError`      | `UpdateFailed(retry_after=60)` | Wait before retry  |
+| `ApiError`            | `UpdateFailed(...)`            | Retry with backoff |
 
 ## Zone Commands
 

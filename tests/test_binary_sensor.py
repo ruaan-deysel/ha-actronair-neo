@@ -55,31 +55,26 @@ class TestHealthMonitorSensor:
 
     def test_is_on_with_error_code(self, coordinator, mock_status):
         """Test health monitor reports True when ErrCode is non-zero."""
-        serial_key = f"<{MOCK_SERIAL.upper()}>"
-        mock_status["raw_data"]["lastKnownState"][serial_key]["LiveAircon"][
-            "ErrCode"
-        ] = 42
+        mock_status["live_aircon"]["err_code"] = 42
         sensor = ActronHealthMonitorSensor(coordinator)
         assert sensor.is_on is True
 
     def test_is_on_with_error_history(self, coordinator, mock_status):
         """Test health monitor reports True when error history exists."""
-        serial_key = f"<{MOCK_SERIAL.upper()}>"
-        mock_status["raw_data"]["lastKnownState"][serial_key]["Servicing"][
-            "NV_ErrorHistory"
-        ] = ["E001"]
+        mock_status["servicing"]["error_history"] = ["E001"]
         sensor = ActronHealthMonitorSensor(coordinator)
         assert sensor.is_on is True
 
-    def test_is_on_no_raw_data(self, coordinator, mock_status):
-        """Test health monitor handles missing raw data gracefully."""
-        mock_status["raw_data"] = {}
+    def test_is_on_no_live_aircon_data(self, coordinator, mock_status):
+        """Test health monitor handles missing live_aircon data gracefully."""
+        del mock_status["live_aircon"]
         sensor = ActronHealthMonitorSensor(coordinator)
         assert sensor.is_on is False
 
     def test_is_on_key_error_path(self, coordinator, mock_status):
         """Test health monitor handles KeyError path gracefully."""
-        del mock_status["raw_data"]
+        del mock_status["live_aircon"]
+        del mock_status["servicing"]
         sensor = ActronHealthMonitorSensor(coordinator)
         assert sensor.is_on is False
 
@@ -99,10 +94,7 @@ class TestHealthMonitorSensor:
 
     def test_extra_state_attributes_with_errors(self, coordinator, mock_status):
         """Test extra attributes when errors exist."""
-        serial_key = f"<{MOCK_SERIAL.upper()}>"
-        mock_status["raw_data"]["lastKnownState"][serial_key]["Servicing"][
-            "NV_ErrorHistory"
-        ] = ["E001", "E002"]
+        mock_status["servicing"]["error_history"] = ["E001", "E002"]
         sensor = ActronHealthMonitorSensor(coordinator)
         attrs = sensor.extra_state_attributes
         assert attrs["health_status"] == "Issues Detected"
@@ -111,7 +103,7 @@ class TestHealthMonitorSensor:
 
     def test_extra_state_attributes_error_path(self, coordinator, mock_status):
         """Test extra attributes fallback when data shape is invalid."""
-        del mock_status["raw_data"]
+        del mock_status["servicing"]
         sensor = ActronHealthMonitorSensor(coordinator)
         assert (
             sensor.extra_state_attributes["error"] == "Failed to get health attributes"

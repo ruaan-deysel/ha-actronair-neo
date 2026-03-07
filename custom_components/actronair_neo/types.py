@@ -86,12 +86,100 @@ class MainData(TypedDict):
     warnings: list[str]
 
 
+class LiveAirconData(TypedDict):
+    """Live aircon operational data."""
+
+    system_on: bool
+    compressor_capacity: int
+    compressor_mode: str
+    am_running_fan: bool
+    fan_rpm: int
+    fan_pwm: int
+    coil_inlet: float | None
+    err_code: int
+    compressor_chasing_temp: float | None
+    compressor_live_temp: float | None
+
+
+class OutdoorUnitData(TypedDict):
+    """Outdoor unit live and system data."""
+
+    comp_power: float
+    compressor_on: bool
+    comp_speed: int
+    coil_temp: float | None
+    amb_temp: float | None
+    supply_voltage: float
+    supply_current: float
+    supply_power: float
+    reverse_valve_position: str
+    defrost_mode: int
+    drm: bool
+    err_codes: list[int]
+    family: str
+    ctrl_board_type: str
+    capacity_kw: float
+
+
+class SystemStatusData(TypedDict):
+    """Device system status data."""
+
+    uptime_seconds: int
+    board_temp: float | None
+    wifi_strength: int | None
+    wifi_ssid: str
+    wifi_channel: str
+    wifi_firmware: str
+    wifi_hw_errors: int
+
+
+class CloudConnectionData(TypedDict):
+    """Cloud connection data."""
+
+    connection_state: str
+    session_uptime: int
+    sent_packets: int
+    received_packets: int
+    failed_sent_packets: int
+    session_count_since_reset: int
+    dns_failures: int
+    aborted_sockets: int
+
+
+class ServicingData(TypedDict):
+    """Servicing and error history data."""
+
+    error_history: list[Any]
+    event_history: list[Any]
+
+
+class ConnectionMetadata(TypedDict):
+    """Top-level connection metadata."""
+
+    is_online: bool
+    last_status_update: str
+    time_since_last_contact: str
+
+
+class VFTData(TypedDict):
+    """Variable fan technology data."""
+
+    supported: bool
+    airflow: float
+
+
 class CoordinatorData(TypedDict):
     """Data structure for coordinator."""
 
     main: MainData
     zones: dict[str, ZoneData]
-    raw_data: AcStatusResponse
+    live_aircon: LiveAirconData
+    outdoor_unit: OutdoorUnitData
+    system_status: SystemStatusData
+    cloud: CloudConnectionData
+    servicing: ServicingData
+    connection_meta: ConnectionMetadata
+    vft: VFTData
 
 
 class MasterSensorInfo(TypedDict):

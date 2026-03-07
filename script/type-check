@@ -3,7 +3,7 @@
 # script/type-check: Run type checking tools
 #
 # Runs Pyright type checker to validate type annotations and catch type-related
-# issues. Uses 'strict' type checking mode as configured in pyrightconfig.json.
+# issues. Uses 'basic' type checking mode.
 #
 # Usage:
 #   ./script/type-check

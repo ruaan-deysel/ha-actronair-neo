@@ -93,6 +93,7 @@ def create_mock_coordinator(
     coord.set_temperature = AsyncMock()
     coord.set_fan_mode = AsyncMock()
     coord.set_zone_state = AsyncMock()
+    coord.set_zone_temperature = AsyncMock()
     coord.set_away_mode = AsyncMock()
     coord.set_quiet_mode = AsyncMock()
     coord.set_enable_zone_control = AsyncMock()
@@ -222,6 +223,67 @@ def mock_status() -> dict:
         "zones": {
             "zone_1": _create_mock_zone(0, "Living Room"),
             "zone_2": _create_mock_zone(1, "Bedroom"),
+        },
+        "live_aircon": {
+            "system_on": True,
+            "compressor_capacity": 40,
+            "compressor_mode": "COOL",
+            "am_running_fan": True,
+            "fan_rpm": 800,
+            "fan_pwm": 60,
+            "coil_inlet": 18.0,
+            "err_code": 0,
+            "compressor_chasing_temp": 21.0,
+            "compressor_live_temp": 22.5,
+        },
+        "outdoor_unit": {
+            "comp_power": 700,
+            "compressor_on": True,
+            "comp_speed": 3000,
+            "coil_temp": 15.0,
+            "amb_temp": 25.0,
+            "supply_voltage": 230.0,
+            "supply_current": 3.0,
+            "supply_power": 690.0,
+            "reverse_valve_position": "Normal",
+            "defrost_mode": 0,
+            "drm": False,
+            "err_codes": [0, 0, 0, 0, 0],
+            "family": "Advance",
+            "ctrl_board_type": "Type 300",
+            "capacity_kw": 12.5,
+        },
+        "system_status": {
+            "uptime_seconds": 86400,
+            "board_temp": 25.0,
+            "wifi_strength": 3,
+            "wifi_ssid": "HomeNetwork",
+            "wifi_channel": "6",
+            "wifi_firmware": "1.0.0",
+            "wifi_hw_errors": 0,
+        },
+        "cloud": {
+            "connection_state": "Connected",
+            "session_uptime": 3600,
+            "sent_packets": 100,
+            "received_packets": 200,
+            "failed_sent_packets": 0,
+            "session_count_since_reset": 5,
+            "dns_failures": 0,
+            "aborted_sockets": 0,
+        },
+        "servicing": {
+            "error_history": [],
+            "event_history": [],
+        },
+        "connection_meta": {
+            "is_online": True,
+            "last_status_update": "2025-01-01T00:00:00Z",
+            "time_since_last_contact": "5 minutes",
+        },
+        "vft": {
+            "supported": False,
+            "airflow": 0.0,
         },
         "raw_data": {
             "lastKnownState": {

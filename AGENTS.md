@@ -187,13 +187,13 @@ Entities → Coordinator → API Wrapper — Never skip layers
 
 ### Entity Platforms
 
-| Platform | Purpose |
-| -------- | ------- |
-| `climate.py` | Main HVAC entity — mode, fan speed, setpoint, zones |
-| `sensor.py` | Temperature, humidity, compressor, indoor/outdoor readings |
-| `binary_sensor.py` | On/off states (defrost, compressor on, away mode, etc.) |
-| `switch.py` | Zone toggles, continuous fan, quiet mode, away mode |
-| `number.py` | Zone temperature limits, fan time settings |
+| Platform           | Purpose                                                    |
+| ------------------ | ---------------------------------------------------------- |
+| `climate.py`       | Main HVAC entity — mode, fan speed, setpoint, zones        |
+| `sensor.py`        | Temperature, humidity, compressor, indoor/outdoor readings |
+| `binary_sensor.py` | On/off states (defrost, compressor on, away mode, etc.)    |
+| `switch.py`        | Zone toggles, continuous fan, quiet mode, away mode        |
+| `number.py`        | Zone temperature limits, fan time settings                 |
 
 ### Zone Architecture
 
@@ -217,12 +217,12 @@ Defined in `exceptions.py`:
 
 **Coordinator mapping:**
 
-| Exception | Coordinator Raises | HA Behaviour |
-| --------- | ------------------ | ------------ |
-| `AuthenticationError` | `ConfigEntryAuthFailed` | Triggers reauth |
-| `DeviceOfflineError` | `UpdateFailed` | Retry with backoff |
-| `RateLimitError` | `UpdateFailed` | Retry with backoff |
-| `ApiError` | `UpdateFailed` | Retry with backoff |
+| Exception             | Coordinator Raises      | HA Behaviour       |
+| --------------------- | ----------------------- | ------------------ |
+| `AuthenticationError` | `ConfigEntryAuthFailed` | Triggers reauth    |
+| `DeviceOfflineError`  | `UpdateFailed`          | Retry with backoff |
+| `RateLimitError`      | `UpdateFailed`          | Retry with backoff |
+| `ApiError`            | `UpdateFailed`          | Retry with backoff |
 
 ---
 

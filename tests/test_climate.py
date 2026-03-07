@@ -125,8 +125,7 @@ class TestActronClimate:
     async def test_set_hvac_mode_off(self, system_climate, coordinator):
         """Test setting HVAC mode to OFF."""
         await system_climate.async_set_hvac_mode(HVACMode.OFF)
-        coordinator.api.create_command.assert_called_with("OFF")
-        coordinator.api.send_command.assert_called_once()
+        coordinator.turn_off.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_set_hvac_mode_cool(self, system_climate, coordinator, mock_status):
@@ -134,14 +133,14 @@ class TestActronClimate:
         # Ensure current mode is different
         mock_status["main"]["is_on"] = False
         await system_climate.async_set_hvac_mode(HVACMode.COOL)
-        coordinator.api.create_command.assert_called_with("CLIMATE_MODE", mode="COOL")
+        coordinator.set_hvac_mode.assert_called_with("COOL")
 
     @pytest.mark.asyncio
     async def test_set_hvac_mode_heat(self, system_climate, coordinator, mock_status):
         """Test setting HVAC mode to HEAT."""
         mock_status["main"]["is_on"] = False
         await system_climate.async_set_hvac_mode(HVACMode.HEAT)
-        coordinator.api.create_command.assert_called_with("CLIMATE_MODE", mode="HEAT")
+        coordinator.set_hvac_mode.assert_called_with("HEAT")
 
     @pytest.mark.asyncio
     async def test_set_temperature(self, system_climate, coordinator, mock_status):
@@ -170,8 +169,7 @@ class TestActronClimate:
         """Test turning on the system."""
         mock_status["main"]["is_on"] = False
         await system_climate.async_turn_on()
-        coordinator.api.create_command.assert_called_with("ON")
-        coordinator.api.send_command.assert_called_once()
+        coordinator.turn_on.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_turn_off(self, system_climate, coordinator, mock_status):
@@ -179,7 +177,7 @@ class TestActronClimate:
         mock_status["main"]["is_on"] = True
         mock_status["main"]["mode"] = "COOL"
         await system_climate.async_turn_off()
-        coordinator.api.create_command.assert_called_with("OFF")
+        coordinator.turn_off.assert_called_once()
 
     def test_supported_features(self, system_climate):
         """Test supported features."""
@@ -483,7 +481,7 @@ class TestActronZoneClimate:
         """Test setting zone temperature."""
         coordinator.enable_zone_control = True
         await zone_climate.async_set_temperature(**{ATTR_TEMPERATURE: 23.0})
-        coordinator.api.set_zone_temperature.assert_called_once()
+        coordinator.set_zone_temperature.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_set_temperature_separate_targets(self, coordinator, mock_status):
@@ -496,16 +494,17 @@ class TestActronZoneClimate:
         climate.async_write_ha_state = MagicMock()
         coordinator.enable_zone_control = True
         await climate.async_set_temperature(target_temp_high=24.0, target_temp_low=21.0)
-        coordinator.api.set_zone_temperature.assert_called_once()
+        coordinator.set_zone_temperature.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_set_temperature_out_of_range_returns(
+    async def test_set_temperature_out_of_range_delegates_to_coordinator(
         self, zone_climate, coordinator
     ):
-        """Test invalid zone temperature is ignored."""
+        """Test out-of-range temp is delegated to coordinator."""
         coordinator.enable_zone_control = True
         await zone_climate.async_set_temperature(**{ATTR_TEMPERATURE: 99.0})
-        coordinator.api.set_zone_temperature.assert_not_called()
+        # Validation is now handled by the coordinator, not the entity
+        coordinator.set_zone_temperature.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_set_temperature_returns_when_no_temp_control(
@@ -519,7 +518,7 @@ class TestActronZoneClimate:
         climate = ActronZoneClimate(coordinator, "zone_1")
         coordinator.enable_zone_control = True
         await climate.async_set_temperature(**{ATTR_TEMPERATURE: 23.0})
-        coordinator.api.set_zone_temperature.assert_not_called()
+        coordinator.set_zone_temperature.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_set_temperature_returns_when_zone_control_disabled(
@@ -528,7 +527,7 @@ class TestActronZoneClimate:
         """Test set_temperature exits when zone control is disabled."""
         coordinator.enable_zone_control = False
         await zone_climate.async_set_temperature(**{ATTR_TEMPERATURE: 23.0})
-        coordinator.api.set_zone_temperature.assert_not_called()
+        coordinator.set_zone_temperature.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_set_temperature_separate_targets_single_temp_path(
@@ -542,7 +541,7 @@ class TestActronZoneClimate:
         climate = ActronZoneClimate(coordinator, "zone_1")
         coordinator.enable_zone_control = True
         await climate.async_set_temperature(**{ATTR_TEMPERATURE: 22.0})
-        coordinator.api.set_zone_temperature.assert_called_once()
+        coordinator.set_zone_temperature.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_zone_methods_return_when_zone_control_disabled(

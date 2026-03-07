@@ -119,7 +119,21 @@ fi
 
 log_header "Installing all dependencies"
 log_info "Using pyproject.toml extras: dev + test"
-uv pip install -e ".[dev,test]"
+
+# Editable installs add __editable__ path hooks to sys.path, which can break
+# Home Assistant custom component discovery in newer versions.
+if uv pip show ha-actronair-neo >/dev/null 2>&1; then
+    log_step "Removing existing editable/local project install"
+    uv pip uninstall -y ha-actronair-neo >/dev/null 2>&1 || true
+fi
+
+# Install project and extras as a standard wheel to avoid editable path hooks.
+uv pip install ".[dev,test]"
+
+# Ensure Home Assistant is always upgraded to the latest version
+# This guarantees the devcontainer always uses the most recent HA release
+log_header "Upgrading Home Assistant to latest available version"
+uv pip install --upgrade homeassistant
 
 # Only install pre-commit hooks in local development, not in CI
 # GITHUB_ACTIONS is always set to "true" in GitHub Actions environments

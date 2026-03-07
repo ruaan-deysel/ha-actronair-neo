@@ -101,6 +101,9 @@ ADVANCE_FAN_MODES: Final[frozenset[str]] = frozenset({"LOW", "MED", "HIGH", "AUT
 ADVANCED_FAN_MODE_ORDER: Final = ["AUTO", "LOW", "MED", "HIGH"]
 BASE_FAN_MODE_ORDER: Final = ["LOW", "MED", "HIGH"]
 
-# ── Outdoor temperature sentinel ─────────────────────────────────
+# ── Sensor sentinel values ────────────────────────────────────────
+# The ActronAir API returns 3000.0 when a sensor reading is unavailable
+# (common on Classic series or zones without the respective sensor).
 
 OUTDOOR_TEMP_UNAVAILABLE: Final = 3000.0
+HUMIDITY_UNAVAILABLE: Final = 3000.0

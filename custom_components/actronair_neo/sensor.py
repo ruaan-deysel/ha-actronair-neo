@@ -37,145 +37,6 @@ if TYPE_CHECKING:
 PARALLEL_UPDATES = 0
 
 
-def _get_device_section(last_known_state: dict[str, Any]) -> dict[str, Any]:
-    """
-    Extract the serial-keyed device section from lastKnownState.
-
-    The API nests device-specific data (SystemStatus_Local, Cloud, etc.)
-    inside a key like "<SERIAL_NUMBER>". This helper finds that section.
-
-    Args:
-        last_known_state: The lastKnownState dict from the raw API response
-
-    Returns:
-        The device section dict, or empty dict if not found
-
-    """
-    for key, value in last_known_state.items():
-        if key.startswith("<") and key.endswith(">") and isinstance(value, dict):
-            return value
-    return {}
-
-
-def _supports_power_monitoring(
-    coordinator: ActronDataCoordinator,
-) -> bool:
-    """
-    Determine if the outdoor unit supports power consumption monitoring.
-
-    Power monitoring requires hardware support (current/voltage sensors)
-    in the outdoor unit. Fixed Speed Classic units with basic controllers
-    typically don't have this capability.
-
-    Args:
-        coordinator: The ActronDataCoordinator instance
-
-    Returns:
-        True if power monitoring is supported, False otherwise
-
-    """
-    try:
-        result = _check_power_monitoring_support(coordinator)
-    except (KeyError, TypeError, AttributeError):
-        return False
-    else:
-        return result
-
-
-def _check_power_monitoring_support(
-    coordinator: ActronDataCoordinator,
-) -> bool:
-    """
-    Check hardware support for power monitoring.
-
-    Args:
-        coordinator: The ActronDataCoordinator instance
-
-    Returns:
-        True if power monitoring is supported
-
-    """
-    raw_data = coordinator.data.get("raw_data", {})
-    last_known_state = raw_data.get("lastKnownState", {})
-
-    if not last_known_state:
-        return False
-
-    # Handle both shapes: last_known_state may be keyed by serial number
-    # (matching async_setup_entry) or may directly contain AirconSystem.
-    if "AirconSystem" in last_known_state or "LiveAircon" in last_known_state:
-        resolved_state = last_known_state
-    else:
-        serial_key = next(iter(last_known_state.keys()), None)
-        if serial_key is None:
-            return False
-        resolved_state = last_known_state.get(serial_key, {})
-
-    aircon_system = resolved_state.get("AirconSystem", {})
-    outdoor_unit_info = aircon_system.get("OutdoorUnit", {})
-
-    family = outdoor_unit_info.get("Family", "")
-    ctrl_board_type = outdoor_unit_info.get("CtrlBoardType", "")
-
-    # Fixed Speed Classic units with Type 100 controllers don't support
-    # power monitoring
-    if "Fixed Speed" in family and "Type 100" in ctrl_board_type:
-        return False
-
-    return _check_power_fields(resolved_state, family, ctrl_board_type)
-
-
-def _check_power_fields(
-    last_known_state: dict,
-    family: str,
-    ctrl_board_type: str,  # noqa: ARG001
-) -> bool:
-    """
-    Check if power fields are populated in live data.
-
-    Args:
-        last_known_state: Raw API last known state
-        family: Outdoor unit family string
-        ctrl_board_type: Controller board type string
-
-    Returns:
-        True if power monitoring is supported
-
-    """
-    live_aircon = last_known_state.get("LiveAircon", {})
-    outdoor_unit_live = live_aircon.get("OutdoorUnit", {})
-
-    comp_power = outdoor_unit_live.get("CompPower", 0)
-    supply_voltage = outdoor_unit_live.get("SupplyVoltage_Vac", 0.0)
-    supply_current = outdoor_unit_live.get("SupplyCurrentRMS_A", 0.0)
-    compressor_on = outdoor_unit_live.get("CompressorOn", False)
-
-    # If compressor is running but all power fields are zero,
-    # hardware doesn't support it
-    if (
-        compressor_on
-        and comp_power == 0
-        and supply_voltage == 0.0
-        and supply_current == 0.0
-    ):
-        return False
-
-    # If any power field has a non-zero value, power monitoring is supported
-    if comp_power > 0 or supply_voltage > 0 or supply_current > 0:
-        return True
-
-    # Advanced/Inverter series units typically support power monitoring
-    return any(
-        indicator in family
-        for indicator in [
-            "Advance",
-            "Inverter",
-            "VSD",
-            "Variable Speed",
-        ]
-    )
-
-
 async def async_setup_entry(
     hass: HomeAssistant,  # noqa: ARG001
     entry: ConfigEntry,
@@ -199,7 +60,7 @@ async def async_setup_entry(
         entities.append(ActronOutdoorTemperatureSensor(coordinator))
 
     # Only add power sensors if hardware supports power monitoring
-    if _supports_power_monitoring(coordinator):
+    if coordinator.supports_power_monitoring():
         entities.extend(
             [
                 ActronCompressorPowerSensor(coordinator),
@@ -528,13 +389,11 @@ class ActronSystemDiagnosticSensor(ActronAirNeoEntity, SensorEntity):
         """Return enhanced diagnostic attributes with live data."""
         try:
             main_data = self.coordinator.data["main"]
-            raw_data = self.coordinator.data.get("raw_data", {})
-            last_known_state = raw_data.get("lastKnownState", {})
-
-            # SystemStatus_Local is inside the serial-keyed device section
-            device_section = _get_device_section(last_known_state)
-            system_status = device_section.get("SystemStatus_Local", {})
-            live_aircon = last_known_state.get("LiveAircon", {})
+            live_aircon = self.coordinator.data["live_aircon"]
+            outdoor_unit = self.coordinator.data["outdoor_unit"]
+            system_status = self.coordinator.data["system_status"]
+            connection_meta = self.coordinator.data["connection_meta"]
+            vft = self.coordinator.data["vft"]
 
             return {
                 # System Information
@@ -542,67 +401,60 @@ class ActronSystemDiagnosticSensor(ActronAirNeoEntity, SensorEntity):
                 "firmware_version": main_data.get("firmware_version", "Unknown"),
                 "serial_number": main_data.get("serial_number", "Unknown"),
                 # Live System Status
-                "system_uptime": self._format_uptime(system_status.get("Uptime_s", 0)),
+                "system_uptime": self._format_uptime(
+                    system_status.get("uptime_seconds", 0)
+                ),
                 "operating_mode": main_data.get("mode", "Unknown").title(),
                 "fan_mode": main_data.get("fan_mode", "Unknown").title(),
                 "quiet_mode_active": main_data.get("quiet_mode", False),
                 "away_mode_active": main_data.get("away_mode", False),
                 # Live Performance Data (Enhanced for GitHub Issue #16)
-                "compressor_running": live_aircon.get("SystemOn", False),
-                "compressor_capacity": f"{live_aircon.get('CompressorCapacity', 0)}%",
+                "compressor_running": live_aircon.get("system_on", False),
+                "compressor_capacity": f"{live_aircon.get('compressor_capacity', 0)}%",
                 "compressor_usage": live_aircon.get(
-                    "CompressorCapacity", 0
+                    "compressor_capacity", 0
                 ),  # Raw percentage for automations
-                "fan_running": live_aircon.get("AmRunningFan", False),
-                "fan_speed": f"{live_aircon.get('FanRPM', 0)} RPM",
+                "fan_running": live_aircon.get("am_running_fan", False),
+                "fan_speed": f"{live_aircon.get('fan_rpm', 0)} RPM",
                 "fan_speed_rpm": live_aircon.get(
-                    "FanRPM", 0
+                    "fan_rpm", 0
                 ),  # Raw RPM for automations
                 "current_fan_speed": live_aircon.get(
-                    "FanRPM", 0
+                    "fan_rpm", 0
                 ),  # Alias for user request
                 # Power and Electrical Data (GitHub Issue #16)
                 "compressor_power": self._format_power_value(
-                    live_aircon.get("OutdoorUnit", {}).get("CompPower", 0)
+                    outdoor_unit.get("comp_power", 0)
                 ),
-                "supply_voltage": (
-                    f"{live_aircon.get('OutdoorUnit', {}).get('SupplyVoltage_Vac', 0):.1f}"  # noqa: E501
-                    " VAC"
-                ),
-                "supply_current": (
-                    f"{live_aircon.get('OutdoorUnit', {}).get('SupplyCurrentRMS_A', live_aircon.get('OutdoorUnit', {}).get('SuppyCurrentRMS_A', 0)):.1f}"  # noqa: E501
-                    " A"
-                ),
+                "supply_voltage": (f"{outdoor_unit.get('supply_voltage', 0):.1f} VAC"),
+                "supply_current": (f"{outdoor_unit.get('supply_current', 0):.1f} A"),
                 "supply_power": self._format_power_value(
-                    live_aircon.get("OutdoorUnit", {}).get(
-                        "SupplyPowerRMS_W",
-                        live_aircon.get("OutdoorUnit", {}).get("SuppyPowerRMS_W", 0),
-                    )
+                    outdoor_unit.get("supply_power", 0)
                 ),
-                "system_capacity": self._format_system_capacity(last_known_state),
+                "system_capacity": f"{outdoor_unit.get('capacity_kw', 0)} kW",
                 # Air Volume Data (if available)
-                "air_volume": self._format_air_volume(last_known_state),
+                "air_volume": f"{vft.get('airflow', 0):.1f} m\u00b3/h"
+                if vft.get("supported", False)
+                else "Not Supported",
                 # Live Temperature Readings
                 "indoor_temperature": self._format_temperature(
                     main_data.get("indoor_temp")
                 ),
                 "indoor_humidity": f"{main_data.get('indoor_humidity', 0):.1f}%",
                 "coil_inlet_temperature": self._format_temperature(
-                    live_aircon.get("CoilInlet")
+                    live_aircon.get("coil_inlet")
                 ),
                 "ambient_temperature": self._format_temperature(
-                    system_status.get("SensorInputs", {})
-                    .get("SHTC1", {})
-                    .get("Temperature_oC")
+                    system_status.get("board_temp")
                 ),
                 # System Health
                 "filter_status": "Needs Cleaning"
                 if main_data.get("filter_clean_required")
                 else "Clean",
                 "defrosting_active": main_data.get("defrosting", False),
-                "error_code": live_aircon.get("ErrCode", 0),
+                "error_code": live_aircon.get("err_code", 0),
                 # Last Update Information
-                "last_api_update": raw_data.get("lastStatusUpdate", "Unknown"),
+                "last_api_update": connection_meta.get("last_status_update", "Unknown"),
                 "data_freshness": "Live"
                 if self.coordinator.last_update_success
                 else "Stale",
@@ -620,23 +472,6 @@ class ActronSystemDiagnosticSensor(ActronAirNeoEntity, SensorEntity):
         if power_value >= 1000:  # noqa: PLR2004
             return f"{power_value / 1000:.1f} kW"
         return f"{power_value:.0f} W"
-
-    def _format_system_capacity(self, last_known_state: dict[str, Any]) -> str:
-        """Format system capacity from last known state."""
-        capacity = (
-            last_known_state.get("AirconSystem", {})
-            .get("OutdoorUnit", {})
-            .get("Capacity_kW", 0)
-        )
-        return f"{capacity} kW"
-
-    def _format_air_volume(self, last_known_state: dict[str, Any]) -> str:
-        """Format air volume from last known state."""
-        vft = last_known_state.get("UserAirconSettings", {}).get("VFT", {})
-        if not vft.get("Supported", False):
-            return "Not Supported"
-        airflow = vft.get("Airflow", 0)
-        return f"{airflow:.1f} m\u00b3/h"
 
 
 class ActronConnectivitySensor(ActronAirNeoEntity, SensorEntity):
@@ -665,23 +500,12 @@ class ActronConnectivitySensor(ActronAirNeoEntity, SensorEntity):
             return status
 
     def _determine_connectivity_status(self) -> str:
-        """Determine connectivity status from raw data."""
-        raw_data = self.coordinator.data.get("raw_data", {})
-        device_online = raw_data.get("isOnline", False)
-        last_known_state = raw_data.get("lastKnownState", {})
+        """Determine connectivity status from parsed data."""
+        connection_meta = self.coordinator.data.get("connection_meta", {})
+        cloud = self.coordinator.data.get("cloud", {})
 
-        # Get the device-specific section (e.g., "<22H09780>")
-        device_section = None
-        for key, value in last_known_state.items():
-            if key.startswith("<") and key.endswith(">"):
-                device_section = value
-                break
-
-        if not device_section:
-            device_section = last_known_state
-
-        cloud_status = device_section.get("Cloud", {})
-        connection_state = cloud_status.get("ConnectionState", "Unknown")
+        device_online = connection_meta.get("is_online", False)
+        connection_state = cloud.get("connection_state", "Unknown")
 
         if device_online and self.coordinator.last_update_success:
             if connection_state == "Connected":
@@ -719,55 +543,43 @@ class ActronConnectivitySensor(ActronAirNeoEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return enhanced connectivity attributes."""
         try:
-            raw_data = self.coordinator.data.get("raw_data", {})
-            last_known_state = raw_data.get("lastKnownState", {})
-
-            # SystemStatus_Local and Cloud are in the serial-keyed device section
-            device_section = _get_device_section(last_known_state)
-
-            system_status = device_section.get("SystemStatus_Local", {})
-            cloud_status = device_section.get("Cloud", {})
-            wifi_info = system_status.get("WiFi", {})
+            system_status = self.coordinator.data["system_status"]
+            cloud = self.coordinator.data["cloud"]
+            connection_meta = self.coordinator.data["connection_meta"]
 
             # WiFi signal analysis
-            wifi_signal = self._format_wifi_signal(
-                system_status.get("WifiStrength_of3")
-            )
+            wifi_signal = self._format_wifi_signal(system_status.get("wifi_strength"))
 
             return {
                 # Connection Status
-                "cloud_connection": cloud_status.get("ConnectionState", "Unknown"),
+                "cloud_connection": cloud.get("connection_state", "Unknown"),
                 "connection_uptime": self._format_uptime(
-                    cloud_status.get("Connection", {})
-                    .get("UpTime", {})
-                    .get("CurrentSession_s", 0)
+                    cloud.get("session_uptime", 0)
                 ),
                 # WiFi Information
-                "wifi_network": wifi_info.get("ApSSID", "Unknown"),
+                "wifi_network": system_status.get("wifi_ssid", "Unknown"),
                 "wifi_signal_strength": wifi_signal["strength"],
                 "wifi_signal_quality": wifi_signal["quality"],
                 "wifi_signal_bars": wifi_signal["bars"],
-                "wifi_channel": str(wifi_info.get("RFChannel", "Unknown")),
-                "wifi_firmware": wifi_info.get("FirmwareVersion", "Unknown"),
+                "wifi_channel": system_status.get("wifi_channel", "Unknown"),
+                "wifi_firmware": system_status.get("wifi_firmware", "Unknown"),
                 # Connection Statistics
-                "packets_sent": cloud_status.get("SentPackets", 0),
-                "packets_received": cloud_status.get("ReceivedPackets", 0),
-                "failed_packets": cloud_status.get("FailedSentPackets", 0),
-                "connection_sessions": cloud_status.get("Connection", {})
-                .get("SessionCount", {})
-                .get("SinceLastMCUReset", 0),
+                "packets_sent": cloud.get("sent_packets", 0),
+                "packets_received": cloud.get("received_packets", 0),
+                "failed_packets": cloud.get("failed_sent_packets", 0),
+                "connection_sessions": cloud.get("session_count_since_reset", 0),
                 # Error Monitoring
-                "wifi_hardware_errors": wifi_info.get("HardwareErrorCount", 0),
-                "dns_failures": cloud_status.get("Connection", {})
-                .get("ErrorCount", {})
-                .get("DNSFailures", 0),
-                "socket_errors": cloud_status.get("Connection", {})
-                .get("ErrorCount", {})
-                .get("AbortedSockets", 0),
+                "wifi_hardware_errors": system_status.get("wifi_hw_errors", 0),
+                "dns_failures": cloud.get("dns_failures", 0),
+                "socket_errors": cloud.get("aborted_sockets", 0),
                 # Data Freshness
-                "last_contact": raw_data.get("timeSinceLastContact", "Unknown"),
-                "last_status_update": raw_data.get("lastStatusUpdate", "Unknown"),
-                "device_online": raw_data.get("isOnline", False),
+                "last_contact": connection_meta.get(
+                    "time_since_last_contact", "Unknown"
+                ),
+                "last_status_update": connection_meta.get(
+                    "last_status_update", "Unknown"
+                ),
+                "device_online": connection_meta.get("is_online", False),
             }
 
         except (KeyError, TypeError, ValueError):
@@ -815,10 +627,8 @@ class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
             if not super().available:
                 return False
 
-            raw_data = self.coordinator.data.get("raw_data", {})
-            last_known_state = raw_data.get("lastKnownState", {})
-
-            has_data = "LiveAircon" in last_known_state
+            live_aircon = self.coordinator.data.get("live_aircon", {})
+            has_data = bool(live_aircon)
         except (KeyError, TypeError, AttributeError):
             return False
         else:
@@ -828,16 +638,14 @@ class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
     def native_value(self) -> float | None:
         """Return the overall system efficiency percentage."""
         try:
-            raw_data = self.coordinator.data.get("raw_data", {})
-            last_known_state = raw_data.get("lastKnownState", {})
-            live_aircon = last_known_state.get("LiveAircon", {})
+            live_aircon = self.coordinator.data.get("live_aircon", {})
 
             if not live_aircon:
                 return None
 
             # Calculate efficiency based on compressor capacity and system status
             # Return capacity even when system is off (0%) for consistent updates
-            capacity = live_aircon.get("CompressorCapacity", 0)
+            capacity = live_aircon.get("compressor_capacity", 0)
             return float(capacity) if capacity is not None else 0.0
 
         except (KeyError, TypeError, ValueError):
@@ -867,11 +675,11 @@ class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
 
     def _get_operational_status(self, live_aircon: dict) -> str:
         """Determine operational status from live data."""
-        if not live_aircon.get("SystemOn", False):
+        if not live_aircon.get("system_on", False):
             return "Standby"
 
-        compressor_on = live_aircon.get("CompressorMode", "OFF") != "OFF"
-        fan_running = live_aircon.get("AmRunningFan", False)
+        compressor_on = live_aircon.get("compressor_mode", "OFF") != "OFF"
+        fan_running = live_aircon.get("am_running_fan", False)
 
         if compressor_on and fan_running:
             return "Active Cooling/Heating"
@@ -886,17 +694,9 @@ class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
         """Return enhanced performance attributes with live operational data."""
         try:
             main_data = self.coordinator.data.get("main", {})
-            raw_data = self.coordinator.data.get("raw_data", {})
-            last_known_state = raw_data.get("lastKnownState", {})
-
-            if not last_known_state:
-                return {"status": "No data available"}
-
-            live_aircon = last_known_state.get("LiveAircon", {})
-            outdoor_unit = live_aircon.get("OutdoorUnit", {})
-            # SystemStatus_Local is inside the serial-keyed device section
-            device_section = _get_device_section(last_known_state)
-            system_status = device_section.get("SystemStatus_Local", {})
+            live_aircon = self.coordinator.data.get("live_aircon", {})
+            outdoor_unit = self.coordinator.data.get("outdoor_unit", {})
+            system_status = self.coordinator.data.get("system_status", {})
 
             if not live_aircon:
                 return {"status": "No live data available"}
@@ -904,58 +704,57 @@ class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
             return {
                 # Operational Status
                 "operational_status": self._get_operational_status(live_aircon),
-                "system_running": live_aircon.get("SystemOn", False),
+                "system_running": live_aircon.get("system_on", False),
                 "defrosting": main_data.get("defrosting", False),
                 # Compressor Performance
-                "compressor_mode": live_aircon.get("CompressorMode", "Unknown"),
-                "compressor_capacity": f"{live_aircon.get('CompressorCapacity', 0)}%",
-                "compressor_power": self._format_power(
-                    outdoor_unit.get("CompPower", 0)
+                "compressor_mode": live_aircon.get("compressor_mode", "Unknown"),
+                "compressor_capacity": (
+                    f"{live_aircon.get('compressor_capacity', 0)}%"
                 ),
-                "compressor_speed": f"{outdoor_unit.get('CompSpeed', 0)} RPM",
-                "compressor_running": outdoor_unit.get("CompressorOn", False),
+                "compressor_power": self._format_power(
+                    outdoor_unit.get("comp_power", 0)
+                ),
+                "compressor_speed": f"{outdoor_unit.get('comp_speed', 0)} RPM",
+                "compressor_running": outdoor_unit.get("compressor_on", False),
                 # Fan Performance
-                "fan_running": live_aircon.get("AmRunningFan", False),
-                "fan_speed": f"{live_aircon.get('FanRPM', 0)} RPM",
-                "fan_power": f"{live_aircon.get('FanPWM', 0)}%",
+                "fan_running": live_aircon.get("am_running_fan", False),
+                "fan_speed": f"{live_aircon.get('fan_rpm', 0)} RPM",
+                "fan_power": f"{live_aircon.get('fan_pwm', 0)}%",
                 # Temperature Control
                 "target_temperature": self._format_temperature(
-                    live_aircon.get("CompressorChasingTemperature")
+                    live_aircon.get("compressor_chasing_temp")
                 ),
                 "current_temperature": self._format_temperature(
-                    live_aircon.get("CompressorLiveTemperature")
+                    live_aircon.get("compressor_live_temp")
                 ),
                 "coil_inlet_temp": self._format_temperature(
-                    live_aircon.get("CoilInlet")
+                    live_aircon.get("coil_inlet")
                 ),
                 "outdoor_coil_temp": self._format_temperature(
-                    outdoor_unit.get("CoilTemp")
+                    outdoor_unit.get("coil_temp")
                 ),
                 # System Efficiency Metrics
                 "indoor_temp": self._format_temperature(main_data.get("indoor_temp")),
                 "indoor_humidity": f"{main_data.get('indoor_humidity', 0):.1f}%",
                 "ambient_temp": self._format_temperature(
-                    system_status.get("SensorInputs", {})
-                    .get("SHTC1", {})
-                    .get("Temperature_oC")
+                    system_status.get("board_temp")
                 ),
                 "outdoor_ambient_temp": self._format_temperature(
-                    outdoor_unit.get("AmbTemp")
+                    outdoor_unit.get("amb_temp")
                 ),
                 # Valve and Control
                 "reverse_valve_position": outdoor_unit.get(
-                    "ReverseValvePosition", "Unknown"
+                    "reverse_valve_position", "Unknown"
                 ),
-                "defrost_mode": outdoor_unit.get("DefrostMode", 0),
-                "drm_active": outdoor_unit.get("DRM", False),
+                "defrost_mode": outdoor_unit.get("defrost_mode", 0),
+                "drm_active": outdoor_unit.get("drm", False),
                 # Error Monitoring
-                "error_code": live_aircon.get("ErrCode", 0),
+                "error_code": live_aircon.get("err_code", 0),
                 "outdoor_errors": {
-                    "error_1": outdoor_unit.get("ErrCode_1", 0),
-                    "error_2": outdoor_unit.get("ErrCode_2", 0),
-                    "error_3": outdoor_unit.get("ErrCode_3", 0),
-                    "error_4": outdoor_unit.get("ErrCode_4", 0),
-                    "error_5": outdoor_unit.get("ErrCode_5", 0),
+                    f"error_{i}": code
+                    for i, code in enumerate(
+                        outdoor_unit.get("err_codes", [0, 0, 0, 0, 0]), start=1
+                    )
                 },
                 # Zone Performance Summary
                 "active_zones": sum(
@@ -992,24 +791,20 @@ class ActronCompressorPowerSensor(ActronAirNeoEntity, SensorEntity):
     def native_value(self) -> float | None:
         """Return the compressor power in watts."""
         try:
-            raw_data = self.coordinator.data.get("raw_data", {})
-            last_known_state = raw_data.get("lastKnownState", {})
+            live_aircon = self.coordinator.data.get("live_aircon", {})
+            outdoor_unit = self.coordinator.data.get("outdoor_unit", {})
 
-            if not last_known_state:
+            if not live_aircon:
                 return None
 
-            # Access LiveAircon directly from lastKnownState (no serial number wrapper)
-            live_aircon = last_known_state.get("LiveAircon", {})
-
             # Check if compressor is running
-            compressor_running = live_aircon.get("SystemOn", False)
+            compressor_running = live_aircon.get("system_on", False)
 
             if not compressor_running:
                 return 0.0
 
             # Get compressor power from outdoor unit
-            outdoor_unit = live_aircon.get("OutdoorUnit", {})
-            compressor_power = outdoor_unit.get("CompPower", 0)
+            compressor_power = outdoor_unit.get("comp_power", 0)
 
             # Return power as float, ensuring it's not negative
             return (
@@ -1025,24 +820,22 @@ class ActronCompressorPowerSensor(ActronAirNeoEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         try:
-            raw_data = self.coordinator.data.get("raw_data", {})
-            last_known_state = raw_data.get("lastKnownState", {})
+            live_aircon = self.coordinator.data.get("live_aircon", {})
+            outdoor_unit = self.coordinator.data.get("outdoor_unit", {})
 
-            if not last_known_state:
-                return {"error": "No lastKnownState data available"}
-
-            # Access LiveAircon directly from lastKnownState (no serial number wrapper)
-            live_aircon = last_known_state.get("LiveAircon", {})
-            outdoor_unit = live_aircon.get("OutdoorUnit", {})
+            if not live_aircon:
+                return {"error": "No live aircon data available"}
 
             return {
-                "compressor_running": live_aircon.get("SystemOn", False),
-                "compressor_capacity": f"{live_aircon.get('CompressorCapacity', 0)}%",
-                "compressor_mode": live_aircon.get("CompressorMode", "Unknown"),
+                "compressor_running": live_aircon.get("system_on", False),
+                "compressor_capacity": (
+                    f"{live_aircon.get('compressor_capacity', 0)}%"
+                ),
+                "compressor_mode": live_aircon.get("compressor_mode", "Unknown"),
                 "system_mode": self.coordinator.data.get("main", {}).get(
                     "mode", "Unknown"
                 ),
-                "raw_power_value": outdoor_unit.get("CompPower", 0),
+                "raw_power_value": outdoor_unit.get("comp_power", 0),
             }
 
         except (KeyError, TypeError):
@@ -1071,24 +864,20 @@ class ActronCompressorEnergySensor(ActronAirNeoEntity, SensorEntity):
         """Return the total energy consumption in kWh."""
         try:
             # Get current power reading
-            raw_data = self.coordinator.data.get("raw_data", {})
-            last_known_state = raw_data.get("lastKnownState", {})
+            live_aircon = self.coordinator.data.get("live_aircon", {})
+            outdoor_unit = self.coordinator.data.get("outdoor_unit", {})
 
-            if not last_known_state:
+            if not live_aircon:
                 return None
 
-            # Access LiveAircon directly from lastKnownState (no serial number wrapper)
-            live_aircon = last_known_state.get("LiveAircon", {})
-
             # Check if compressor is running
-            compressor_running = live_aircon.get("SystemOn", False)
+            compressor_running = live_aircon.get("system_on", False)
 
             if not compressor_running:
                 current_power = 0.0
             else:
                 # Get compressor power from outdoor unit
-                outdoor_unit = live_aircon.get("OutdoorUnit", {})
-                compressor_power = outdoor_unit.get("CompPower", 0)
+                compressor_power = outdoor_unit.get("comp_power", 0)
                 current_power = (
                     max(0.0, float(compressor_power))
                     if compressor_power is not None
@@ -1124,19 +913,17 @@ class ActronCompressorEnergySensor(ActronAirNeoEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         try:
-            raw_data = self.coordinator.data.get("raw_data", {})
-            last_known_state = raw_data.get("lastKnownState", {})
+            live_aircon = self.coordinator.data.get("live_aircon", {})
 
-            if not last_known_state:
-                return {"error": "No lastKnownState data available"}
-
-            # Access LiveAircon directly from lastKnownState (no serial number wrapper)
-            live_aircon = last_known_state.get("LiveAircon", {})
+            if not live_aircon:
+                return {"error": "No live aircon data available"}
 
             return {
                 "current_power_w": self._last_power,
-                "compressor_running": live_aircon.get("SystemOn", False),
-                "compressor_capacity": f"{live_aircon.get('CompressorCapacity', 0)}%",
+                "compressor_running": live_aircon.get("system_on", False),
+                "compressor_capacity": (
+                    f"{live_aircon.get('compressor_capacity', 0)}%"
+                ),
                 "integration_method": "trapezoidal",
                 "last_update": self._last_update.isoformat()
                 if self._last_update

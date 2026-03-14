@@ -13,8 +13,6 @@ api:
   - changed-files:
       - any-glob-to-any-file:
           - custom_components/actronair_neo/api/**
-          - custom_components/actronair_neo/api.py
-          - custom_components/actronair_neo/api_wrapper.py
           - custom_components/actronair_neo/exceptions.py
 
 coordinator:

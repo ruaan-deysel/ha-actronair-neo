@@ -8,7 +8,7 @@ version = "2025.12.0"
 description = "Home Assistant integration for ActronAir Neo"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.14"
+requires-python = ">=3.14.2"
 authors = [
     {name = "Ruaan Deysel", email = "ruaan@example.com"}
 ]
@@ -25,9 +25,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "homeassistant",
+    "homeassistant==2026.3.1",
     "colorlog>=6.0.0",
     "pre-commit>=3.6.0",
+    "pyright>=1.1.400",
     "ruff>=0.8.0",
     "mypy>=1.8.0",
     "codespell>=2.2.0",
@@ -50,7 +51,7 @@ where = ["."]
 include = ["custom_components*"]
 
 [tool.uv]
-# uv will read .python-version (3.13) and create .venv automatically.
+# uv will read .python-version (3.14.2) and create .venv automatically.
 # Install everything: uv sync --all-extras
 python-preference = "managed"
 
@@ -82,7 +83,6 @@ omit = [
     "*/api.py",  # Deprecated - replaced by api_wrapper.py
     "*/diagnostics.py",  # Optional diagnostics feature
     "*/repairs.py",  # Optional repairs/health monitoring feature
-    "*/config_flow.py",  # Config flow tests failing due to Python 3.14 compatibility issue
     "*/__init__.py",  # Integration setup - requires full HA integration testing
 ]
 
@@ -100,7 +100,7 @@ show_missing = true
 precision = 2
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 88
 
 [tool.ruff.lint]
@@ -199,7 +199,7 @@ max-returns = 10
 max-statements = 50
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 show_error_codes = true
 follow_imports = "silent"
 local_partial_types = true

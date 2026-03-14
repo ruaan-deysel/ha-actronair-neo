@@ -106,6 +106,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         self._last_fan_mode_change: datetime.datetime | None = None
         self._min_fan_mode_interval = MIN_FAN_MODE_INTERVAL
 
+        # Zone state writes update the full EnabledZones array, so they must be
+        # serialized across all zones rather than locked per-zone.
+        self._zone_state_change_lock = asyncio.Lock()
+        self._pending_zone_state_overrides: dict[int, bool] = {}
+
         # Cache management
         self._last_cache_cleanup: datetime.datetime | None = None
 
@@ -335,11 +340,79 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 "vft": vft_data,
             }
 
+            self._apply_pending_zone_state_overrides(result)
+
         except Exception as e:
             msg = f"Failed to parse API response: {e}"
             raise UpdateFailed(msg) from e
         else:
             return result
+
+    @staticmethod
+    def _sync_zone_enabled_state(
+        coordinator_data: CoordinatorData,
+        enabled_zones: list[bool],
+    ) -> None:
+        """Keep main and per-zone enabled state in sync."""
+        coordinator_data["main"]["EnabledZones"] = enabled_zones.copy()
+
+        for zone_index, is_enabled in enumerate(enabled_zones, start=1):
+            zone_key = f"zone_{zone_index}"
+            zone_data = coordinator_data["zones"].get(zone_key)
+            if zone_data is not None:
+                zone_data["is_enabled"] = is_enabled
+
+    def _apply_pending_zone_state_overrides(
+        self,
+        coordinator_data: CoordinatorData,
+    ) -> None:
+        """Apply optimistic zone state overrides until the API catches up."""
+        if not self._pending_zone_state_overrides:
+            return
+
+        enabled_zones = coordinator_data["main"].get("EnabledZones")
+        if not isinstance(enabled_zones, list):
+            return
+
+        confirmed_zone_indexes: list[int] = []
+
+        for zone_index, desired_state in self._pending_zone_state_overrides.items():
+            if zone_index >= len(enabled_zones):
+                continue
+
+            if enabled_zones[zone_index] == desired_state:
+                confirmed_zone_indexes.append(zone_index)
+                continue
+
+            enabled_zones[zone_index] = desired_state
+            zone_key = f"zone_{zone_index + 1}"
+            zone_data = coordinator_data["zones"].get(zone_key)
+            if zone_data is not None:
+                zone_data["is_enabled"] = desired_state
+
+        for zone_index in confirmed_zone_indexes:
+            self._pending_zone_state_overrides.pop(zone_index, None)
+
+    def _optimistically_update_zone_state(
+        self,
+        enabled_zones: list[bool],
+    ) -> None:
+        """Push an optimistic EnabledZones update to subscribed entities."""
+        if not self.last_data:
+            return
+
+        main_data = self.last_data.get("main")
+        zones_data = self.last_data.get("zones")
+        if not isinstance(main_data, dict) or not isinstance(zones_data, dict):
+            return
+
+        self._sync_zone_enabled_state(self.last_data, enabled_zones)
+
+        # Force the next refresh to re-parse raw API data rather than returning
+        # a cached parsed structure that predates this optimistic change.
+        self._parsed_data_cache = None
+        self._raw_data_hash = None
+        self.async_set_updated_data(self.last_data)
 
     async def _parse_data_optimized(self, data: AcStatusResponse) -> CoordinatorData:
         """
@@ -1227,19 +1300,34 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         else:
             zone_index = int(zone_id)
 
-        # Use current data if available, otherwise fetch fresh
-        if self.last_data and "main" in self.last_data:
-            current_zone_status = self.last_data["main"]["EnabledZones"]
-        else:
-            current_zone_status = await self.api.get_zone_statuses()
+        async with self._zone_state_change_lock:
+            # Use current data if available, otherwise fetch fresh.
+            if self.last_data and "main" in self.last_data:
+                current_zone_status = self.last_data["main"]["EnabledZones"]
+            else:
+                current_zone_status = await self.api.get_zone_statuses()
 
-        modified_statuses = current_zone_status.copy()
+            modified_statuses = current_zone_status.copy()
 
-        # Ensure zone_index is within bounds
-        self._validate_zone_index(zone_index, len(modified_statuses))
-        modified_statuses[zone_index] = enable
-        command = self.api.create_command("SET_ZONE_STATE", zones=modified_statuses)
-        await self.api.send_command(self.device_id, command)
+            # Preserve earlier optimistic writes so rapid successive updates send
+            # the full cumulative zone array rather than a stale snapshot.
+            for (
+                pending_zone_index,
+                pending_state,
+            ) in self._pending_zone_state_overrides.items():
+                if pending_zone_index < len(modified_statuses):
+                    modified_statuses[pending_zone_index] = pending_state
+
+            # Ensure zone_index is within bounds.
+            self._validate_zone_index(zone_index, len(modified_statuses))
+            modified_statuses[zone_index] = enable
+
+            command = self.api.create_command("SET_ZONE_STATE", zones=modified_statuses)
+            await self.api.send_command(self.device_id, command)
+
+            self._pending_zone_state_overrides[zone_index] = enable
+            self._optimistically_update_zone_state(modified_statuses)
+
         await self.async_request_refresh()
 
     @staticmethod

@@ -1,7 +1,7 @@
 {
   "include": ["custom_components/actronair_neo"],
   "extraPaths": ["custom_components"],
-  "pythonVersion": "3.13",
+  "pythonVersion": "3.14",
   "typeCheckingMode": "strict",
   "reportIncompatibleVariableOverride": "warning",
   "reportIncompatibleMethodOverride": "warning",

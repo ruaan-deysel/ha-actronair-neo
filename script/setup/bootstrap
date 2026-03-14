@@ -16,6 +16,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/../.."
 
+EXPECTED_PYTHON_VERSION="$(tr -d '[:space:]' < .python-version)"
+
 # shellcheck source=script/.lib/output.sh
 source "$SCRIPT_DIR/../.lib/output.sh"
 
@@ -56,13 +58,21 @@ fi
 
 if [[ ! -d "$VENV_PATH" ]]; then
     log_info "Creating virtual environment at $VENV_PATH"
-    uv venv "$VENV_PATH"
+    uv venv --python "$EXPECTED_PYTHON_VERSION" "$VENV_PATH"
 elif [[ ! -x "$VENV_PATH/bin/python3" ]]; then
     # Venv exists but python3 is broken (broken symlink or missing)
     log_warning "Existing venv has broken Python interpreter - recreating"
     rm -rf "$VENV_PATH"
     log_info "Creating virtual environment at $VENV_PATH"
-    uv venv "$VENV_PATH"
+    uv venv --python "$EXPECTED_PYTHON_VERSION" "$VENV_PATH"
+else
+    CURRENT_PYTHON_VERSION="$($VENV_PATH/bin/python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")' 2>/dev/null || true)"
+    if [[ "$CURRENT_PYTHON_VERSION" != "$EXPECTED_PYTHON_VERSION" ]]; then
+        log_warning "Existing venv uses Python $CURRENT_PYTHON_VERSION - recreating with $EXPECTED_PYTHON_VERSION"
+        rm -rf "$VENV_PATH"
+        log_info "Creating virtual environment at $VENV_PATH"
+        uv venv --python "$EXPECTED_PYTHON_VERSION" "$VENV_PATH"
+    fi
 fi
 
 # Create symlinks for IDE compatibility and tool expectations
@@ -118,7 +128,7 @@ if [[ "$VENV_IS_EXTERNAL" == "true" ]]; then
 fi
 
 log_header "Installing all dependencies"
-log_info "Using pyproject.toml extras: dev + test"
+log_info "Using uv.lock with all extras (dev + test)"
 
 # Editable installs add __editable__ path hooks to sys.path, which can break
 # Home Assistant custom component discovery in newer versions.
@@ -127,13 +137,9 @@ if uv pip show ha-actronair-neo >/dev/null 2>&1; then
     uv pip uninstall -y ha-actronair-neo >/dev/null 2>&1 || true
 fi
 
-# Install project and extras as a standard wheel to avoid editable path hooks.
-uv pip install ".[dev,test]"
-
-# Ensure Home Assistant is always upgraded to the latest version
-# This guarantees the devcontainer always uses the most recent HA release
-log_header "Upgrading Home Assistant to latest available version"
-uv pip install --upgrade homeassistant
+# Sync the active environment from uv.lock and install the project non-editably
+# to avoid __editable__ path hooks that break Home Assistant discovery.
+uv sync --active --all-extras --no-editable --locked
 
 # Only install pre-commit hooks in local development, not in CI
 # GITHUB_ACTIONS is always set to "true" in GitHub Actions environments

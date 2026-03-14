@@ -35,8 +35,8 @@ fi
 
 # Check if pyright is available
 if ! command -v pyright >/dev/null 2>&1; then
-    log_warning "pyright not found. Install it with:"
-    log_step "uv pip install pyright"
+    log_warning "pyright not found in the current environment"
+    log_step "Run ./script/setup/bootstrap to install the locked toolchain"
     exit 1
 fi
 

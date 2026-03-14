@@ -72,6 +72,11 @@ async def async_setup_entry(
     for zone_id, zone_data in coordinator.data["zones"].items():
         entities.append(ActronZoneSensor(coordinator, zone_id))
 
+        # Non-YourZone systems expose the live damper position as a read-only
+        # percentage sensor rather than a controllable cover entity.
+        if not zone_data.get("airflow_control_enabled"):
+            entities.append(ActronZoneDamperPositionSensor(coordinator, zone_id))
+
         # Add humidity sensor if zone reports humidity
         if zone_data.get("humidity") is not None:
             entities.append(ActronZoneHumiditySensor(coordinator, zone_id))
@@ -240,6 +245,55 @@ class ActronZoneSensor(ActronAirNeoEntity, SensorEntity):
             and "ConnectionState" in peripheral_data
         ):
             attributes["connection_state"] = peripheral_data["ConnectionState"]
+
+
+class ActronZoneDamperPositionSensor(ActronAirNeoEntity, SensorEntity):
+    """Read-only sensor exposing the current zone damper position."""
+
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
+        """Initialize the zone damper position sensor."""
+        zone_name = coordinator.data["zones"][zone_id]["name"]
+        super().__init__(coordinator, "sensor", f"{zone_name} Damper Position")
+        self.zone_id = zone_id
+        self._attr_icon = "mdi:valve"
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the live damper position percentage."""
+        try:
+            return self.coordinator.data["zones"][self.zone_id].get("damper_position")
+        except KeyError:
+            return None
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return (
+            super().available
+            and self.zone_id in self.coordinator.data["zones"]
+            and self.coordinator.data["zones"][self.zone_id].get("damper_position")
+            is not None
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return damper-specific attributes."""
+        try:
+            zone_data = self.coordinator.data["zones"][self.zone_id]
+        except KeyError:
+            return {}
+
+        return {
+            "zone_id": self.zone_id,
+            "zone_name": zone_data.get("name"),
+            "zone_max_position": zone_data.get("zone_max_position"),
+            "zone_min_position": zone_data.get("zone_min_position"),
+            "yourzone_enabled": zone_data.get("airflow_control_enabled"),
+            "airflow_setpoint": zone_data.get("airflow_setpoint"),
+        }
 
 
 class ActronZoneHumiditySensor(ActronAirNeoEntity, SensorEntity):

@@ -1,11 +1,26 @@
 # Changelog
 
+<!-- markdownlint-disable MD024 -->
+
 All notable changes to the ActronAir Neo Home Assistant integration will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2026.3.2] - 2026-03-14
+
+### Fixed
+
+- **Zone Damper Position availability (issue #77)**: Restored the read-only damper position sensor for non-YourZone systems so existing zone damper entities no longer become unavailable after upgrading
+- **Concurrent zone switch updates (issue #76)**: Serialized `EnabledZones` writes in the coordinator and preserved optimistic zone state changes across refreshes so rapid on/off operations no longer overwrite each other with stale zone arrays
+
+## [2026.3.1] - 2026-03-08
+
+### Fixed
+
+- **fix(climate): serialize ZoneCapabilities before exposing as state attribute**: The `ZoneCapabilities` attribute was previously exposed as a raw dictionary, which caused issues with Home Assistant's state machine. Now it is serialized to a JSON string before being set as a state attribute, ensuring proper handling and display in the UI.
 
 ## [2026.3.0] - 2026-03-01
 

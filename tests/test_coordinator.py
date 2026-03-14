@@ -1,5 +1,6 @@
 """Tests for the ActronAir Neo coordinator."""
 
+import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -777,6 +778,83 @@ class TestCoordinatorAdditionalCoverage:
         await coordinator_instance.set_zone_state(0, enable=True)
         with pytest.raises(ValueError, match="out of range"):
             coordinator_instance._validate_zone_index(99, 2)
+
+    @pytest.mark.asyncio
+    async def test_zone_state_concurrent_updates_use_cumulative_state(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+        mock_api: MagicMock,
+    ) -> None:
+        """Test concurrent zone toggles preserve earlier optimistic changes."""
+        coordinator_instance.async_request_refresh = AsyncMock()
+        coordinator_instance.last_data["main"]["EnabledZones"] = [
+            True,
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+        ]
+        coordinator_instance.last_data["zones"]["zone_1"]["is_enabled"] = True
+        coordinator_instance.last_data["zones"]["zone_2"] = {
+            "name": "Bedroom",
+            "is_enabled": True,
+            "capabilities": ZoneCapabilities(
+                exists=True,
+                can_operate=True,
+                has_temp_control=True,
+                has_separate_targets=False,
+                target_temp_cool=24.0,
+                target_temp_heat=22.0,
+                peripheral_capabilities=None,
+            ),
+        }
+
+        commands_sent: list[dict[str, Any]] = []
+        first_command_started = asyncio.Event()
+        release_first_command = asyncio.Event()
+
+        mock_api.create_command = MagicMock(
+            side_effect=lambda command_type, **kwargs: {
+                "cmd": command_type,
+                "zones": kwargs["zones"].copy(),
+            }
+        )
+
+        async def send_command(_device_id: str, command: dict[str, Any]) -> None:
+            commands_sent.append(command)
+            if len(commands_sent) == 1:
+                first_command_started.set()
+                await release_first_command.wait()
+
+        mock_api.send_command = AsyncMock(side_effect=send_command)
+
+        first_toggle = asyncio.create_task(
+            coordinator_instance.set_zone_state("zone_1", enable=False)
+        )
+        await first_command_started.wait()
+
+        second_toggle = asyncio.create_task(
+            coordinator_instance.set_zone_state("zone_2", enable=False)
+        )
+        await asyncio.sleep(0)
+
+        assert len(commands_sent) == 1
+        assert commands_sent[0]["zones"][:2] == [False, True]
+
+        release_first_command.set()
+        await asyncio.gather(first_toggle, second_toggle)
+
+        assert len(commands_sent) == 2
+        assert commands_sent[1]["zones"][:2] == [False, False]
+        assert coordinator_instance.last_data["main"]["EnabledZones"][:2] == [
+            False,
+            False,
+        ]
+        assert coordinator_instance.last_data["zones"]["zone_1"]["is_enabled"] is False
+        assert coordinator_instance.last_data["zones"]["zone_2"]["is_enabled"] is False
 
     @pytest.mark.asyncio
     async def test_bulk_zone_operations_and_execute(

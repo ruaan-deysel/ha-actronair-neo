@@ -1,0 +1,85 @@
+integration:
+  - changed-files:
+      - any-glob-to-any-file:
+          - custom_components/actronair_neo/__init__.py
+          - custom_components/actronair_neo/const.py
+          - custom_components/actronair_neo/manifest.json
+          - custom_components/actronair_neo/services.yaml
+          - custom_components/actronair_neo/icons.json
+          - custom_components/actronair_neo/types.py
+          - custom_components/actronair_neo/zone_presets.py
+
+api:
+  - changed-files:
+      - any-glob-to-any-file:
+          - custom_components/actronair_neo/api/**
+          - custom_components/actronair_neo/exceptions.py
+
+coordinator:
+  - changed-files:
+      - any-glob-to-any-file:
+          - custom_components/actronair_neo/coordinator.py
+
+entities:
+  - changed-files:
+      - any-glob-to-any-file:
+          - custom_components/actronair_neo/entity.py
+          - custom_components/actronair_neo/climate.py
+          - custom_components/actronair_neo/sensor.py
+          - custom_components/actronair_neo/binary_sensor.py
+          - custom_components/actronair_neo/switch.py
+          - custom_components/actronair_neo/number.py
+          - custom_components/actronair_neo/cover.py
+
+config-flow:
+  - changed-files:
+      - any-glob-to-any-file:
+          - custom_components/actronair_neo/config_flow.py
+
+diagnostics:
+  - changed-files:
+      - any-glob-to-any-file:
+          - custom_components/actronair_neo/diagnostics.py
+
+repairs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - custom_components/actronair_neo/repairs.py
+
+translations:
+  - changed-files:
+      - any-glob-to-any-file:
+          - custom_components/actronair_neo/strings.json
+          - custom_components/actronair_neo/translations/**
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - tests/**
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - .github/ISSUE_TEMPLATE/**
+          - .github/prompts/**
+          - .github/instructions/**
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .python-version
+          - pyproject.toml
+          - pyrightconfig.json
+          - uv.lock
+          - script/setup/bootstrap
+          - script/test
+          - script/type-check
+
+github-actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+          - .github/dependabot.yml
+          - .github/labeler.yml
+          - .github/labels.yml

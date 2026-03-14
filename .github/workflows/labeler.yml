@@ -29,10 +29,11 @@ jobs:
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
 
       - name: Sync repository labels
-        uses: crazy-max/ghaction-github-labeler@6ed0665e5a240140b1e1bd505d6c16af7c5b5761 # v5.0.0
+        uses: EndBug/label-sync@52074158190acb45f3077f9099fea818aa43f97a # v2.3.3
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          yaml-file: .github/labels.yml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: .github/labels.yml
+          delete-other-labels: true
 
   label-pull-requests:
     if: github.event_name == 'pull_request_target'

@@ -25,7 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "homeassistant==2026.3.1",
+    "homeassistant==2026.3.2",
     "colorlog>=6.0.0",
     "pre-commit>=3.6.0",
     "pyright>=1.1.400",

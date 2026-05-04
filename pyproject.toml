@@ -19,7 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "actron-neo-api==0.4.1",
+    "actron-neo-api==0.5.7",
     "aiofiles",
 ]
 
@@ -27,10 +27,10 @@ dependencies = [
 dev = [
     "homeassistant==2026.4.2",
     "colorlog>=6.0.0",
-    "pre-commit>=3.6.0",
-    "pyright>=1.1.400",
-    "ruff>=0.8.0",
-    "mypy>=1.8.0",
+    "pre-commit>=4.6.0",
+    "pyright>=1.1.409",
+    "ruff>=0.15.12",
+    "mypy>=1.20.2",
     "codespell>=2.2.0",
 ]
 test = [

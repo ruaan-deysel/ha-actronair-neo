@@ -21,6 +21,9 @@ env.bak/
 # VS Code settings
 .vscode/
 
+# Dev container local lock metadata
+.devcontainer/devcontainer-lock.json
+
 # IDE files
 .idea/
 

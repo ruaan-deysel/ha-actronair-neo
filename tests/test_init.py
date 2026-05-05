@@ -384,15 +384,15 @@ async def test_create_api_client_token_refresh_callback_updates_entry(hass):
     with (
         patch("custom_components.actronair_neo.ActronAirNeoAuth", _FakeAuth),
         patch(
-            "custom_components.actronair_neo.async_get_clientsession",
-            return_value=MagicMock(),
+            "custom_components.actronair_neo.async_create_clientsession",
+            new=AsyncMock(return_value=MagicMock()),
         ),
         patch(
             "custom_components.actronair_neo.ActronAirNeoApiClient",
             return_value=MagicMock(),
         ),
     ):
-        integration._create_api_client(hass, entry)
+        await integration._create_api_client(hass, entry)
 
     callback = captured["callback"]
     await callback("new_a", "new_r", 9.0)

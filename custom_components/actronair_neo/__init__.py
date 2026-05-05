@@ -19,9 +19,6 @@ from homeassistant.helpers import (
 from homeassistant.helpers import (
     entity_registry as er,  # type: ignore[import-untyped]
 )
-from homeassistant.helpers.aiohttp_client import (
-    async_get_clientsession,  # type: ignore[import-untyped]
-)
 
 from . import repairs
 from .api import ActronAirNeoApiClient
@@ -48,6 +45,7 @@ from .exceptions import (
     ConfigurationError,
     ZoneError,
 )
+from .ssl_helper import async_create_clientsession
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry  # type: ignore[import-untyped]
@@ -206,7 +204,7 @@ async def async_setup_entry(
         )
         raise ConfigEntryAuthFailed(_msg)
 
-    api = _create_api_client(hass, entry)
+    api = await _create_api_client(hass, entry)
 
     try:
         await api.initialize()
@@ -246,11 +244,19 @@ async def async_setup_entry(
     return True
 
 
-def _create_api_client(
+async def _create_api_client(
     hass: HomeAssistant, entry: ActronAirNeoConfigEntry
 ) -> ActronAirNeoApiClient:
-    """Create and return an API client from config entry."""
-    session = async_get_clientsession(hass)
+    """
+    Create and return an API client from config entry.
+
+    Uses a private aiohttp ClientSession backed by the certifi CA bundle to
+    work around the HA 2026.4 truststore change which breaks SSL verification
+    against ``nimbus.actronair.com.au`` (issue #96). The session is closed in
+    ``async_unload_entry``.
+    """
+    session = await async_create_clientsession(hass)
+    entry.async_on_unload(lambda: hass.async_create_task(session.close()))
     auth = ActronAirNeoAuth(session=session)
 
     # Restore tokens from config entry data.

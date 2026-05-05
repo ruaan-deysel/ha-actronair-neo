@@ -4,7 +4,7 @@
     "dockerfile": "Dockerfile"
   },
   "postCreateCommand": "script/setup/setup",
-  "postStartCommand": "echo 'Run script/develop to start Home Assistant'",
+  "postStartCommand": "script/setup/bootstrap && echo 'Dependencies synced and Home Assistant updated. Run script/develop to start Home Assistant'",
   "forwardPorts": [8123],
   "portsAttributes": {
     "8123": {

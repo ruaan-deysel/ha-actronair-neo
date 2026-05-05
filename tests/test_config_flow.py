@@ -345,6 +345,9 @@ class TestConfigFlowDirectMethods:
         flow = ActronairNeoConfigFlow()
         flow.hass = MagicMock()
         flow._auth = _mock_auth_instance()
+        flow._session = MagicMock()
+        flow._session.closed = False
+        flow._session.close = AsyncMock()
         flow.context = {"source": config_entries.SOURCE_USER}
         flow.async_abort = MagicMock(return_value={"reason": "cannot_connect"})
 

@@ -69,8 +69,8 @@ Use `[%key:...]` to reuse translations and avoid duplication:
       "user": {
         "title": "Set up ActronAir Neo",
         "data": {
-          "username": "Username",
-          "password": "Password"
+          "account_id": "Account ID",
+          "auth_code": "Authorization code"
         }
       }
     },

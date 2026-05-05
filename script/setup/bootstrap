@@ -128,7 +128,7 @@ if [[ "$VENV_IS_EXTERNAL" == "true" ]]; then
 fi
 
 log_header "Installing all dependencies"
-log_info "Using uv.lock with all extras (dev + test)"
+log_info "Resolving and syncing all extras (dev + test)"
 
 # Editable installs add __editable__ path hooks to sys.path, which can break
 # Home Assistant custom component discovery in newer versions.
@@ -137,17 +137,34 @@ if uv pip show ha-actronair-neo >/dev/null 2>&1; then
     uv pip uninstall -y ha-actronair-neo >/dev/null 2>&1 || true
 fi
 
-# Sync the active environment from uv.lock and install the project non-editably
-# to avoid __editable__ path hooks that break Home Assistant discovery.
-uv sync --active --all-extras --no-editable --locked
+# Sync the active environment and install the project non-editably to avoid
+# __editable__ path hooks that break Home Assistant discovery.
+uv sync --active --all-extras --no-editable
+
+# Always keep Home Assistant and pytest HA helpers current in the supported range.
+HA_VERSION_SPEC="homeassistant>=2026.4,<2027"
+
+log_header "Updating Home Assistant to latest supported version"
+log_info "Target spec: $HA_VERSION_SPEC"
+uv pip install --upgrade "$HA_VERSION_SPEC" "pytest-homeassistant-custom-component"
+
+INSTALLED_HA_VERSION="$(python -c 'import homeassistant.const as c; print(c.__version__)')"
+log_info "Installed Home Assistant version: $INSTALLED_HA_VERSION"
 
 # Only install pre-commit hooks in local development, not in CI
 # GITHUB_ACTIONS is always set to "true" in GitHub Actions environments
 if [[ -d ".git" && -z "${GITHUB_ACTIONS:-}" ]]; then
     log_header "Installing pre-commit hooks"
-    set +e
-    pre-commit install || log_warning "Failed to install pre-commit hooks (pre-commit may not be installed)"
-    set -e
+    GIT_HOOKS_PATH="$(git config --get core.hooksPath || true)"
+
+    if [[ -n "$GIT_HOOKS_PATH" ]]; then
+        log_info "Skipping pre-commit install because git core.hooksPath is set to: $GIT_HOOKS_PATH"
+        log_info "Use your custom hooks workflow or unset core.hooksPath to let pre-commit manage hooks."
+    else
+        set +e
+        pre-commit install || log_warning "Failed to install pre-commit hooks (pre-commit may not be installed)"
+        set -e
+    fi
 else
     if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
         log_info "Skipping pre-commit hooks (running in GitHub Actions)"

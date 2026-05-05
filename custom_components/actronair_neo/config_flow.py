@@ -21,7 +21,6 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import aiohttp_client
 
 from .api import ActronAirNeoApiClient, ActronAirNeoAuth
 from .const import (
@@ -39,6 +38,8 @@ if TYPE_CHECKING:
     import asyncio
     from collections.abc import Mapping
 
+    import aiohttp
+
     from .api.auth import DeviceCodeResponse
 
 
@@ -50,9 +51,30 @@ class ActronairNeoConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-ar
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._auth: ActronAirNeoAuth | None = None
+        self._session: aiohttp.ClientSession | None = None
         self._devices: list[Any] = []
         self._device_code_response: DeviceCodeResponse | None = None
         self.login_task: asyncio.Task[None] | None = None
+
+    async def _async_get_session(self) -> aiohttp.ClientSession:
+        """
+        Return a private aiohttp session backed by the certifi CA bundle.
+
+        Required because HA 2026.4 switched the default trust store to the OS
+        CA store which lacks the DigiCert root used by the ActronAir API
+        (issue #96).
+        """
+        from .ssl_helper import async_create_clientsession  # noqa: PLC0415
+
+        if self._session is None or self._session.closed:
+            self._session = await async_create_clientsession(self.hass)
+        return self._session
+
+    async def _async_close_session(self) -> None:
+        """Close the private aiohttp session if one was created."""
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+        self._session = None
 
     # ── User step (entry-point) ──────────────────────────────────
 
@@ -62,18 +84,23 @@ class ActronairNeoConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-ar
     ) -> ConfigFlowResult:
         """Handle the initial step — request a device code and poll."""
         if self._auth is None:
-            session = aiohttp_client.async_get_clientsession(self.hass)
+            session = await self._async_get_session()
             self._auth = ActronAirNeoAuth(session=session)
 
             try:
                 self._device_code_response = await self._auth.request_device_code()
             except AuthenticationError:
+                await self._async_close_session()
                 return self.async_abort(reason="cannot_connect")
 
         async def _wait_for_authorization() -> None:
             """Wait for the user to authorize the device."""
-            assert self._auth is not None  # noqa: S101
-            assert self._device_code_response is not None  # noqa: S101
+            if self._auth is None:
+                msg = "Auth object is not initialized"
+                raise RuntimeError(msg)
+            if self._device_code_response is None:
+                msg = "Device code response is not initialized"
+                raise RuntimeError(msg)
             try:
                 await self._auth.poll_for_token(
                     self._device_code_response.device_code,
@@ -95,7 +122,9 @@ class ActronairNeoConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-ar
                 return self.async_show_progress_done(next_step_id="timeout")
             return self.async_show_progress_done(next_step_id="finish_auth")
 
-        assert self._device_code_response is not None  # noqa: S101
+        if self._device_code_response is None:
+            msg = "Device code response is not initialized"
+            raise RuntimeError(msg)
         return self.async_show_progress(
             step_id="user",
             progress_action="wait_for_authorization",
@@ -118,11 +147,14 @@ class ActronairNeoConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-ar
         user_input: dict[str, Any] | None = None,  # noqa: ARG002
     ) -> ConfigFlowResult:
         """Fetch devices after successful authorization."""
-        assert self._auth is not None  # noqa: S101
+        if self._auth is None:
+            msg = "Auth object is not initialized"
+            raise RuntimeError(msg)
 
         # For reauth, just update tokens and reload
         if self.source == SOURCE_REAUTH:
             reauth_entry = self._get_reauth_entry()
+            await self._async_close_session()
             return self.async_update_reload_and_abort(
                 reauth_entry,
                 data_updates={
@@ -136,15 +168,17 @@ class ActronairNeoConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-ar
                 },
             )
 
-        session = aiohttp_client.async_get_clientsession(self.hass)
+        session = await self._async_get_session()
         api = ActronAirNeoApiClient(auth=self._auth, session=session)
 
         try:
             devices = await api.get_devices()
         except Exception:  # noqa: BLE001
+            await self._async_close_session()
             return self.async_abort(reason="cannot_connect")
 
         if not devices:
+            await self._async_close_session()
             return self.async_abort(reason="no_devices")
 
         self._devices = devices
@@ -216,10 +250,16 @@ class ActronairNeoConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-ar
 
     async def _async_create_device_entry(self, device: Any) -> ConfigFlowResult:
         """Create a config entry for a discovered device."""
-        assert self._auth is not None  # noqa: S101
+        if self._auth is None:
+            msg = "Auth object is not initialized"
+            raise RuntimeError(msg)
 
         await self.async_set_unique_id(device.serial)
         self._abort_if_unique_id_configured()
+
+        # Close the private auth session — the integration setup will create
+        # its own certifi-backed session on entry load.
+        await self._async_close_session()
 
         return self.async_create_entry(
             title=f"ActronAir Neo ({device.name})",

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.5.0] - 2026-05-05
+
+### Fixed
+
+- **Home Assistant 2026.4 SSL compatibility (issue #96)**: Restored reliable connectivity to the ActronAir Neo API by using a certifi-backed aiohttp session for auth and API calls, avoiding trust-store certificate validation failures on HA 2026.4.x.
+- **Config flow connection failures on re-add/reauth**: Updated config flow session handling to use the same certifi-backed session strategy and to close private sessions cleanly on terminal flow paths.
+- **Local development startup reliability**: Prevented Home Assistant startup crashes caused by stale editable-install namespace path hooks in the development virtual environment.
+
 ## [2026.3.2] - 2026-03-14
 
 ### Fixed

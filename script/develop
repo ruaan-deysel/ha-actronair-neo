@@ -56,6 +56,15 @@ fi
 
 "$SCRIPT_DIR/setup/sync-hacs"
 
+# Ensure project itself is NOT installed in editable mode in this venv.
+# Editable installs inject a setuptools path hook into the namespace package
+# `custom_components`, and HA tries to iterate that non-filesystem entry.
+if pip show ha-actronair-neo >/dev/null 2>&1; then
+    log_header "Removing editable package install"
+    pip uninstall -y ha-actronair-neo >/dev/null 2>&1 || true
+    log_info "Removed ha-actronair-neo from venv (loading via custom_components/)"
+fi
+
 # Set the path to custom_components
 ## This lets us have the structure we want <root>/custom_components/actronair_neo
 ## while at the same time have Home Assistant configuration inside <root>/config

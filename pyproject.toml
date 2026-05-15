@@ -43,7 +43,7 @@ test = [
     "freezegun>=1.2.0",
     "respx>=0.20.0",
     "syrupy>=4.6.0",
-    "types-aiofiles>=23.2.0",
+    "types-aiofiles>=25.1.0.20260409",
 ]
 
 [tool.setuptools.packages.find]

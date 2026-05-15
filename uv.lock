@@ -1057,7 +1057,7 @@ requires-dist = [
     { name = "respx", marker = "extra == 'test'", specifier = ">=0.20.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "syrupy", marker = "extra == 'test'", specifier = ">=4.6.0" },
-    { name = "types-aiofiles", marker = "extra == 'test'", specifier = ">=23.2.0" },
+    { name = "types-aiofiles", marker = "extra == 'test'", specifier = ">=25.1.0.20260409" },
 ]
 provides-extras = ["dev", "test"]
 

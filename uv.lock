@@ -24,15 +24,16 @@ wheels = [
 
 [[package]]
 name = "actron-neo-api"
-version = "0.4.1"
+version = "0.5.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
+    { name = "aiomqtt" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/04/c8/e403d4df0f4ad2a95fdc86badfe829073a7b698b12c892d9d193721e182b/actron_neo_api-0.4.1.tar.gz", hash = "sha256:beb965e5f7cd4bf592d5fb014931170abf9000e91fd09a335a4a8af2eef33ade", size = 45426, upload-time = "2025-12-15T12:04:01.122Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/4a/54ae2d5daed4cf4d9d0d4f0d81b0037e7e52ebfd602f2415623592953def/actron_neo_api-0.5.11.tar.gz", hash = "sha256:f37913d1a5eef9b8cd8004172b5f457c41ce4afe368ef1b468039dc28a819b1d", size = 107037, upload-time = "2026-05-02T03:06:34.834Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/da/194ba990083afacabe4c0c11fb476bf6fcccf6f13c2d841655f6f154c7d0/actron_neo_api-0.4.1-py3-none-any.whl", hash = "sha256:a01936a01c23a231a0a5c47e1bbdbbc7a4d8ee0d534d608c107f7d106f6a59fc", size = 27324, upload-time = "2025-12-15T12:03:59.692Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/8b/eab7cd3e41a690320d28a220e4f64fab11852f1c272709f4fbf44b500336/actron_neo_api-0.5.11-py3-none-any.whl", hash = "sha256:8a62e272500c17dedb5cd8f9a553c7cc92404f7765d83b322f627f3e3751a323", size = 51949, upload-time = "2026-05-02T03:06:33.22Z" },
 ]
 
 [[package]]
@@ -179,6 +180,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0a/a6/982f3a013b42e914a2420631afcaecb729c49525cc6cc58e15d27ee4cb4b/aiohttp_fast_zlib-0.3.0.tar.gz", hash = "sha256:963a09de571b67fa0ef9cb44c5a32ede5cb1a51bc79fc21181b1cddd56b58b28", size = 8770, upload-time = "2025-06-07T12:41:49.161Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/11/ea9ecbcd6cf68c5de690fd39b66341405ab091aa0c3598277e687aa65901/aiohttp_fast_zlib-0.3.0-py3-none-any.whl", hash = "sha256:d4cb20760a3e1137c93cb42c13871cbc9cd1fdc069352f2712cd650d6c0e537e", size = 8615, upload-time = "2025-06-07T12:41:47.454Z" },
+]
+
+[[package]]
+name = "aiomqtt"
+version = "2.5.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "paho-mqtt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/70/44/cfc58272783a11729462dc6df5adbfeabd084f840f609054ac772ae98c19/aiomqtt-2.5.1.tar.gz", hash = "sha256:25a0a47d157e8f158d2da1110ea4786c0615518751e94f7b04976c977a8ff20d", size = 86641, upload-time = "2026-03-05T18:28:56.421Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/01/9e/5089fa596220bf0dc73deeb23db27904e4b3504986caf08571f6f5cb84a8/aiomqtt-2.5.1-py3-none-any.whl", hash = "sha256:fd58c3593160e4d475d90ce911cdfc4239cd64de96b0ba22edf6c86bd7afa278", size = 16051, upload-time = "2026-03-05T18:28:55.14Z" },
 ]
 
 [[package]]
@@ -1039,7 +1052,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "actron-neo-api", specifier = "==0.4.1" },
+    { name = "actron-neo-api", specifier = "==0.5.11" },
     { name = "aiofiles" },
     { name = "codespell", marker = "extra == 'dev'", specifier = ">=2.2.0" },
     { name = "colorlog", marker = "extra == 'dev'", specifier = ">=6.0.0" },

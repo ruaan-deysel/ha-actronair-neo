@@ -256,7 +256,11 @@ async def _create_api_client(
     ``async_unload_entry``.
     """
     session = await async_create_clientsession(hass)
-    entry.async_on_unload(lambda: hass.async_create_task(session.close()))
+
+    def _close_session() -> None:
+        hass.async_create_task(session.close())
+
+    entry.async_on_unload(_close_session)
     auth = ActronAirNeoAuth(session=session)
 
     # Restore tokens from config entry data.

@@ -124,6 +124,7 @@ class MainData(BaseModel):
     service_reminder_enabled: bool = False
     service_reminder_time: str = "NA"
     warnings: list[str] = Field(default_factory=list)
+    dry_mode_supported: bool = False
 
 
 class LiveAirconData(BaseModel):
@@ -340,4 +341,4 @@ class CommandData(BaseModel):
 # --- Literal types for fan and HVAC modes ---
 
 FanModeType = Literal["LOW", "MED", "HIGH", "AUTO"]
-HvacModeType = Literal["COOL", "HEAT", "FAN", "AUTO", "OFF"]
+HvacModeType = Literal["COOL", "HEAT", "FAN", "AUTO", "DRY", "OFF"]

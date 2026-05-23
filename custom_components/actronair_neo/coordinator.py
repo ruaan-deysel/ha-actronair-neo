@@ -580,6 +580,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 "ServiceReminder", {}
             ).get("Time", "NA"),
             "warnings": self._parse_warnings(live_aircon),
+            "dry_mode_supported": self._detect_dry_mode_support(user_aircon_settings),
         }
 
         return main_data
@@ -1705,6 +1706,33 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         if raw_value is not None and raw_value < HUMIDITY_UNAVAILABLE:
             return raw_value
         return None
+
+    @staticmethod
+    def _detect_dry_mode_support(user_aircon_settings: dict) -> bool:
+        """
+        Detect whether this unit supports DRY (dehumidify) mode.
+
+        DRY mode is only available on select Neo models — classic units do not
+        expose it on the physical controller or in the API.  Detection is done
+        in priority order:
+        1. The unit is currently in DRY mode (definitive proof of support).
+        2. The API advertises a DryMode.Supported flag.
+        3. The API lists "DRY" in a Modes or SupportedModes capability array.
+        """
+        current_mode = user_aircon_settings.get("Mode", "")
+        if current_mode == "DRY":
+            return True
+
+        dry_mode_obj = user_aircon_settings.get("DryMode", {})
+        if isinstance(dry_mode_obj, dict) and dry_mode_obj.get("Supported", False):
+            return True
+
+        for field in ("Modes", "SupportedModes", "EnabledModes"):
+            modes = user_aircon_settings.get(field)
+            if isinstance(modes, (list, tuple)) and "DRY" in modes:
+                return True
+
+        return False
 
     @staticmethod
     def _parse_warnings(live_aircon: dict) -> list[str]:

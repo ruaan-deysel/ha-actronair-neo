@@ -19,7 +19,6 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "actron-neo-api==0.4.1",
     "aiofiles",
 ]
 

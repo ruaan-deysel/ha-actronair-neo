@@ -44,7 +44,7 @@ PARALLEL_UPDATES = 0
 
 _LOGGER = logging.getLogger(__name__)
 
-HVAC_MODES = [
+BASE_HVAC_MODES = [
     HVACMode.OFF,
     HVACMode.COOL,
     HVACMode.HEAT,
@@ -102,7 +102,6 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
         super().__init__(coordinator, "climate")
         self._attr_name = self.DEVICE_NAME
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-        self._attr_hvac_modes = HVAC_MODES
         self._attr_min_temp = MIN_TEMP
         self._attr_max_temp = MAX_TEMP
         self._attr_supported_features = (
@@ -111,6 +110,17 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
             | ClimateEntityFeature.TURN_ON
             | ClimateEntityFeature.TURN_OFF
         )
+
+    @property
+    def hvac_modes(self) -> list[HVACMode]:
+        """Return the list of available HVAC modes for this unit."""
+        modes = list(BASE_HVAC_MODES)
+        try:
+            if self.coordinator.data["main"].get("dry_mode_supported", False):
+                modes.append(HVACMode.DRY)
+        except (KeyError, TypeError):
+            pass
+        return modes
 
     @property
     def fan_modes(self) -> list[str]:
@@ -246,6 +256,7 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
             "HEAT": HVACMode.HEAT,
             "COOL": HVACMode.COOL,
             "FAN": HVACMode.FAN_ONLY,
+            "DRY": HVACMode.DRY,
             "OFF": HVACMode.OFF,
         }
         return mode_map.get(mode.upper(), HVACMode.OFF)
@@ -257,6 +268,7 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
             HVACMode.HEAT: "HEAT",
             HVACMode.COOL: "COOL",
             HVACMode.FAN_ONLY: "FAN",
+            HVACMode.DRY: "DRY",
             HVACMode.OFF: "OFF",
         }
         return mode_map.get(mode, "OFF")
@@ -300,12 +312,15 @@ class ActronZoneClimate(ActronAirNeoEntity, ClimateEntity):
 
         # Set up basic attributes
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-        self._attr_hvac_modes = [
+        base_zone_modes: list[HVACMode] = [
             HVACMode.OFF,
             HVACMode.COOL,
             HVACMode.HEAT,
             HVACMode.AUTO,
         ]
+        if coordinator.data["main"].get("dry_mode_supported", False):
+            base_zone_modes.append(HVACMode.DRY)
+        self._attr_hvac_modes = base_zone_modes
         self._attr_min_temp = MIN_TEMP
         self._attr_max_temp = MAX_TEMP
 
@@ -499,6 +514,7 @@ class ActronZoneClimate(ActronAirNeoEntity, ClimateEntity):
             "HEAT": HVACMode.HEAT,
             "COOL": HVACMode.COOL,
             "FAN": HVACMode.FAN_ONLY,
+            "DRY": HVACMode.DRY,
             "OFF": HVACMode.OFF,
         }
         return mode_map.get(mode.upper(), HVACMode.OFF)
@@ -510,6 +526,7 @@ class ActronZoneClimate(ActronAirNeoEntity, ClimateEntity):
             HVACMode.HEAT: "HEAT",
             HVACMode.COOL: "COOL",
             HVACMode.FAN_ONLY: "FAN",
+            HVACMode.DRY: "DRY",
             HVACMode.OFF: "OFF",
         }
         return mode_map.get(mode, "OFF")

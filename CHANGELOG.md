@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.5.1] - 2026-05-23
+
+### Added
+
+- **DRY mode support (issue #104)**: The integration now correctly maps the ActronAir `DRY` (dehumidify) mode to Home Assistant's `HVACMode.DRY`. Previously, selecting DRY on the physical controller caused HA to display the unit as `off`. DRY mode is only surfaced as a selectable option for units that report support for it — classic models that do not have DRY on their controller are unaffected.
+
+### Fixed
+
+- **"Failed to Unload" integration crash (issue #106)**: Resolved a `TypeError` that caused the integration to fail to unload every few days, leaving all entities unavailable until a Home Assistant restart. The root cause was an `async_on_unload` callback that returned an `asyncio.Task` object; Home Assistant 2026.5.x changed `_async_process_on_unload` to pass callback return values to `async_create_task()`, which requires a coroutine rather than an already-created Task. Fixed by replacing the lambda with a named inner function that returns `None`.
+
+### Changed
+
+- **Removed unused `actron-neo-api` dependency**: The `actron-neo-api` PyPI package was listed in `pyproject.toml` but was never imported — all API communication uses the self-hosted client in `custom_components/actronair_neo/api/`. The dependency has been removed, which also stops Dependabot from tracking upstream package updates.
+
 ## [2026.5.0] - 2026-05-05
 
 ### Fixed

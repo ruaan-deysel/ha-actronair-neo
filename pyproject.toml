@@ -28,7 +28,7 @@ dev = [
     "colorlog>=6.0.0",
     "pre-commit>=3.6.0",
     "pyright>=1.1.400",
-    "ruff>=0.8.0",
+    "ruff>=0.15.14",
     "mypy>=1.8.0",
     "codespell>=2.2.0",
 ]

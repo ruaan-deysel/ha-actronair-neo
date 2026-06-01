@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.6.0] - 2026-06-01
+
 ### Fixed
 
 - **States not updating after commands (issue #112)**: Hardened the integration against stale state when the ActronAir cloud is slow to refresh its `lastKnownState`. After any state-changing command (power, mode, temperature, fan, zones) the coordinator now clears its parsed-data cache and forces the follow-up poll to bypass the API response cache, so entities reflect the new state as soon as the cloud makes it available instead of a cached pre-command snapshot. The coordinator's parsed-data cache also gained a TTL so unchanged API responses can no longer pin stale parsed data indefinitely, and the API response cache is now invalidated on command failure as well as success.

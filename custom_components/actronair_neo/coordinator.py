@@ -30,7 +30,9 @@ from .const import (
     MIN_TEMP,
     NEO_SERIES_WC,
     OUTDOOR_TEMP_UNAVAILABLE,
+    PARSE_CACHE_TTL,
     VALID_FAN_MODES,
+    ZONE_OVERRIDE_TTL,
 )
 from .exceptions import (
     ApiError,
@@ -109,7 +111,17 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         # Zone state writes update the full EnabledZones array, so they must be
         # serialized across all zones rather than locked per-zone.
         self._zone_state_change_lock = asyncio.Lock()
-        self._pending_zone_state_overrides: dict[int, bool] = {}
+        # Maps zone index -> (desired_enabled_state, created_at). Each override
+        # expires after ZONE_OVERRIDE_TTL so a state the API never confirms does
+        # not stick permanently.
+        self._pending_zone_state_overrides: dict[
+            int, tuple[bool, datetime.datetime]
+        ] = {}
+
+        # After a state-changing command, force the next refresh to bypass the
+        # API response cache so we re-fetch fresh state rather than a cached
+        # pre-command snapshot. See issue #112.
+        self._force_fresh_on_next_update = False
 
         # Cache management
         self._last_cache_cleanup: datetime.datetime | None = None
@@ -123,6 +135,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         # Performance optimization: data processing cache
         self._parsed_data_cache: CoordinatorData | None = None
         self._raw_data_hash: int | None = None
+        self._parsed_data_cache_timestamp: datetime.datetime | None = None
 
         # Memory optimization: track cache sizes and cleanup
         self._cache_hit_count = 0
@@ -217,10 +230,20 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         try:
             # Check API health first
             if not self.api.is_api_healthy() and self.last_data:
+                _LOGGER.warning(
+                    "ActronAir API unhealthy (errors=%s); serving last known "
+                    "data while attempting recovery",
+                    self.api.error_count,
+                )
                 return self.last_data
 
+            # After a command we bypass the response cache to guarantee a
+            # fresh fetch rather than a cached pre-command snapshot.
+            use_cache = not self._force_fresh_on_next_update
+            self._force_fresh_on_next_update = False
+
             # Use the enhanced API client with caching and deduplication
-            status = await self.api.get_ac_status(self.device_id, use_cache=True)
+            status = await self.api.get_ac_status(self.device_id, use_cache=use_cache)
 
             # Parse data using optimized approach with caching
             parsed_data = await self._parse_data_optimized(status)  # type: ignore[arg-type]
@@ -374,14 +397,29 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         if not isinstance(enabled_zones, list):
             return
 
-        confirmed_zone_indexes: list[int] = []
+        now = datetime.datetime.now()  # noqa: DTZ005
+        resolved_zone_indexes: list[int] = []
 
-        for zone_index, desired_state in self._pending_zone_state_overrides.items():
+        for zone_index, (
+            desired_state,
+            created_at,
+        ) in self._pending_zone_state_overrides.items():
             if zone_index >= len(enabled_zones):
                 continue
 
+            # Confirmed by the API — drop the override.
             if enabled_zones[zone_index] == desired_state:
-                confirmed_zone_indexes.append(zone_index)
+                resolved_zone_indexes.append(zone_index)
+                continue
+
+            # Expired without confirmation — stop forcing it and let the API
+            # value show through.
+            if (now - created_at).total_seconds() >= ZONE_OVERRIDE_TTL:
+                _LOGGER.debug(
+                    "Zone %s state override expired without confirmation",
+                    zone_index + 1,
+                )
+                resolved_zone_indexes.append(zone_index)
                 continue
 
             enabled_zones[zone_index] = desired_state
@@ -390,7 +428,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             if zone_data is not None:
                 zone_data["is_enabled"] = desired_state
 
-        for zone_index in confirmed_zone_indexes:
+        for zone_index in resolved_zone_indexes:
             self._pending_zone_state_overrides.pop(zone_index, None)
 
     def _optimistically_update_zone_state(
@@ -410,9 +448,26 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         # Force the next refresh to re-parse raw API data rather than returning
         # a cached parsed structure that predates this optimistic change.
+        self._clear_parse_cache()
+        self.async_set_updated_data(self.last_data)
+
+    def _clear_parse_cache(self) -> None:
+        """Reset the parsed-data cache so the next poll re-parses raw data."""
         self._parsed_data_cache = None
         self._raw_data_hash = None
-        self.async_set_updated_data(self.last_data)
+        self._parsed_data_cache_timestamp = None
+
+    async def _async_refresh_after_command(self) -> None:
+        """
+        Refresh coordinator data after a state-changing command.
+
+        Clears the parse cache and forces the next fetch to bypass the API
+        response cache, so entities reflect the new state as quickly as the
+        cloud makes it available rather than a stale cached snapshot.
+        """
+        self._clear_parse_cache()
+        self._force_fresh_on_next_update = True
+        await self.async_request_refresh()
 
     async def _parse_data_optimized(self, data: AcStatusResponse) -> CoordinatorData:
         """
@@ -429,9 +484,18 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         raw_data_str = str(sorted(data.items()) if isinstance(data, dict) else data)
         raw_data_hash = hash(raw_data_str)
 
-        # Return cached parsed data if raw data hasn't changed
-        if self._raw_data_hash == raw_data_hash and self._parsed_data_cache is not None:
+        # Return cached parsed data if raw data hasn't changed AND the cache is
+        # still fresh. The TTL guards against the ActronAir cloud serving an
+        # unchanged (possibly stale) lastKnownState indefinitely. See issue #112.
+        if (
+            self._raw_data_hash == raw_data_hash
+            and self._parsed_data_cache is not None
+            and not self._is_parse_cache_expired()
+        ):
             self._cache_hit_count += 1
+            # Pending zone overrides are normally applied during a full parse;
+            # apply them here too so a cache hit doesn't drop or strand them.
+            self._apply_pending_zone_state_overrides(self._parsed_data_cache)
             return self._parsed_data_cache
 
         # Parse data using existing method
@@ -441,11 +505,22 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         # Cache the parsed result
         self._raw_data_hash = raw_data_hash
         self._parsed_data_cache = parsed_data
+        self._parsed_data_cache_timestamp = datetime.datetime.now()  # noqa: DTZ005
 
         # Periodic memory cleanup
         await self._maybe_cleanup_memory()
 
         return parsed_data
+
+    def _is_parse_cache_expired(self) -> bool:
+        """Return True when the parsed-data cache has exceeded its TTL."""
+        if self._parsed_data_cache_timestamp is None:
+            return True
+        age = (
+            datetime.datetime.now()  # noqa: DTZ005
+            - self._parsed_data_cache_timestamp
+        ).total_seconds()
+        return age >= PARSE_CACHE_TTL
 
     def _extract_data_sections(self, last_known_state: dict) -> dict:
         """
@@ -930,8 +1005,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             )
 
             if cache_hit_rate < 0.3:  # noqa: PLR2004
-                self._parsed_data_cache = None
-                self._raw_data_hash = None
+                self._clear_parse_cache()
 
             # Reset counters periodically
             if self._cache_hit_count + self._cache_miss_count > 1000:  # noqa: PLR2004
@@ -1102,19 +1176,19 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         else:
             command = self.api.create_command("CLIMATE_MODE", mode=hvac_mode)
         await self.api.send_command(self.device_id, command)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def turn_on(self) -> None:
         """Turn the AC system on."""
         command = self.api.create_command("ON")
         await self.api.send_command(self.device_id, command)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def turn_off(self) -> None:
         """Turn the AC system off."""
         command = self.api.create_command("OFF")
         await self.api.send_command(self.device_id, command)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def set_temperature(self, temperature: float, *, is_cooling: bool) -> None:
         """Set temperature."""
@@ -1122,7 +1196,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "SET_TEMP", temp=temperature, is_cool=is_cooling
         )
         await self.api.send_command(self.device_id, command)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def set_fan_mode(
         self, mode: FanModeType, *, continuous: bool | None = None
@@ -1191,7 +1265,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             self._continuous_fan = continuous
 
             # Force immediate refresh (blocking to ensure fresh data
-            # before verification)
+            # before verification). Bypass both caches so verification reads
+            # genuinely fresh state rather than a cached pre-command snapshot.
+            self._clear_parse_cache()
+            self._force_fresh_on_next_update = True
             await self.async_refresh()
 
             # Verify the change
@@ -1284,7 +1361,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             target_cool=target_cool,
             target_heat=target_heat,
         )
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def set_zone_state(self, zone_id: str | int, *, enable: bool) -> None:
         """
@@ -1314,7 +1391,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             # the full cumulative zone array rather than a stale snapshot.
             for (
                 pending_zone_index,
-                pending_state,
+                (pending_state, _created_at),
             ) in self._pending_zone_state_overrides.items():
                 if pending_zone_index < len(modified_statuses):
                     modified_statuses[pending_zone_index] = pending_state
@@ -1326,10 +1403,13 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             command = self.api.create_command("SET_ZONE_STATE", zones=modified_statuses)
             await self.api.send_command(self.device_id, command)
 
-            self._pending_zone_state_overrides[zone_index] = enable
+            self._pending_zone_state_overrides[zone_index] = (
+                enable,
+                datetime.datetime.now(),  # noqa: DTZ005
+            )
             self._optimistically_update_zone_state(modified_statuses)
 
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     @staticmethod
     def _validate_zone_index(zone_index: int, max_zones: int) -> None:
@@ -1351,42 +1431,44 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     async def set_zone_airflow(self, zone_index: int, airflow_percentage: int) -> None:
         """Set zone airflow percentage (YourZone control)."""
         await self.api.set_zone_airflow(zone_index, airflow_percentage)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def set_climate_mode(self, mode: str) -> None:
         """Set climate mode for all zones."""
         command = self.api.create_command("CLIMATE_MODE", mode=mode)
         await self.api.send_command(self.device_id, command)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def set_away_mode(self, *, state: bool) -> None:
         """Set away mode."""
         await self.api.set_away_mode(state=state)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def set_quiet_mode(self, *, state: bool) -> None:
         """Set quiet mode."""
         await self.api.set_quiet_mode(state=state)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def set_turbo_mode(self, *, state: bool) -> None:
         """Set turbo mode."""
         await self.api.set_turbo_mode(state=state)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def set_after_hours(self, *, enabled: bool) -> None:
         """Set after hours mode."""
         await self.api.set_after_hours(enabled=enabled)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def set_after_hours_duration(self, duration: int) -> None:
         """Set after hours duration in minutes."""
         await self.api.set_after_hours_duration(duration)
-        await self.async_request_refresh()
+        await self._async_refresh_after_command()
 
     async def force_update(self) -> None:
         """Force an immediate update of the device data."""
         await self.api.clear_all_caches()
+        self._clear_parse_cache()
+        self._force_fresh_on_next_update = True
         await self.async_refresh()
 
     async def invalidate_cache(self) -> None:

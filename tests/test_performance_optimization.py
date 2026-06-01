@@ -62,6 +62,86 @@ class TestCoordinatorPerformanceOptimizations:
             assert result1 == result2
 
     @pytest.mark.asyncio
+    async def test_parse_cache_ttl_forces_reparse(
+        self, hass: HomeAssistant, mock_api
+    ) -> None:
+        """Stale parse cache is re-parsed once the TTL elapses (issue #112)."""
+        coordinator = _make_coordinator(hass, mock_api)
+        coordinator._last_memory_cleanup = datetime.now()
+
+        mock_response = {
+            "lastKnownState": {
+                "UserAirconSettings": {"Mode": "Cool"},
+                "RemoteZoneInfo": [],
+            }
+        }
+
+        with patch.object(
+            coordinator, "_parse_data", new_callable=AsyncMock
+        ) as mock_parse:
+            mock_parse.return_value = {"main": {"mode": "cool"}, "zones": {}}
+
+            await coordinator._parse_data_optimized(mock_response)
+            assert mock_parse.call_count == 1
+
+            # Within TTL → cache hit, no re-parse.
+            await coordinator._parse_data_optimized(mock_response)
+            assert mock_parse.call_count == 1
+
+            # Simulate the cache ageing past its TTL → forces a re-parse even
+            # though the raw bytes are identical.
+            coordinator._parsed_data_cache_timestamp = datetime.now() - timedelta(
+                seconds=120
+            )
+            await coordinator._parse_data_optimized(mock_response)
+            assert mock_parse.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_clear_parse_cache_resets_state(
+        self, hass: HomeAssistant, mock_api
+    ) -> None:
+        """_clear_parse_cache resets cache, hash and timestamp."""
+        coordinator = _make_coordinator(hass, mock_api)
+        coordinator._parsed_data_cache = {"main": {}}
+        coordinator._raw_data_hash = 123
+        coordinator._parsed_data_cache_timestamp = datetime.now()
+
+        coordinator._clear_parse_cache()
+
+        assert coordinator._parsed_data_cache is None
+        assert coordinator._raw_data_hash is None
+        assert coordinator._parsed_data_cache_timestamp is None
+
+    @pytest.mark.asyncio
+    async def test_pending_overrides_applied_on_cache_hit(
+        self, hass: HomeAssistant, mock_api
+    ) -> None:
+        """Zone overrides are applied even when the parse cache hits."""
+        coordinator = _make_coordinator(hass, mock_api)
+        coordinator._last_memory_cleanup = datetime.now()
+
+        mock_response = {"lastKnownState": {"UserAirconSettings": {"Mode": "Cool"}}}
+
+        with patch.object(
+            coordinator, "_parse_data", new_callable=AsyncMock
+        ) as mock_parse:
+            mock_parse.return_value = {
+                "main": {"EnabledZones": [False, False]},
+                "zones": {"zone_1": {"is_enabled": False}},
+            }
+
+            # Prime the cache.
+            await coordinator._parse_data_optimized(mock_response)
+
+            # Register an optimistic override that the API has not confirmed.
+            coordinator._pending_zone_state_overrides[0] = (True, datetime.now())
+
+            # Cache hit must still surface the override.
+            result = await coordinator._parse_data_optimized(mock_response)
+            assert result["main"]["EnabledZones"][0] is True
+            assert result["zones"]["zone_1"]["is_enabled"] is True
+
+    @pytest.mark.asyncio
     async def test_cache_invalidation_on_data_change(
         self, hass: HomeAssistant, mock_api
     ) -> None:

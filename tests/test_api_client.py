@@ -179,6 +179,34 @@ class TestClientInit:
         client.last_successful_request = datetime.now()
         assert client.is_api_healthy() is False
 
+    def test_is_api_healthy_half_open_probe_after_cooldown(self) -> None:
+        """A degraded breaker permits a probe once the cooldown elapses (#112)."""
+        client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
+        client.error_count = 10
+        client.last_successful_request = datetime.now()
+
+        # Freshly degraded → no probe yet (cooldown not elapsed).
+        assert client.is_api_healthy() is False
+
+        # Cooldown elapsed → half-open probe permitted.
+        client._last_health_probe_time = datetime.now() - timedelta(seconds=120)
+        assert client.is_api_healthy() is True
+
+    @pytest.mark.asyncio
+    async def test_get_ac_status_records_half_open_probe(self) -> None:
+        """A half-open probe request updates the probe timestamp."""
+        client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
+        client.error_count = 10
+        client.last_successful_request = datetime.now()
+        client._last_health_probe_time = datetime.now() - timedelta(seconds=120)
+        client._make_request = AsyncMock(return_value={"fresh": True})
+
+        result = await client.get_ac_status("SER1", use_cache=False)
+
+        assert result == {"fresh": True}
+        # Probe timestamp advanced so we don't immediately probe again.
+        assert client.is_api_healthy() is False
+
 
 class TestSetSystem:
     @pytest.mark.asyncio
@@ -578,6 +606,18 @@ class TestSendCommand:
             await client.send_command("SER1", {"cmd": True})
 
     @pytest.mark.asyncio
+    async def test_send_command_invalidates_cache_on_failure(self) -> None:
+        """Cache is invalidated even when a command fails (issue #112)."""
+        client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
+        client._make_request = AsyncMock(side_effect=ApiError("err", status_code=400))
+        client._invalidate_status_cache = AsyncMock()
+
+        with pytest.raises(ApiError):
+            await client.send_command("SER1", {"cmd": True})
+
+        client._invalidate_status_cache.assert_called_once_with("SER1")
+
+    @pytest.mark.asyncio
     async def test_send_command_timeout_then_success(self) -> None:
         """Test timeout/jsondecode branch retries and can then succeed."""
         client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
@@ -590,9 +630,15 @@ class TestSendCommand:
             ]
         )
 
-        result = await client.send_command("SER1", {"cmd": True})
+        with patch(
+            "custom_components.actronair_neo.api.client.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep:
+            result = await client.send_command("SER1", {"cmd": True})
 
         assert result == {"ok": True}
+        # Transient errors back off before retrying (issue #112 review).
+        assert mock_sleep.await_count == 2
         client._invalidate_status_cache.assert_called_once_with("SER1")
 
     @pytest.mark.asyncio

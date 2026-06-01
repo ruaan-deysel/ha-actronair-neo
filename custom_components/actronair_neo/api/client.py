@@ -31,6 +31,7 @@ from .const import (
     ENDPOINT_AC_COMMANDS,
     ENDPOINT_AC_STATUS,
     ENDPOINT_AC_SYSTEMS,
+    HEALTH_PROBE_COOLDOWN,
     MAX_REQUESTS_PER_MINUTE,
     MAX_RETRIES,
     MIN_FAN_MODE_INTERVAL,
@@ -164,6 +165,10 @@ class ActronAirNeoApiClient:
         self.error_count: int = 0
         self.last_successful_request: datetime | None = None
         self.cached_status: dict[str, Any] | None = None
+        # Circuit breaker: timestamp of the last half-open recovery probe.
+        # Initialised to "now" so a freshly degraded client waits a full
+        # cooldown before probing rather than probing immediately.
+        self._last_health_probe_time: datetime = datetime.now()  # noqa: DTZ005
 
         # Rate limiting and caching
         self.rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
@@ -183,16 +188,37 @@ class ActronAirNeoApiClient:
         # Zone locks
         self._zone_locks: dict[int, asyncio.Lock] = {}
 
-    def is_api_healthy(self) -> bool:
-        """Check if the API is healthy based on recent error history."""
+    @property
+    def _circuit_open(self) -> bool:
+        """Return True when too many recent errors have tripped the breaker."""
         _max_errors = 5
         _health_window_minutes = 15
-        return not (
+        return bool(
             self.error_count > _max_errors
             and self.last_successful_request
             and datetime.now() - self.last_successful_request  # noqa: DTZ005
             < timedelta(minutes=_health_window_minutes)
         )
+
+    def _is_health_probe_due(self) -> bool:
+        """Return True when a half-open recovery probe is permitted."""
+        return (
+            datetime.now() - self._last_health_probe_time  # noqa: DTZ005
+            >= timedelta(seconds=HEALTH_PROBE_COOLDOWN)
+        )
+
+    def is_api_healthy(self) -> bool:
+        """
+        Check if the API is healthy based on recent error history.
+
+        When the breaker is open we still permit a single half-open probe
+        every ``HEALTH_PROBE_COOLDOWN`` seconds so the integration can
+        recover automatically instead of serving stale data until the full
+        health window elapses.
+        """
+        if not self._circuit_open:
+            return True
+        return self._is_health_probe_due()
 
     async def set_system(
         self,
@@ -468,6 +494,12 @@ class ActronAirNeoApiClient:
         self._pending_requests[request_key] = future
 
         try:
+            # If the breaker is open we only reached here because a half-open
+            # probe is due — record it so we don't hammer a degraded API.
+            if self._circuit_open:
+                self._last_health_probe_time = datetime.now()  # noqa: DTZ005
+                _LOGGER.debug("API degraded; sending half-open recovery probe")
+
             url = f"{self._base_url}{ENDPOINT_AC_STATUS}?serial={serial}"
             response = await self._make_request("GET", url)
 
@@ -498,33 +530,39 @@ class ActronAirNeoApiClient:
         # Convert CommandData to dict if needed
         cmd_dict = command.model_dump() if isinstance(command, CommandData) else command
 
-        for attempt in range(MAX_RETRIES):
-            try:
-                response = await self._make_request("POST", url, json=cmd_dict)
-            except ApiError as err:
-                if (
-                    attempt < MAX_RETRIES - 1
-                    and err.status_code in RETRYABLE_STATUS_CODES
+        # The user's intent is to change device state, so any cached status is
+        # stale the moment we attempt a command — invalidate it regardless of
+        # whether the command ultimately succeeds or fails. See issue #112.
+        try:
+            for attempt in range(MAX_RETRIES):
+                try:
+                    response = await self._make_request("POST", url, json=cmd_dict)
+                except ApiError as err:
+                    if (
+                        attempt < MAX_RETRIES - 1
+                        and err.status_code in RETRYABLE_STATUS_CODES
+                    ):
+                        wait_time = 2**attempt
+                        await asyncio.sleep(wait_time)
+                    else:
+                        raise
+                except (
+                    TimeoutError,
+                    aiohttp.ClientError,
+                    json.JSONDecodeError,
                 ):
-                    wait_time = 2**attempt
-                    await asyncio.sleep(wait_time)
+                    if attempt == MAX_RETRIES - 1:
+                        raise
+                    # Back off before retrying, matching the ApiError branch,
+                    # so transient network errors don't hammer the API.
+                    await asyncio.sleep(2**attempt)
                 else:
-                    raise
-            except (
-                TimeoutError,
-                aiohttp.ClientError,
-                json.JSONDecodeError,
-            ):
-                if attempt == MAX_RETRIES - 1:
-                    raise
-            else:
-                # Invalidate cache after successful command
-                await self._invalidate_status_cache(serial)
+                    return cast("dict[str, Any]", response)
 
-                return cast("dict[str, Any]", response)
-
-        msg = f"Failed to send command after {MAX_RETRIES} attempts"
-        raise ApiError(msg)
+            msg = f"Failed to send command after {MAX_RETRIES} attempts"
+            raise ApiError(msg)
+        finally:
+            await self._invalidate_status_cache(serial)
 
     # --- Command creation ---
 

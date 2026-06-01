@@ -1228,3 +1228,95 @@ class TestCoordinatorRemainingBranches:
         coordinator_instance._execute_bulk_zone_op = original_execute
         coordinator_instance.set_zone_state = AsyncMock()
         await coordinator_instance._execute_bulk_zone_op("disable", "zone_1")
+
+
+class TestStaleStateHandling:
+    """Tests for the stale-state resilience fixes (issue #112)."""
+
+    @pytest.mark.asyncio
+    async def test_command_forces_fresh_fetch(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+        mock_api: MagicMock,
+        mock_api_response: dict[str, Any],
+    ) -> None:
+        """After a command the next fetch bypasses the response cache."""
+        mock_api.is_api_healthy = MagicMock(return_value=True)
+        mock_api.get_ac_status = AsyncMock(return_value=mock_api_response)
+        mock_api.create_command = MagicMock(return_value={"cmd": "on"})
+        mock_api.send_command = AsyncMock()
+        # Stub the scheduled refresh so we can inspect the flag before the
+        # follow-up update consumes it.
+        coordinator_instance.async_request_refresh = AsyncMock()
+
+        # Issuing a command sets the force-fresh flag.
+        await coordinator_instance.turn_on()
+        assert coordinator_instance._force_fresh_on_next_update is True
+
+        # The subsequent update fetches with use_cache=False then clears it.
+        await coordinator_instance._async_update_data()
+        mock_api.get_ac_status.assert_called_with("TEST123456", use_cache=False)
+        assert coordinator_instance._force_fresh_on_next_update is False
+
+    @pytest.mark.asyncio
+    async def test_normal_update_uses_cache(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+        mock_api: MagicMock,
+        mock_api_response: dict[str, Any],
+    ) -> None:
+        """A routine poll (no preceding command) still uses the cache."""
+        mock_api.is_api_healthy = MagicMock(return_value=True)
+        mock_api.get_ac_status = AsyncMock(return_value=mock_api_response)
+
+        await coordinator_instance._async_update_data()
+
+        mock_api.get_ac_status.assert_called_with("TEST123456", use_cache=True)
+
+    @pytest.mark.asyncio
+    async def test_zone_override_expires_after_ttl(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+    ) -> None:
+        """An unconfirmed zone override is dropped once its TTL elapses."""
+        coordinator_data = {
+            "main": {"EnabledZones": [False, False]},
+            "zones": {"zone_1": {"is_enabled": False}},
+        }
+
+        # A fresh override is enforced even though the API disagrees.
+        coordinator_instance._pending_zone_state_overrides[0] = (
+            True,
+            datetime.now(),
+        )
+        coordinator_instance._apply_pending_zone_state_overrides(coordinator_data)
+        assert coordinator_data["main"]["EnabledZones"][0] is True
+        assert 0 in coordinator_instance._pending_zone_state_overrides
+
+        # An expired override is discarded and the API value shows through.
+        coordinator_data["main"]["EnabledZones"][0] = False
+        coordinator_instance._pending_zone_state_overrides[0] = (
+            True,
+            datetime.now() - timedelta(seconds=300),
+        )
+        coordinator_instance._apply_pending_zone_state_overrides(coordinator_data)
+        assert coordinator_data["main"]["EnabledZones"][0] is False
+        assert 0 not in coordinator_instance._pending_zone_state_overrides
+
+    @pytest.mark.asyncio
+    async def test_unhealthy_api_logs_warning(
+        self,
+        coordinator_instance: ActronDataCoordinator,
+        mock_api: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Serving stale data while degraded emits a warning for visibility."""
+        coordinator_instance.last_data = {"cached": "data"}
+        mock_api.is_api_healthy = MagicMock(return_value=False)
+        mock_api.error_count = 7
+
+        with caplog.at_level("WARNING"):
+            result = await coordinator_instance._async_update_data()
+
+        assert result == {"cached": "data"}
+        assert "serving last known data" in caplog.text

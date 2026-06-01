@@ -25,6 +25,17 @@ CONF_TOKEN_EXPIRES_AT: Final = "token_expires_at"  # noqa: S105
 
 DEFAULT_REFRESH_INTERVAL: Final = 30  # seconds
 
+# ── Cache freshness ──────────────────────────────────────────────
+# Maximum age of the coordinator's parsed-data cache before a full
+# re-parse is forced, even when the raw API bytes are unchanged. This
+# guards against the ActronAir cloud serving an unchanged (and possibly
+# stale) lastKnownState indefinitely. See issue #112.
+PARSE_CACHE_TTL: Final = 60  # seconds
+
+# Maximum lifetime of an optimistic zone-enable override before it is
+# discarded if the API never confirms the requested state.
+ZONE_OVERRIDE_TTL: Final = 120  # seconds
+
 # ── Platforms ────────────────────────────────────────────────────
 
 PLATFORMS: Final[list[Platform]] = [

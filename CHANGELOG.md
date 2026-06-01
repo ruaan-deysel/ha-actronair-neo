@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **States not updating after commands (issue #112)**: Hardened the integration against stale state when the ActronAir cloud is slow to refresh its `lastKnownState`. After any state-changing command (power, mode, temperature, fan, zones) the coordinator now clears its parsed-data cache and forces the follow-up poll to bypass the API response cache, so entities reflect the new state as soon as the cloud makes it available instead of a cached pre-command snapshot. The coordinator's parsed-data cache also gained a TTL so unchanged API responses can no longer pin stale parsed data indefinitely, and the API response cache is now invalidated on command failure as well as success.
+- **Stuck optimistic zone state (issue #112)**: Pending optimistic zone-enable overrides are now applied even when the parse cache hits, and expire after a timeout if the API never confirms them, preventing a zone toggle from appearing permanently stuck.
+- **Circuit-breaker recovery (issue #112)**: When the API is marked unhealthy, the client now permits a periodic half-open recovery probe instead of serving cached data for the full health window, so the integration recovers automatically once the API is reachable again. A warning is logged whenever stale data is served while degraded, to aid diagnosis.
+
 ## [2026.5.1] - 2026-05-23
 
 ### Added

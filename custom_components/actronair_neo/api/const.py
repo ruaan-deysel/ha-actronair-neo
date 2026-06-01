@@ -21,6 +21,12 @@ MIN_FAN_MODE_INTERVAL: Final = 5  # seconds between fan mode changes
 DEFAULT_CACHE_TTL: Final = 15  # seconds
 CACHE_CLEANUP_INTERVAL: Final = 300  # seconds (5 minutes)
 
+# Circuit breaker: when the API is considered unhealthy, allow a single
+# half-open recovery probe through after this cooldown so the integration
+# can recover automatically rather than serving stale data for the full
+# health window. See issue #112.
+HEALTH_PROBE_COOLDOWN: Final = 60  # seconds
+
 # OAuth2 Device Code Flow constants
 CLIENT_ID: Final = "home_assistant"
 DEVICE_CODE_GRANT_TYPE: Final = "urn:ietf:params:oauth:grant-type:device_code"

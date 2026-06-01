@@ -19,6 +19,7 @@ from custom_components.actronair_neo.api.const import (
     API_URL,
     API_URL_QUE,
 )
+from custom_components.actronair_neo.api.push.models import RealtimeConnectionDetails
 from custom_components.actronair_neo.exceptions import (
     ApiError,
     AuthenticationError,
@@ -1058,3 +1059,66 @@ class TestCacheManagement:
     async def test_cleanup_expired_cache(self) -> None:
         client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
         await client.cleanup_expired_cache()  # Should not raise
+
+
+# --- Realtime push: discovery and token provider ---
+
+
+@pytest.mark.asyncio
+async def test_get_realtime_connection_details_parses_response():
+    client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
+    client._make_request = AsyncMock(
+        return_value={"endpoint": "mqtt.example", "port": 8883, "userId": "u1"}
+    )
+    details = await client.get_realtime_connection_details("SER123")
+    assert isinstance(details, RealtimeConnectionDetails)
+    assert details.endpoint == "mqtt.example"
+    assert details.port == 8883
+
+
+@pytest.mark.asyncio
+async def test_get_realtime_connection_details_none_on_non_dict():
+    client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
+    client._make_request = AsyncMock(return_value="oops")
+    assert await client.get_realtime_connection_details("SER123") is None
+
+
+@pytest.mark.asyncio
+async def test_get_realtime_access_token_returns_token():
+    client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
+    assert await client.get_realtime_access_token() == "test_token"
+
+
+@pytest.mark.asyncio
+async def test_get_realtime_access_token_raises_when_missing():
+    auth = _mock_auth()
+    auth.access_token = None
+    client = ActronAirNeoApiClient(auth, _mock_session())
+    with pytest.raises(AuthenticationError):
+        await client.get_realtime_access_token()
+
+
+def test_platform_property_defaults_to_neo():
+    client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
+    assert client.platform == "neo"
+
+
+@pytest.mark.asyncio
+async def test_get_realtime_connection_details_none_when_no_endpoint():
+    client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
+    client._make_request = AsyncMock(return_value={"port": 8883})
+    assert await client.get_realtime_connection_details("SER123") is None
+
+
+@pytest.mark.asyncio
+async def test_get_realtime_access_token_ensures_valid_token():
+    auth = _mock_auth()
+    client = ActronAirNeoApiClient(auth, _mock_session())
+    await client.get_realtime_access_token()
+    auth.ensure_valid_token.assert_awaited_once()
+
+
+def test_platform_property_que_for_que_base_url():
+    client = ActronAirNeoApiClient(_mock_auth(), _mock_session())
+    client._base_url = API_URL_QUE
+    assert client.platform == "que"

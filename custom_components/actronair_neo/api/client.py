@@ -31,6 +31,7 @@ from .const import (
     ENDPOINT_AC_COMMANDS,
     ENDPOINT_AC_STATUS,
     ENDPOINT_AC_SYSTEMS,
+    ENDPOINT_REALTIME_DETAILS,
     HEALTH_PROBE_COOLDOWN,
     MAX_REQUESTS_PER_MINUTE,
     MAX_RETRIES,
@@ -45,6 +46,7 @@ from .models import (
     HvacModeType,
     ZoneCapabilities,
 )
+from .push.models import RealtimeConnectionDetails
 
 if TYPE_CHECKING:
     from .auth import ActronAirNeoAuth
@@ -520,6 +522,31 @@ class ActronAirNeoApiClient:
             raise
         finally:
             self._pending_requests.pop(request_key, None)
+
+    @property
+    def platform(self) -> str:
+        """Return the platform family ("neo" or "que") from the base URL."""
+        return "que" if "que" in self._base_url.lower() else "neo"
+
+    async def get_realtime_access_token(self) -> str:
+        """Return a fresh OAuth access token for use as the MQTT password."""
+        await self.auth.ensure_valid_token()
+        token = self.auth.access_token
+        if not token:
+            msg = "No access token available for realtime push"
+            raise AuthenticationError(msg)
+        return token
+
+    async def get_realtime_connection_details(
+        self,
+        serial: str,  # noqa: ARG002
+    ) -> RealtimeConnectionDetails | None:
+        """Fetch and parse broker connection details for realtime push."""
+        url = f"{self._base_url}{ENDPOINT_REALTIME_DETAILS}"
+        response = await self._make_request("GET", url)
+        if not isinstance(response, dict):
+            return None
+        return RealtimeConnectionDetails.from_payload(response)
 
     async def send_command(
         self, serial: str, command: CommandData | dict[str, Any]

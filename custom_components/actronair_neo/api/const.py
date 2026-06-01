@@ -46,3 +46,16 @@ TOKEN_EXPIRY_BUFFER: Final = 300  # Refresh 5 minutes early
 
 # HTTP status codes used for retry logic
 RETRYABLE_STATUS_CODES: Final[frozenset[int]] = frozenset({500, 502, 503, 504})
+
+# Realtime push (MQTT) — Neo platform
+ENDPOINT_REALTIME_DETAILS: Final = "/api/v0/messaging/connection/details"
+MQTT_KEEPALIVE: Final = 60  # seconds
+MQTT_RECONNECT_INITIAL: Final = 0.5  # seconds
+MQTT_RECONNECT_MAX: Final = 60.0  # seconds
+MQTT_TOPIC_PREFIX: Final = "actron-cloud"
+MQTT_PLATFORM_NEO: Final = "neo"
+MQTT_TOPIC_FULL_STATUS: Final = "mwc/full-status"
+MQTT_TOPIC_STATUS_CHANGE: Final = "mwc/status-change"
+MQTT_TOPIC_HEART_BEAT: Final = "mwc/heart-beat"
+# Heartbeat is treated as stale (push degraded) after this many seconds.
+HEARTBEAT_STALE_AFTER: Final = 180

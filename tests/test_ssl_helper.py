@@ -28,7 +28,8 @@ def test_mqtt_ssl_context_loads_intermediate():
     """Building the context loads the bundled intermediate without error."""
     ctx = _build_mqtt_ssl_context()
     subjects = {
-        dict(c).get("subject") for c in ctx.get_ca_certs()  # type: ignore[arg-type]
+        dict(c).get("subject")
+        for c in ctx.get_ca_certs()  # type: ignore[arg-type]
     }
     # The bundled intermediate's CN should be present among loaded CAs.
     flat = str(subjects)

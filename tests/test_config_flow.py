@@ -46,6 +46,10 @@ MOCK_TOKEN_RESPONSE = {
 
 _PATCH_AUTH = "custom_components.actronair_neo.config_flow.ActronAirNeoAuth"
 _PATCH_API = "custom_components.actronair_neo.config_flow.ActronAirNeoApiClient"
+# Auto-creating a single-device entry triggers a real ``async_setup_entry``,
+# which builds its own API client and calls ``get_devices()`` over the network.
+# Flow tests only assert on the flow result, so stub setup to avoid the socket.
+_PATCH_SETUP = "custom_components.actronair_neo.async_setup_entry"
 
 
 def _mock_auth_instance() -> MagicMock:
@@ -115,6 +119,7 @@ class TestActronConfigFlow:
         with (
             patch(_PATCH_AUTH, return_value=mock_auth),
             patch(_PATCH_API, return_value=mock_api),
+            patch(_PATCH_SETUP, return_value=True),
         ):
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}

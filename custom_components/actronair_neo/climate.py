@@ -31,7 +31,7 @@ from .const import (
     MAX_TEMP,
     MIN_TEMP,
 )
-from .entity import ActronAirNeoEntity
+from .entity import ActronAirNeoEntity, ActronZoneEntity
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -287,7 +287,7 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
         }
 
 
-class ActronZoneClimate(ActronAirNeoEntity, ClimateEntity):
+class ActronZoneClimate(ActronZoneEntity, ClimateEntity):
     """Zone climate entity with enhanced control capabilities."""
 
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:

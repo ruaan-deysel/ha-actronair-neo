@@ -67,3 +67,24 @@ class ActronAirNeoEntity(CoordinatorEntity["ActronDataCoordinator"]):
                 sw_version=main_data.get("firmware_version"),
             )
         return None
+
+
+class ActronZoneEntity(ActronAirNeoEntity):
+    """
+    Base for per-zone entities.
+
+    Reports ``unavailable`` when the entity's zone is absent from coordinator
+    data, so a transient/partial update that omits the zone renders the entity
+    unavailable rather than raising ``KeyError`` from its state properties.
+    Subclasses set ``self.zone_id`` in their ``__init__``.
+    """
+
+    zone_id: str
+
+    @property
+    def available(self) -> bool:
+        """Return True only when the backing zone is present in data."""
+        if not super().available:
+            return False
+        data = self.coordinator.data
+        return isinstance(data, dict) and self.zone_id in data.get("zones", {})

@@ -946,18 +946,71 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     async def _handle_push_update(self, payload: dict[str, Any], kind: str) -> None:
         """Apply a realtime push payload and publish to entities."""
+        prior_raw = self._last_raw_response
         try:
-            if kind == "full":
-                self._last_raw_response = payload
-            else:
-                self._last_raw_response = deep_merge(self._last_raw_response, payload)
-            # Push data is authoritative; bypass the stale-hash parse shortcut.
+            # MQTT payloads carry state under "lastKnownState" like the REST
+            # response, but a push (full-status or status-change) often includes
+            # only the sections that changed. Merge onto the last known full
+            # state so a sparse push never drops sections — notably
+            # RemoteZoneInfo, whose absence would blank every zone entity.
+            incoming_state = payload.get("lastKnownState")
+            if not isinstance(incoming_state, dict):
+                # Tolerate a bare-state payload without the wrapper.
+                incoming_state = {
+                    k: v for k, v in payload.items() if k != "lastKnownState"
+                }
+            prior_state = (
+                prior_raw.get("lastKnownState", {})
+                if isinstance(prior_raw, dict)
+                else {}
+            )
+            merged_state = (
+                deep_merge(prior_state, incoming_state)
+                if prior_state
+                else incoming_state
+            )
+            merged_raw: dict[str, Any] = {
+                **(prior_raw if isinstance(prior_raw, dict) else {}),
+                **payload,
+                "lastKnownState": merged_state,
+            }
+            _LOGGER.debug(
+                "Push update (kind=%s): payload keys=%s, state keys=%s",
+                kind,
+                sorted(payload.keys()),
+                sorted(incoming_state.keys()),
+            )
+
+            # Push data is authoritative; persist the merged raw and bypass the
+            # stale-hash parse shortcut.
+            self._last_raw_response = merged_raw
             self._clear_parse_cache()
-            parsed = await self._parse_data_optimized(self._last_raw_response)  # type: ignore[arg-type]
+            parsed = await self._parse_data_optimized(merged_raw)  # type: ignore[arg-type]
+
+            # Safeguard: never let a partial push blank a previously-populated
+            # system. If the merged parse drops all zones we used to have, treat
+            # the push as suspect, roll back, and keep the last good state.
+            if (
+                not parsed.get("zones")
+                and isinstance(self.last_data, dict)
+                and self.last_data.get("zones")
+            ):
+                _LOGGER.warning(
+                    "Ignoring push update that would clear all zones "
+                    "(kind=%s, state keys=%s)",
+                    kind,
+                    sorted(incoming_state.keys()),
+                )
+                self._last_raw_response = prior_raw
+                self._clear_parse_cache()
+                return
+
             self.last_data = parsed
             self.async_set_updated_data(parsed)
         except Exception:
             _LOGGER.exception("Failed to apply realtime push update; ignoring")
+            self._last_raw_response = prior_raw
+            self._clear_parse_cache()
 
     async def async_start_push(self) -> None:
         """Discover the broker and start the push transport (non-fatal)."""

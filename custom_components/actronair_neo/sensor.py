@@ -24,7 +24,7 @@ from .const import (
     ATTR_ZONE_NAME,
     ATTR_ZONE_TYPE,
 )
-from .entity import ActronAirNeoEntity
+from .entity import ActronAirNeoEntity, ActronZoneEntity
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -111,7 +111,7 @@ class ActronMainSensor(ActronAirNeoEntity, SensorEntity):
         }
 
 
-class ActronZoneSensor(ActronAirNeoEntity, SensorEntity):
+class ActronZoneSensor(ActronZoneEntity, SensorEntity):
     """Zone temperature sensor."""
 
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
@@ -247,7 +247,7 @@ class ActronZoneSensor(ActronAirNeoEntity, SensorEntity):
             attributes["connection_state"] = peripheral_data["ConnectionState"]
 
 
-class ActronZoneDamperPositionSensor(ActronAirNeoEntity, SensorEntity):
+class ActronZoneDamperPositionSensor(ActronZoneEntity, SensorEntity):
     """Read-only sensor exposing the current zone damper position."""
 
     _attr_native_unit_of_measurement = PERCENTAGE
@@ -296,7 +296,7 @@ class ActronZoneDamperPositionSensor(ActronAirNeoEntity, SensorEntity):
         }
 
 
-class ActronZoneHumiditySensor(ActronAirNeoEntity, SensorEntity):
+class ActronZoneHumiditySensor(ActronZoneEntity, SensorEntity):
     """Zone humidity sensor."""
 
     _attr_device_class = SensorDeviceClass.HUMIDITY
@@ -328,7 +328,7 @@ class ActronZoneHumiditySensor(ActronAirNeoEntity, SensorEntity):
         )
 
 
-class ActronZoneBatterySensor(ActronAirNeoEntity, SensorEntity):
+class ActronZoneBatterySensor(ActronZoneEntity, SensorEntity):
     """
     Zone sensor battery level.
 

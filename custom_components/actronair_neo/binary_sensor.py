@@ -9,7 +9,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 
-from .entity import ActronAirNeoEntity
+from .entity import ActronAirNeoEntity, ActronZoneEntity
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -103,7 +103,7 @@ class ActronHealthMonitorSensor(ActronAirNeoEntity, BinarySensorEntity):
             }
 
 
-class ActronZoneYourZoneEnabledSensor(ActronAirNeoEntity, BinarySensorEntity):
+class ActronZoneYourZoneEnabledSensor(ActronZoneEntity, BinarySensorEntity):
     """Binary sensor for YourZone enabled status."""
 
     _attr_translation_key = "yourzone_enabled"

@@ -11,7 +11,7 @@ from homeassistant.components.cover import (  # type: ignore[import-untyped]
     CoverEntityFeature,
 )
 
-from .entity import ActronAirNeoEntity
+from .entity import ActronZoneEntity
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -40,7 +40,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class ActronZoneDamperCover(ActronAirNeoEntity, CoverEntity):
+class ActronZoneDamperCover(ActronZoneEntity, CoverEntity):
     """
     Cover entity representing a zone damper (YourZone airflow control).
 

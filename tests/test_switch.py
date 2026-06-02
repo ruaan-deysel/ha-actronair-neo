@@ -185,6 +185,20 @@ class TestZoneSwitch:
         switch = ActronZoneSwitch(coordinator_zones, "zone_1")
         assert switch.is_on is False
 
+    def test_available_when_zone_present(self, coordinator_zones):
+        """Zone switch is available while its zone exists in data."""
+        coordinator_zones.last_update_success = True
+        switch = ActronZoneSwitch(coordinator_zones, "zone_1")
+        assert switch.available is True
+
+    def test_unavailable_when_zone_missing(self, coordinator_zones, mock_status):
+        """A dropped zone renders the switch unavailable instead of raising."""
+        coordinator_zones.last_update_success = True
+        switch = ActronZoneSwitch(coordinator_zones, "zone_1")
+        # Simulate a transient/partial update that dropped the zone.
+        mock_status["zones"].pop("zone_1")
+        assert switch.available is False
+
     def test_unique_id(self, coordinator_zones):
         """Test unique ID includes serial and zone info."""
         switch = ActronZoneSwitch(coordinator_zones, "zone_1")

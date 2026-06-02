@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.entity import EntityCategory  # type: ignore[import-untyped]
 
-from .entity import ActronAirNeoEntity
+from .entity import ActronAirNeoEntity, ActronZoneEntity
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -237,7 +237,7 @@ class ActronContinuousFanSwitch(ActronAirNeoEntity, SwitchEntity):
         }
 
 
-class ActronZoneSwitch(ActronAirNeoEntity, SwitchEntity):
+class ActronZoneSwitch(ActronZoneEntity, SwitchEntity):
     """Zone switch."""
 
     _attr_translation_key = "zone"

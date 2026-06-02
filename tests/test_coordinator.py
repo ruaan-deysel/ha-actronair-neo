@@ -1331,22 +1331,82 @@ class TestCoordinatorPushIntegration:
         self, coordinator_instance: ActronDataCoordinator
     ) -> None:
         c = coordinator_instance
-        c._parse_data_optimized = AsyncMock(return_value={"main": {"is_on": True}})
+        c._last_raw_response = {"lastKnownState": {"RemoteZoneInfo": [{"z": 1}]}}
+        c._parse_data_optimized = AsyncMock(
+            return_value={"zones": {"zone_1": {}}, "main": {"is_on": True}}
+        )
         c.async_set_updated_data = MagicMock()
-        await c._handle_push_update({"lastKnownState": {"x": 1}}, "full")
-        assert c._last_raw_response == {"lastKnownState": {"x": 1}}
-        c.async_set_updated_data.assert_called_once_with({"main": {"is_on": True}})
+        await c._handle_push_update(
+            {"lastKnownState": {"UserAirconSettings": {"isOn": True}}}, "full"
+        )
+        state = c._last_raw_response["lastKnownState"]
+        # New section merged in; prior RemoteZoneInfo preserved.
+        assert state["UserAirconSettings"] == {"isOn": True}
+        assert state["RemoteZoneInfo"] == [{"z": 1}]
+        c.async_set_updated_data.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_push_delta_merges(
         self, coordinator_instance: ActronDataCoordinator
     ) -> None:
         c = coordinator_instance
-        c._last_raw_response = {"a": {"x": 1, "y": 2}}
-        c._parse_data_optimized = AsyncMock(return_value={"main": {}})
+        c._last_raw_response = {
+            "lastKnownState": {
+                "UserAirconSettings": {"isOn": True, "Mode": "COOL"},
+                "RemoteZoneInfo": [{"z": 1}],
+            }
+        }
+        c._parse_data_optimized = AsyncMock(return_value={"zones": {"zone_1": {}}})
         c.async_set_updated_data = MagicMock()
-        await c._handle_push_update({"a": {"y": 9}}, "delta")
-        assert c._last_raw_response == {"a": {"x": 1, "y": 9}}
+        await c._handle_push_update(
+            {"lastKnownState": {"UserAirconSettings": {"isOn": False}}}, "delta"
+        )
+        state = c._last_raw_response["lastKnownState"]
+        # Scalar overwritten, sibling key kept, untouched section preserved.
+        assert state["UserAirconSettings"] == {"isOn": False, "Mode": "COOL"}
+        assert state["RemoteZoneInfo"] == [{"z": 1}]
+
+    @pytest.mark.asyncio
+    async def test_handle_push_full_status_without_zone_info_preserves_zones(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        """A push lacking RemoteZoneInfo must not blank zones (issue regression)."""
+        c = coordinator_instance
+        c._last_raw_response = {
+            "lastKnownState": {"RemoteZoneInfo": [{"z": 1}], "LiveAircon": {"a": 1}}
+        }
+        captured: dict = {}
+
+        async def _capture(data):
+            captured["state"] = data["lastKnownState"]
+            return {"zones": {"zone_1": {}}}
+
+        c._parse_data_optimized = _capture
+        c.async_set_updated_data = MagicMock()
+        # full-status carrying only LiveAircon — no RemoteZoneInfo.
+        await c._handle_push_update(
+            {"lastKnownState": {"LiveAircon": {"a": 2}}}, "full"
+        )
+        # The data handed to the parser still has the prior RemoteZoneInfo.
+        assert captured["state"]["RemoteZoneInfo"] == [{"z": 1}]
+        c.async_set_updated_data.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_push_rolls_back_when_zones_would_blank(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        """A push parsing to zero zones is ignored when we had zones."""
+        c = coordinator_instance
+        prior_raw = {"lastKnownState": {"RemoteZoneInfo": [{"z": 1}]}}
+        c._last_raw_response = prior_raw
+        c.last_data = {"zones": {"zone_1": {"is_enabled": True}}}
+        c._parse_data_optimized = AsyncMock(return_value={"zones": {}})
+        c.async_set_updated_data = MagicMock()
+        await c._handle_push_update({"lastKnownState": {"RemoteZoneInfo": []}}, "full")
+        # Update suppressed; last good state retained.
+        c.async_set_updated_data.assert_not_called()
+        assert c.last_data == {"zones": {"zone_1": {"is_enabled": True}}}
+        assert c._last_raw_response is prior_raw
 
     @pytest.mark.asyncio
     async def test_handle_push_swallows_parse_error(
@@ -1412,7 +1472,7 @@ class TestCoordinatorPushIntegration:
 
         async def _fake_parse(_data):
             calls.append("parse")
-            return {"main": {}}
+            return {"zones": {"zone_1": {}}, "main": {}}
 
         c._clear_parse_cache = _spy_clear
         c._parse_data_optimized = _fake_parse

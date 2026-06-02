@@ -24,6 +24,7 @@ CONF_REFRESH_TOKEN: Final = "refresh_token"  # noqa: S105
 CONF_TOKEN_EXPIRES_AT: Final = "token_expires_at"  # noqa: S105
 
 DEFAULT_REFRESH_INTERVAL: Final = 30  # seconds
+DEFAULT_ENABLE_PUSH: Final = True
 
 # ── Cache freshness ──────────────────────────────────────────────
 # Maximum age of the coordinator's parsed-data cache before a full

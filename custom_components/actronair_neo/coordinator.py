@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import logging
 from datetime import timedelta
@@ -19,9 +20,13 @@ from homeassistant.helpers.update_coordinator import (  # type: ignore[import-un
     UpdateFailed,
 )
 
-from .api.const import MIN_FAN_MODE_INTERVAL
+from .api.const import HEARTBEAT_STALE_AFTER, MIN_FAN_MODE_INTERVAL
+from .api.push import PushTransport, create_push_transport
+from .api.push.merge import deep_merge
+from .api.push.models import PushState
 from .const import (
     ADVANCE_FAN_MODES,
+    DEFAULT_ENABLE_PUSH,
     DOMAIN,
     FAN_MODE_SUFFIX_CONT,
     HUMIDITY_UNAVAILABLE,
@@ -35,6 +40,7 @@ from .const import (
     ZONE_OVERRIDE_TTL,
 )
 from .exceptions import (
+    ActronAirNeoError,
     ApiError,
     AuthenticationError,
     ConfigurationError,
@@ -71,7 +77,7 @@ _LOGGER = logging.getLogger(__name__)
 class ActronDataCoordinator(DataUpdateCoordinator):
     """Class to manage fetching ActronAir Neo data."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         hass: HomeAssistant,
         api: ActronAirNeoApiClient,
@@ -79,6 +85,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         update_interval: int,
         *,
         enable_zone_control: bool,
+        enable_push: bool = DEFAULT_ENABLE_PUSH,
     ) -> None:
         """
         Initialize the data coordinator.
@@ -89,6 +96,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             device_id: Unique identifier for the device
             update_interval: Update interval in seconds
             enable_zone_control: Whether zone control is enabled
+            enable_push: Whether realtime MQTT push transport is enabled
 
         """
         super().__init__(
@@ -100,6 +108,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         self.api = api
         self.device_id = device_id
         self.enable_zone_control = enable_zone_control
+        self.enable_push = enable_push
+        self._push_transport: PushTransport | None = None
+        self._push_task: asyncio.Task[None] | None = None
         self.last_data: CoordinatorData | None = None
 
         # Fan mode control attributes
@@ -931,6 +942,74 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     def get_diagnostics_snapshot(self) -> dict[str, Any]:
         """Return raw API response for diagnostics only."""
         return self._last_raw_response
+
+    async def _handle_push_update(self, payload: dict[str, Any], kind: str) -> None:
+        """Apply a realtime push payload and publish to entities."""
+        try:
+            if kind == "full":
+                self._last_raw_response = payload
+            else:
+                self._last_raw_response = deep_merge(self._last_raw_response, payload)
+            # Push data is authoritative; bypass the stale-hash parse shortcut.
+            self._clear_parse_cache()
+            parsed = await self._parse_data_optimized(self._last_raw_response)  # type: ignore[arg-type]
+            self.last_data = parsed
+            self.async_set_updated_data(parsed)
+        except Exception:
+            _LOGGER.exception("Failed to apply realtime push update; ignoring")
+
+    async def async_start_push(self) -> None:
+        """Discover the broker and start the push transport (non-fatal)."""
+        if not self.enable_push or self._push_transport is not None:
+            return
+        try:
+            details = await self.api.get_realtime_connection_details(self.device_id)
+        except ActronAirNeoError as err:
+            _LOGGER.warning("Realtime push discovery failed (%s); polling only", err)
+            return
+        if details is None:
+            _LOGGER.warning("No realtime connection details returned; polling only")
+            return
+        transport = create_push_transport(
+            platform=self.api.platform,
+            details=details,
+            serial=self.device_id,
+            token_provider=self.api.get_realtime_access_token,
+            on_update=self._handle_push_update,
+        )
+        if transport is None:
+            return
+        self._push_transport = transport
+        self._push_task = self.hass.async_create_background_task(
+            transport.start(), name=f"{DOMAIN}_push_{self.device_id}"
+        )
+        _LOGGER.debug("Realtime push started for %s", self.device_id)
+
+    async def async_stop_push(self) -> None:
+        """Stop the push transport and cancel its background task."""
+        if self._push_transport is not None:
+            await self._push_transport.stop()
+            self._push_transport = None
+        if self._push_task is not None:
+            self._push_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._push_task
+            self._push_task = None
+
+    @property
+    def push_state(self) -> PushState:
+        """Return the current push health state for diagnostics."""
+        if not self.enable_push or self._push_transport is None:
+            return PushState.DISABLED
+        last = self._push_transport.last_heartbeat
+        if (
+            self._push_transport.state is PushState.CONNECTED
+            and last is not None
+            and (datetime.datetime.now() - last).total_seconds()  # noqa: DTZ005
+            > HEARTBEAT_STALE_AFTER
+        ):
+            return PushState.STALE
+        return self._push_transport.state
 
     @property
     def api_error_count(self) -> int:

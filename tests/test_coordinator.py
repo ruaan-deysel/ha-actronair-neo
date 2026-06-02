@@ -12,6 +12,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.actronair_neo.api.models import ZoneCapabilities
+from custom_components.actronair_neo.api.push.models import PushState
 from custom_components.actronair_neo.coordinator import ActronDataCoordinator
 from custom_components.actronair_neo.exceptions import (
     ApiError,
@@ -1320,3 +1321,178 @@ class TestStaleStateHandling:
 
         assert result == {"cached": "data"}
         assert "serving last known data" in caplog.text
+
+
+class TestCoordinatorPushIntegration:
+    """Tests for the realtime push integration on the coordinator."""
+
+    @pytest.mark.asyncio
+    async def test_handle_push_full_replaces_and_publishes(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        c = coordinator_instance
+        c._parse_data_optimized = AsyncMock(return_value={"main": {"is_on": True}})
+        c.async_set_updated_data = MagicMock()
+        await c._handle_push_update({"lastKnownState": {"x": 1}}, "full")
+        assert c._last_raw_response == {"lastKnownState": {"x": 1}}
+        c.async_set_updated_data.assert_called_once_with({"main": {"is_on": True}})
+
+    @pytest.mark.asyncio
+    async def test_handle_push_delta_merges(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        c = coordinator_instance
+        c._last_raw_response = {"a": {"x": 1, "y": 2}}
+        c._parse_data_optimized = AsyncMock(return_value={"main": {}})
+        c.async_set_updated_data = MagicMock()
+        await c._handle_push_update({"a": {"y": 9}}, "delta")
+        assert c._last_raw_response == {"a": {"x": 1, "y": 9}}
+
+    @pytest.mark.asyncio
+    async def test_handle_push_swallows_parse_error(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        c = coordinator_instance
+        c._parse_data_optimized = AsyncMock(side_effect=RuntimeError("bad"))
+        c.async_set_updated_data = MagicMock()
+        await c._handle_push_update({}, "full")  # must not raise
+        c.async_set_updated_data.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_start_push_noop_when_disabled(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        c = coordinator_instance
+        c.enable_push = False
+        await c.async_start_push()
+        assert c._push_transport is None
+
+    @pytest.mark.asyncio
+    async def test_start_push_nonfatal_on_discovery_error(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        c = coordinator_instance
+        c.enable_push = True
+        c.api.get_realtime_connection_details = AsyncMock(side_effect=ApiError("nope"))
+        await c.async_start_push()  # must not raise
+        assert c._push_transport is None
+
+    @pytest.mark.asyncio
+    async def test_start_push_nonfatal_on_auth_error(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        from custom_components.actronair_neo.exceptions import AuthenticationError
+
+        c = coordinator_instance
+        c.enable_push = True
+        c.api.get_realtime_connection_details = AsyncMock(
+            side_effect=AuthenticationError("401")
+        )
+        await c.async_start_push()  # must not raise
+        assert c._push_transport is None
+
+    def test_push_state_disabled(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        coordinator_instance.enable_push = False
+        assert coordinator_instance.push_state is PushState.DISABLED
+
+    @pytest.mark.asyncio
+    async def test_handle_push_clears_parse_cache_before_parsing(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        """Cache cleared before parse; identical-hash pushes still propagate (#112)."""
+        c = coordinator_instance
+        calls: list[str] = []
+        real_clear = c._clear_parse_cache
+
+        def _spy_clear() -> None:
+            calls.append("clear")
+            real_clear()
+
+        async def _fake_parse(_data):
+            calls.append("parse")
+            return {"main": {}}
+
+        c._clear_parse_cache = _spy_clear
+        c._parse_data_optimized = _fake_parse
+        c.async_set_updated_data = MagicMock()
+        await c._handle_push_update({"x": 1}, "full")
+        assert calls == ["clear", "parse"]
+        c.async_set_updated_data.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_start_push_noop_when_no_details(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        c = coordinator_instance
+        c.enable_push = True
+        c.api.get_realtime_connection_details = AsyncMock(return_value=None)
+        await c.async_start_push()
+        assert c._push_transport is None
+
+    @pytest.mark.asyncio
+    async def test_start_push_noop_when_factory_returns_none(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        from custom_components.actronair_neo.api.push.models import (
+            RealtimeConnectionDetails,
+        )
+
+        c = coordinator_instance
+        c.enable_push = True
+        c.api.get_realtime_connection_details = AsyncMock(
+            return_value=RealtimeConnectionDetails(
+                endpoint="h", port=8883, protocol="ssl", user_id="u"
+            )
+        )
+        # api is a MagicMock so platform is a settable attribute; "que" is an
+        # unsupported platform that causes create_push_transport to return None.
+        c.api.platform = "que"
+        await c.async_start_push()
+        assert c._push_transport is None
+
+    @pytest.mark.asyncio
+    async def test_stop_push_cancels_task_and_resets(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        c = coordinator_instance
+        transport = AsyncMock()
+        c._push_transport = transport
+
+        async def _run() -> None:
+            await asyncio.Event().wait()
+
+        c._push_task = asyncio.create_task(_run())
+        await c.async_stop_push()
+        transport.stop.assert_awaited_once()
+        assert c._push_transport is None
+        assert c._push_task is None
+
+    def test_push_state_stale_when_heartbeat_old(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        import datetime
+
+        c = coordinator_instance
+        c.enable_push = True
+        transport = MagicMock()
+        transport.state = PushState.CONNECTED
+        transport.last_heartbeat = datetime.datetime.now() - datetime.timedelta(
+            seconds=10000
+        )
+        c._push_transport = transport
+        assert c.push_state is PushState.STALE
+
+    def test_push_state_passthrough_when_fresh(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        import datetime
+
+        c = coordinator_instance
+        c.enable_push = True
+        transport = MagicMock()
+        transport.state = PushState.CONNECTED
+        transport.last_heartbeat = datetime.datetime.now()
+        c._push_transport = transport
+        assert c.push_state is PushState.CONNECTED

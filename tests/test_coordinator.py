@@ -1409,6 +1409,42 @@ class TestCoordinatorPushIntegration:
         assert c._last_raw_response is prior_raw
 
     @pytest.mark.asyncio
+    async def test_handle_push_event_applies_flattened_paths(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        """A status-change event applies flattened paths onto the state."""
+        c = coordinator_instance
+        c._last_raw_response = {
+            "lastKnownState": {
+                "UserAirconSettings": {"Mode": "HEAT"},
+                "RemoteZoneInfo": [{"LiveTemp_oC": 20.0}],
+            }
+        }
+        captured: dict = {}
+
+        async def _capture(data):
+            captured["state"] = data["lastKnownState"]
+            return {"zones": {"zone_1": {}}}
+
+        c._parse_data_optimized = _capture
+        c.async_set_updated_data = MagicMock()
+        await c._handle_push_update(
+            {
+                "event": {
+                    "type": "status-change-broadcast",
+                    "UserAirconSettings.Mode": "COOL",
+                    "RemoteZoneInfo[0].LiveTemp_oC": 24.2,
+                },
+                "wcFirmware": "2.6.2.3",
+            },
+            "delta",
+        )
+        # The flattened paths were un-flattened into the parsed state.
+        assert captured["state"]["UserAirconSettings"]["Mode"] == "COOL"
+        assert captured["state"]["RemoteZoneInfo"][0]["LiveTemp_oC"] == 24.2
+        c.async_set_updated_data.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_handle_push_swallows_parse_error(
         self, coordinator_instance: ActronDataCoordinator
     ) -> None:

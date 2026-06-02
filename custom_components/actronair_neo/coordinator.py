@@ -22,7 +22,7 @@ from homeassistant.helpers.update_coordinator import (  # type: ignore[import-un
 
 from .api.const import HEARTBEAT_STALE_AFTER, MIN_FAN_MODE_INTERVAL
 from .api.push import PushTransport, create_push_transport
-from .api.push.merge import deep_merge
+from .api.push.merge import apply_event_paths, deep_merge
 from .api.push.models import PushState
 from .const import (
     ADVANCE_FAN_MODES,
@@ -948,37 +948,40 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Apply a realtime push payload and publish to entities."""
         prior_raw = self._last_raw_response
         try:
-            # MQTT payloads carry state under "lastKnownState" like the REST
-            # response, but a push (full-status or status-change) often includes
-            # only the sections that changed. Merge onto the last known full
-            # state so a sparse push never drops sections — notably
-            # RemoteZoneInfo, whose absence would blank every zone entity.
-            incoming_state = payload.get("lastKnownState")
-            if not isinstance(incoming_state, dict):
-                # Tolerate a bare-state payload without the wrapper.
-                incoming_state = {
-                    k: v for k, v in payload.items() if k != "lastKnownState"
-                }
+            # Push payloads come in two shapes, both incremental:
+            #   * full-status carries a (possibly partial) "lastKnownState".
+            #   * status-change carries an "event" of flattened path→value
+            #     pairs (e.g. "UserAirconSettings.Mode": "COOL"). See #112.
+            # Apply either onto the last known full state so a partial push
+            # never drops sections (notably RemoteZoneInfo) and so the parser
+            # actually sees the changed values.
             prior_state = (
                 prior_raw.get("lastKnownState", {})
                 if isinstance(prior_raw, dict)
                 else {}
             )
-            merged_state = (
-                deep_merge(prior_state, incoming_state)
-                if prior_state
-                else incoming_state
-            )
+            event = payload.get("event")
+            incoming_state = payload.get("lastKnownState")
+            if isinstance(incoming_state, dict):
+                merged_state = (
+                    deep_merge(prior_state, incoming_state)
+                    if prior_state
+                    else incoming_state
+                )
+            elif isinstance(event, dict):
+                merged_state = apply_event_paths(prior_state, event)
+            else:
+                # Tolerate a bare-state payload without a recognised wrapper.
+                bare = {k: v for k, v in payload.items() if k != "lastKnownState"}
+                merged_state = deep_merge(prior_state, bare) if prior_state else bare
             merged_raw: dict[str, Any] = {
                 **(prior_raw if isinstance(prior_raw, dict) else {}),
-                **payload,
                 "lastKnownState": merged_state,
             }
             _LOGGER.debug(
-                "Push update (kind=%s): payload keys=%s, state keys=%s",
+                "Push update (kind=%s): payload keys=%s",
                 kind,
                 sorted(payload.keys()),
-                sorted(incoming_state.keys()),
             )
 
             # Push data is authoritative; persist the merged raw and bypass the

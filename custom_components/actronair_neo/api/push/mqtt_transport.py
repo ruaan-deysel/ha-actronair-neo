@@ -17,6 +17,7 @@ from custom_components.actronair_neo.api.const import (
     MQTT_PLATFORM_NEO,
     MQTT_RECONNECT_INITIAL,
     MQTT_RECONNECT_MAX,
+    MQTT_TOPIC_CMD_RESPONSE,
     MQTT_TOPIC_FULL_STATUS,
     MQTT_TOPIC_HEART_BEAT,
     MQTT_TOPIC_PREFIX,
@@ -71,6 +72,8 @@ class MqttPushTransport(PushTransport):
             f"{base}/{MQTT_TOPIC_FULL_STATUS}",
             f"{base}/{MQTT_TOPIC_STATUS_CHANGE}",
             f"{base}/{MQTT_TOPIC_HEART_BEAT}",
+            # Two trailing wildcards: .../cmd-response/{machine}/{commandId}.
+            f"{base}/{MQTT_TOPIC_CMD_RESPONSE}/+/+",
         ]
 
     def _default_client_factory(self, token: str) -> Client:
@@ -111,12 +114,36 @@ class MqttPushTransport(PushTransport):
             kind = "full"
         elif topic.endswith(MQTT_TOPIC_STATUS_CHANGE):
             kind = "delta"
+        elif MQTT_TOPIC_CMD_RESPONSE in topic:
+            # A command response acks/nacks a command and also embeds a
+            # status-change event. Surface a non-ack as a warning, then apply
+            # the embedded event (if any) for instant command confirmation.
+            self._log_command_response(data)
+            if not isinstance(data.get("event"), dict):
+                return
+            kind = "delta"
         else:
             return
         try:
             await self._on_update(data, kind)
         except Exception:
             _LOGGER.exception("Push update sink raised; ignoring message")
+
+    @staticmethod
+    def _log_command_response(data: dict[str, Any]) -> None:
+        """Log a command acknowledgement, warning on any non-ack response."""
+        response = data.get("commandResponse")
+        if not isinstance(response, dict):
+            return
+        response_type = response.get("type")
+        if response_type and response_type != "ack":
+            _LOGGER.warning(
+                "ActronAir command was not acknowledged (type=%s): %s",
+                response_type,
+                response.get("value"),
+            )
+        else:
+            _LOGGER.debug("ActronAir command acknowledged: %s", response.get("value"))
 
     async def start(self) -> None:
         """Run the connect/listen loop with exponential reconnect backoff."""

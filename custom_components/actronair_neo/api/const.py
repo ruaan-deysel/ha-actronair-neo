@@ -57,5 +57,9 @@ MQTT_PLATFORM_NEO: Final = "neo"
 MQTT_TOPIC_FULL_STATUS: Final = "mwc/full-status"
 MQTT_TOPIC_STATUS_CHANGE: Final = "mwc/status-change"
 MQTT_TOPIC_HEART_BEAT: Final = "mwc/heart-beat"
+# Command-response topic carries an ack/nack plus a status-change event. The
+# broker publishes to .../mwc/cmd-response/{machine}/{commandId}, so the
+# subscription needs two trailing single-level wildcards.
+MQTT_TOPIC_CMD_RESPONSE: Final = "mwc/cmd-response"
 # Heartbeat is treated as stale (push degraded) after this many seconds.
 HEARTBEAT_STALE_AFTER: Final = 180

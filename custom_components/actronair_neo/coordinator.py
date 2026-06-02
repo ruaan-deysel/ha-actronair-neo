@@ -1027,6 +1027,15 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         if details is None:
             _LOGGER.warning("No realtime connection details returned; polling only")
             return
+        # The user id is baked into every MQTT topic. If discovery didn't
+        # provide one the topics become "actron-cloud/unknown/..." and we
+        # silently receive nothing — surface that rather than failing quietly.
+        if not details.user_id or details.user_id == "unknown":
+            _LOGGER.warning(
+                "Realtime discovery returned no user id; push topics would be "
+                "invalid and receive no messages — falling back to polling only"
+            )
+            return
         # Build the MQTT SSL context off the event loop (cached in hass.data).
         # The broker sends a leaf-only cert and is reached by IP, so this
         # context bundles the missing Sectigo intermediate and disables

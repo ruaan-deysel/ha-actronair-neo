@@ -82,7 +82,59 @@ def test_topics_built_correctly():
         "actron-cloud/u1/neo/SER1/mwc/full-status",
         "actron-cloud/u1/neo/SER1/mwc/status-change",
         "actron-cloud/u1/neo/SER1/mwc/heart-beat",
+        "actron-cloud/u1/neo/SER1/mwc/cmd-response/+/+",
     ]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_cmd_response_ack_applies_event():
+    """An ack'd command response forwards its embedded event as a delta."""
+    sink = AsyncMock()
+    t = _transport(sink)
+    payload = {
+        "correlationId": "m/cmd1",
+        "commandResponse": {
+            "type": "ack",
+            "value": {"UserAirconSettings.QuietMode": False},
+        },
+        "event": {
+            "type": "status-change-broadcast",
+            "UserAirconSettings.QuietMode": False,
+        },
+        "wcFirmware": "2.6.2.3",
+    }
+    await t._dispatch(
+        "actron-cloud/u1/neo/SER1/mwc/cmd-response/m/cmd1", json.dumps(payload).encode()
+    )
+    sink.assert_awaited_once_with(payload, "delta")
+
+
+@pytest.mark.asyncio
+async def test_dispatch_cmd_response_nack_warns(caplog):
+    """A non-ack command response logs a warning."""
+    sink = AsyncMock()
+    t = _transport(sink)
+    payload = {"commandResponse": {"type": "error", "value": {"x": 1}}}
+    with caplog.at_level("WARNING"):
+        await t._dispatch(
+            "actron-cloud/u1/neo/SER1/mwc/cmd-response/m/cmd2",
+            json.dumps(payload).encode(),
+        )
+    assert "not acknowledged" in caplog.text
+    # No embedded event → nothing forwarded to the sink.
+    sink.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_cmd_response_without_event_not_forwarded():
+    """An ack with no embedded event is logged but not forwarded."""
+    sink = AsyncMock()
+    t = _transport(sink)
+    payload = {"commandResponse": {"type": "ack", "value": {}}}
+    await t._dispatch(
+        "actron-cloud/u1/neo/SER1/mwc/cmd-response/m/cmd3", json.dumps(payload).encode()
+    )
+    sink.assert_not_awaited()
 
 
 def test_backoff_schedule():

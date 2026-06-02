@@ -38,13 +38,14 @@ _LOGGER = logging.getLogger(__name__)
 class MqttPushTransport(PushTransport):
     """Subscribe to Neo MQTT topics and forward status updates to a sink."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         details: RealtimeConnectionDetails,
         serial: str,
         token_provider: TokenProvider,
         on_update: UpdateSink,
+        ssl_context: ssl.SSLContext | None = None,
         client_factory: Callable[[str], Client] | None = None,
     ) -> None:
         """Initialise the transport (no connection is opened here)."""
@@ -52,6 +53,11 @@ class MqttPushTransport(PushTransport):
         self._details = details
         self._token_provider = token_provider
         self._on_update = on_update
+        # A certifi-backed SSL context built off the event loop by the caller.
+        # Building it here would do blocking file I/O inside the loop and fall
+        # back to the OS trust store, which fails to verify the broker cert
+        # (see issue #96 / ssl_helper).
+        self._ssl_context = ssl_context
         self._client_factory: Callable[[str], Client] = (
             client_factory
             if client_factory is not None
@@ -81,7 +87,10 @@ class MqttPushTransport(PushTransport):
             "clean_session": True,
         }
         if self._details.uses_tls:
-            kwargs["tls_context"] = ssl.create_default_context()
+            # Prefer the injected certifi-backed context; only fall back to a
+            # default context if none was provided (e.g. direct instantiation
+            # in tests, which never open a real connection).
+            kwargs["tls_context"] = self._ssl_context or ssl.create_default_context()
         return Client(self._details.endpoint, self._details.port, **kwargs)
 
     async def _dispatch(self, topic: str, payload: bytes) -> None:

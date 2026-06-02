@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import ssl
 from typing import Self
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from aiomqtt import MqttError
@@ -114,6 +115,38 @@ def test_factory_neo_returns_mqtt():
         on_update=AsyncMock(),
     )
     assert isinstance(t, MqttPushTransport)
+
+
+def test_factory_passes_ssl_context_to_transport():
+    sentinel = ssl.create_default_context()
+    t = create_push_transport(
+        platform="neo",
+        details=DETAILS,
+        serial="SER1",
+        token_provider=AsyncMock(),
+        on_update=AsyncMock(),
+        ssl_context=sentinel,
+    )
+    assert isinstance(t, MqttPushTransport)
+    assert t._ssl_context is sentinel
+
+
+def test_default_client_factory_uses_injected_ssl_context():
+    sentinel = ssl.create_default_context()
+    t = MqttPushTransport(
+        details=DETAILS,
+        serial="SER1",
+        token_provider=AsyncMock(return_value="tok"),
+        on_update=AsyncMock(),
+        ssl_context=sentinel,
+    )
+    # The aiomqtt client must be built with our injected TLS context, not a
+    # freshly created one (which would do blocking I/O and use the OS trust store).
+    with patch(
+        "custom_components.actronair_neo.api.push.mqtt_transport.Client"
+    ) as mock_client:
+        t._default_client_factory("tok")
+    assert mock_client.call_args.kwargs["tls_context"] is sentinel
 
 
 def test_factory_que_returns_none():

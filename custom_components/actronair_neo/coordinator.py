@@ -48,6 +48,7 @@ from .exceptions import (
     RateLimitError,
     ZoneError,
 )
+from .ssl_helper import async_get_ssl_context
 from .zone_presets import ZonePresetManager
 
 if TYPE_CHECKING:
@@ -970,12 +971,17 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         if details is None:
             _LOGGER.warning("No realtime connection details returned; polling only")
             return
+        # Build the certifi-backed SSL context off the event loop (cached in
+        # hass.data). The MQTT broker uses the same CA chain that the OS trust
+        # store fails to verify under HA 2026.4+ (issue #96).
+        ssl_context = await async_get_ssl_context(self.hass)
         transport = create_push_transport(
             platform=self.api.platform,
             details=details,
             serial=self.device_id,
             token_provider=self.api.get_realtime_access_token,
             on_update=self._handle_push_update,
+            ssl_context=ssl_context,
         )
         if transport is None:
             return

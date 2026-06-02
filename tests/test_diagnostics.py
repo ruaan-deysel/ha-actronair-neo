@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -190,3 +192,84 @@ async def test_diagnostics_value_error_path(hass, mock_config_entry):
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert result["error"]["type"] == "ValueError"
+
+
+async def test_diagnostics_includes_push_block(
+    hass,
+    mock_config_entry,
+    mock_api,
+    mock_ac_status_response,
+    enable_custom_integrations,
+):
+    """Diagnostics output includes a push health block."""
+    mock_api.get_ac_status = AsyncMock(return_value=mock_ac_status_response)
+    with patch(_PATCH_CREATE_API, return_value=mock_api):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+    assert "push" in result
+    push = result["push"]
+    assert push["transport"] == "mqtt"
+    assert "state" in push
+    assert "last_heartbeat" in push
+    assert "reconnect_count" in push
+    assert "last_error" in push
+
+
+async def test_diagnostics_push_redacts_sensitive_keys(
+    hass,
+    mock_config_entry,
+    mock_api,
+    mock_ac_status_response,
+    enable_custom_integrations,
+):
+    """Sensitive push/connection keys are in the redaction set and tokens don't leak."""
+    assert {"endpoint", "user_id", "userId"}.issubset(TO_REDACT)
+
+    mock_api.get_ac_status = AsyncMock(return_value=mock_ac_status_response)
+    with patch(_PATCH_CREATE_API, return_value=mock_api):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+    # The raw access token must never appear anywhere in the serialized output.
+    serialized = json.dumps(result, default=str)
+    assert "mock_token" not in serialized
+
+
+async def test_diagnostics_push_block_live_transport(
+    hass,
+    mock_config_entry,
+    mock_api,
+    mock_ac_status_response,
+    enable_custom_integrations,
+):
+    """Diagnostics serialize a live transport's heartbeat/reconnect/error."""
+    from custom_components.actronair_neo.api.push.models import PushState
+
+    mock_api.get_ac_status = AsyncMock(return_value=mock_ac_status_response)
+    with patch(_PATCH_CREATE_API, return_value=mock_api):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = mock_config_entry.runtime_data
+    hb = datetime.datetime(2026, 6, 1, 12, 0, 0)  # noqa: DTZ001
+    transport = MagicMock()
+    transport.last_heartbeat = hb
+    transport.reconnect_count = 3
+    transport.last_error = "timeout"
+    transport.state = PushState.CONNECTED
+    transport.stop = AsyncMock()
+    coordinator._push_transport = transport
+    coordinator.enable_push = True
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+    push = result["push"]
+    assert push["transport"] == "mqtt"
+    assert push["last_heartbeat"] == hb.isoformat()
+    assert push["reconnect_count"] == 3
+    assert push["last_error"] == "timeout"
+    # Heartbeat is 2026-06-01 (older than HEARTBEAT_STALE_AFTER), so push_state
+    # resolves to STALE even though the transport reports CONNECTED.
+    assert push["state"] == str(PushState.STALE)

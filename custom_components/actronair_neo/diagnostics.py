@@ -25,6 +25,9 @@ TO_REDACT = {
     "id",
     "ip_address",
     "MACAddress",
+    "endpoint",
+    "user_id",
+    "userId",
 }
 
 
@@ -54,6 +57,7 @@ async def async_get_config_entry_diagnostics(
         indoor_unit = aircon_system.get("IndoorUnit", {})
         outdoor_unit = aircon_system.get("OutdoorUnit", {})
 
+        push_transport = coordinator._push_transport  # noqa: SLF001
         diagnostics_data = {
             "entry": async_redact_data(entry.as_dict(), TO_REDACT),
             "data": {
@@ -154,6 +158,19 @@ async def async_get_config_entry_diagnostics(
                 },
                 "zones": {},
                 "peripherals": [],
+            },
+            "push": {
+                "transport": "mqtt",
+                "state": str(coordinator.push_state),
+                "last_heartbeat": (
+                    push_transport.last_heartbeat.isoformat()
+                    if push_transport and push_transport.last_heartbeat
+                    else None
+                ),
+                "reconnect_count": (
+                    push_transport.reconnect_count if push_transport else 0
+                ),
+                "last_error": push_transport.last_error if push_transport else None,
             },
         }
 

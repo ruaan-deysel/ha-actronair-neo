@@ -122,6 +122,12 @@ class MqttPushTransport(PushTransport):
         """Run the connect/listen loop with exponential reconnect backoff."""
         self._running = True
         delay = self._reconnect_initial
+        _LOGGER.debug(
+            "Starting MQTT push to %s:%s (tls=%s)",
+            self._details.endpoint,
+            self._details.port,
+            self._details.uses_tls,
+        )
         while self._running:
             try:
                 self._state = PushState.CONNECTING

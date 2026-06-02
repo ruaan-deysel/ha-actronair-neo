@@ -105,3 +105,7 @@ utils/actron_token.json
 # AI scratch directory (temporary notes — not committed)
 .ai-scratch/*
 !.ai-scratch/README.md
+mitmproxy-ca-cert.*
+
+# playwright-cli automation artifacts (snapshots, console logs)
+.playwright-cli/

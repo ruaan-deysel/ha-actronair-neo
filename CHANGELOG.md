@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Realtime push updates over MQTT (issue #112)**: The integration now subscribes to ActronAir's MQTT realtime channel for Neo systems, so state changes (mode, fan, setpoints, zones, temperatures, humidity) appear in Home Assistant within seconds of the unit reporting them instead of waiting for the periodic cloud poll. In live testing, changes made from Home Assistant, the ActronAir app, or the wall controller propagated to HA in roughly 0.2–3 seconds. REST polling is retained as a safety-net fallback, and the integration's `iot_class` is now `cloud_push`. Push can be turned off per device via the new "Enable realtime push updates" option. Adds the `aiomqtt` dependency.
+- **Push connection diagnostics**: Config-entry diagnostics now include a `push` block (transport, connection state, last heartbeat age, reconnect count, last error) with sensitive fields redacted.
+
+### Fixed
+
+- **MQTT broker TLS chain (issue #112)**: The Neo MQTT broker presents a leaf-only certificate and is reached by IP address, so its chain could not be verified from a standard trust store. The integration now bundles the required Sectigo intermediate CA and uses a dedicated MQTT SSL context — full chain verification is retained (`CERT_REQUIRED`); only hostname matching is relaxed for the IP connection, backstopped by the broker address coming from an authenticated, hostname-verified discovery call.
+- **Stale state after push updates (issue #112)**: Push messages are applied onto the last-known full state (un-flattening ActronAir's `status-change-broadcast` event paths and merging partial `full-status` payloads), so a partial push can never drop sections such as zone information. A push that would otherwise clear all zones is ignored in favour of the last good state, and per-zone entities report `unavailable` rather than raising if their zone is briefly absent.
+
 ## [2026.6.0] - 2026-06-01
 
 ### Fixed

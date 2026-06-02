@@ -19,6 +19,7 @@ See: https://github.com/ruaan-deysel/ha-actronair-neo/issues/96
 from __future__ import annotations
 
 import ssl
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiohttp  # type: ignore[import-untyped]
@@ -30,6 +31,11 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant  # type: ignore[import-untyped]
 
 _SSL_CONTEXT_KEY = f"{DOMAIN}_ssl_context"
+_MQTT_SSL_CONTEXT_KEY = f"{DOMAIN}_mqtt_ssl_context"
+
+# Intermediate CA the MQTT broker omits from its handshake. Bundled so the
+# certifi-backed context can build the chain. See issue #112.
+_MQTT_INTERMEDIATE_CERT = Path(__file__).parent / "certs" / "sectigo_dv_r36.pem"
 
 
 def _build_ssl_context() -> ssl.SSLContext:
@@ -53,6 +59,43 @@ async def async_get_ssl_context(hass: HomeAssistant) -> ssl.SSLContext:
     if ctx is None:
         ctx = await hass.async_add_executor_job(_build_ssl_context)
         hass.data[_SSL_CONTEXT_KEY] = ctx
+    return ctx
+
+
+def _build_mqtt_ssl_context() -> ssl.SSLContext:
+    """
+    Build the SSL context for the realtime MQTT broker.
+
+    The broker presents a leaf-only certificate (CN=*.actronair.com.au) and
+    does not send its Sectigo intermediate, so certifi roots alone cannot
+    build the chain. We load the bundled intermediate to complete it. The
+    broker is reached by IP (not covered by the cert SAN), so hostname
+    checking is disabled — chain verification stays enabled (CERT_REQUIRED).
+    Verification is NOT disabled; only hostname matching is. The broker IP is
+    obtained from an authenticated, hostname-verified discovery call.
+
+    Loading CA files hits the filesystem, so this must run in an executor
+    thread, not the event loop. See issue #112.
+    """
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    ctx.load_verify_locations(cafile=str(_MQTT_INTERMEDIATE_CERT))
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    return ctx
+
+
+async def async_get_mqtt_ssl_context(hass: HomeAssistant) -> ssl.SSLContext:
+    """
+    Return a shared SSL context for the realtime MQTT broker.
+
+    Built once per Home Assistant instance and cached in ``hass.data``. This
+    is distinct from the REST context (which keeps hostname verification on
+    for ``nimbus.actronair.com.au``).
+    """
+    ctx = hass.data.get(_MQTT_SSL_CONTEXT_KEY)
+    if ctx is None:
+        ctx = await hass.async_add_executor_job(_build_mqtt_ssl_context)
+        hass.data[_MQTT_SSL_CONTEXT_KEY] = ctx
     return ctx
 
 

@@ -48,7 +48,7 @@ from .exceptions import (
     RateLimitError,
     ZoneError,
 )
-from .ssl_helper import async_get_ssl_context
+from .ssl_helper import async_get_mqtt_ssl_context
 from .zone_presets import ZonePresetManager
 
 if TYPE_CHECKING:
@@ -971,10 +971,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         if details is None:
             _LOGGER.warning("No realtime connection details returned; polling only")
             return
-        # Build the certifi-backed SSL context off the event loop (cached in
-        # hass.data). The MQTT broker uses the same CA chain that the OS trust
-        # store fails to verify under HA 2026.4+ (issue #96).
-        ssl_context = await async_get_ssl_context(self.hass)
+        # Build the MQTT SSL context off the event loop (cached in hass.data).
+        # The broker sends a leaf-only cert and is reached by IP, so this
+        # context bundles the missing Sectigo intermediate and disables
+        # hostname checking while keeping chain verification on. See #112.
+        ssl_context = await async_get_mqtt_ssl_context(self.hass)
         transport = create_push_transport(
             platform=self.api.platform,
             details=details,

@@ -74,7 +74,11 @@ class MqttPushTransport(PushTransport):
             "password": token,
             "keepalive": MQTT_KEEPALIVE,
             "identifier": uuid.uuid4().hex,
-            "clean_session": False,
+            # A fresh random identifier is used on every (re)connect and topics
+            # are re-subscribed each time, so there is no session to resume.
+            # Use a clean session to avoid leaving orphaned persistent sessions
+            # on the broker after each reconnect.
+            "clean_session": True,
         }
         if self._details.uses_tls:
             kwargs["tls_context"] = ssl.create_default_context()

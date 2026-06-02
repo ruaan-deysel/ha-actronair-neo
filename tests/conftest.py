@@ -145,6 +145,9 @@ def mock_api():
     api.cleanup_expired_cache = AsyncMock()
     api.refresh_token_value = "mock_token"
     api.error_count = 0
+    api.get_realtime_connection_details = AsyncMock(return_value=None)
+    api.get_realtime_access_token = AsyncMock(return_value="mock_token")
+    api.platform = "neo"
     return api
 
 

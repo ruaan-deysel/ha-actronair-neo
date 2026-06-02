@@ -13,7 +13,11 @@ from homeassistant.exceptions import (
 )
 
 import custom_components.actronair_neo as integration
-from custom_components.actronair_neo.const import CONF_ENABLE_ZONE_CONTROL, DOMAIN
+from custom_components.actronair_neo.const import (
+    CONF_ENABLE_PUSH,
+    CONF_ENABLE_ZONE_CONTROL,
+    DOMAIN,
+)
 from custom_components.actronair_neo.exceptions import (
     ApiError,
     AuthenticationError,
@@ -443,3 +447,71 @@ async def test_handle_bulk_zone_operation_zone_error_maps_to_ha_error(hass):
         pytest.raises(HomeAssistantError),
     ):
         await integration._handle_bulk_zone_operation(call)
+
+
+async def test_setup_entry_starts_push(
+    hass,
+    mock_config_entry,
+    mock_api,
+    mock_ac_status_response,
+    enable_custom_integrations,
+):
+    """async_setup_entry starts the push transport."""
+    mock_api.get_ac_status = AsyncMock(return_value=mock_ac_status_response)
+    with (
+        patch(_PATCH_CREATE_API, return_value=mock_api),
+        patch(
+            "custom_components.actronair_neo.coordinator.ActronDataCoordinator.async_start_push",
+            new_callable=AsyncMock,
+        ) as start_push,
+    ):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    start_push.assert_awaited()
+
+
+async def test_unload_entry_stops_push(
+    hass,
+    mock_config_entry,
+    mock_api,
+    mock_ac_status_response,
+    enable_custom_integrations,
+):
+    """Unloading the entry stops the push transport."""
+    mock_api.get_ac_status = AsyncMock(return_value=mock_ac_status_response)
+    with (
+        patch(_PATCH_CREATE_API, return_value=mock_api),
+        patch(
+            "custom_components.actronair_neo.coordinator.ActronDataCoordinator.async_stop_push",
+            new_callable=AsyncMock,
+        ) as stop_push,
+    ):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+    stop_push.assert_awaited()
+
+
+async def test_setup_entry_push_disabled_skips_discovery(
+    hass,
+    mock_config_entry,
+    mock_api,
+    mock_ac_status_response,
+    enable_custom_integrations,
+):
+    """With enable_push=False, setup completes and no push discovery runs."""
+    mock_api.get_ac_status = AsyncMock(return_value=mock_ac_status_response)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={CONF_ENABLE_ZONE_CONTROL: False, CONF_ENABLE_PUSH: False},
+    )
+    with patch(_PATCH_CREATE_API, return_value=mock_api):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    coordinator = mock_config_entry.runtime_data
+    assert coordinator.enable_push is False
+    assert coordinator._push_transport is None
+    mock_api.get_realtime_connection_details.assert_not_awaited()

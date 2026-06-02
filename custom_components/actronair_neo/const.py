@@ -16,6 +16,7 @@ DEVICE_MANUFACTURER: Final = "ActronAir"
 
 CONF_SERIAL_NUMBER: Final = "serial_number"
 CONF_ENABLE_ZONE_CONTROL: Final = "enable_zone_control"
+CONF_ENABLE_PUSH: Final = "enable_push"
 CONF_BASE_URL: Final = "base_url"
 
 # OAuth token storage keys (config entry data)

@@ -52,10 +52,12 @@
         "title": "ActronAir Neo options",
         "description": "Configure the integration settings.",
         "data": {
-          "enable_zone_control": "Enable zone control"
+          "enable_zone_control": "Enable zone control",
+          "enable_push": "Enable realtime push updates (recommended)"
         },
         "data_description": {
-          "enable_zone_control": "Create individual zone climate entities with temperature controls"
+          "enable_zone_control": "Create individual zone climate entities with temperature controls",
+          "enable_push": "Receive state changes within seconds over MQTT instead of waiting for the next poll"
         }
       }
     }

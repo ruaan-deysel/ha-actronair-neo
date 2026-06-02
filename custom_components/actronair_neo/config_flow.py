@@ -26,10 +26,12 @@ from .api import ActronAirNeoApiClient, ActronAirNeoAuth
 from .const import (
     CONF_ACCESS_TOKEN,
     CONF_BASE_URL,
+    CONF_ENABLE_PUSH,
     CONF_ENABLE_ZONE_CONTROL,
     CONF_REFRESH_TOKEN,
     CONF_SERIAL_NUMBER,
     CONF_TOKEN_EXPIRES_AT,
+    DEFAULT_ENABLE_PUSH,
     DOMAIN,
 )
 from .exceptions import AuthenticationError
@@ -328,6 +330,12 @@ class OptionsFlowHandler(OptionsFlow):
                         CONF_ENABLE_ZONE_CONTROL,
                         default=self.config_entry.options.get(
                             CONF_ENABLE_ZONE_CONTROL, False
+                        ),
+                    ): bool,
+                    vol.Optional(
+                        CONF_ENABLE_PUSH,
+                        default=self.config_entry.options.get(
+                            CONF_ENABLE_PUSH, DEFAULT_ENABLE_PUSH
                         ),
                     ): bool,
                 }

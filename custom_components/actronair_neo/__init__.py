@@ -26,10 +26,12 @@ from .api.auth import ActronAirNeoAuth
 from .const import (
     CONF_ACCESS_TOKEN,
     CONF_BASE_URL,
+    CONF_ENABLE_PUSH,
     CONF_ENABLE_ZONE_CONTROL,
     CONF_REFRESH_TOKEN,
     CONF_SERIAL_NUMBER,
     CONF_TOKEN_EXPIRES_AT,
+    DEFAULT_ENABLE_PUSH,
     DEFAULT_REFRESH_INTERVAL,
     DOMAIN,
     PLATFORMS,
@@ -224,6 +226,7 @@ async def async_setup_entry(
         entry.data[CONF_SERIAL_NUMBER],
         DEFAULT_REFRESH_INTERVAL,
         enable_zone_control=entry.options.get(CONF_ENABLE_ZONE_CONTROL, False),
+        enable_push=entry.options.get(CONF_ENABLE_PUSH, DEFAULT_ENABLE_PUSH),
     )
 
     await coordinator.async_config_entry_first_refresh()
@@ -238,6 +241,9 @@ async def async_setup_entry(
     entry.async_on_unload(entry.add_update_listener(update_listener))
 
     await coordinator.async_initialize_zone_management()
+
+    await coordinator.async_start_push()
+    entry.async_on_unload(coordinator.async_stop_push)
 
     # Schedule repairs check.
     hass.async_create_task(repairs.async_check_issues(hass, entry))

@@ -103,7 +103,7 @@ class MainData(BaseModel):
     indoor_temp: float | None = None
     indoor_humidity: float | None = None
     compressor_state: str = "OFF"
-    enabled_zones: list[bool] = Field(default_factory=list, alias="EnabledZones")
+    enabled_zones: list[bool] = Field(default_factory=list[bool], alias="EnabledZones")
     model: str = ""
     firmware_version: str = ""
     away_mode: bool = False
@@ -270,7 +270,7 @@ class UserAirconSettings(BaseModel):
     fan_mode: str = Field(default="LOW", alias="FanMode")
     temp_setpoint_cool: float = Field(default=24.0, alias="TemperatureSetpoint_Cool_oC")
     temp_setpoint_heat: float = Field(default=22.0, alias="TemperatureSetpoint_Heat_oC")
-    enabled_zones: list[bool] = Field(default_factory=list, alias="EnabledZones")
+    enabled_zones: list[bool] = Field(default_factory=list[bool], alias="EnabledZones")
     away_mode: bool = Field(default=False, alias="AwayMode")
     quiet_mode: bool = Field(default=False, alias="QuietMode")
 
@@ -286,7 +286,7 @@ class LastKnownState(BaseModel):
         default_factory=dict, alias="UserAirconSettings"
     )
     remote_zone_info: list[dict[str, Any]] = Field(
-        default_factory=list, alias="RemoteZoneInfo"
+        default_factory=list[dict[str, Any]], alias="RemoteZoneInfo"
     )
     aircon_system: dict[str, Any] = Field(default_factory=dict, alias="AirconSystem")
     alerts: dict[str, bool] = Field(default_factory=dict, alias="Alerts")
@@ -323,7 +323,9 @@ class PeripheralData(BaseModel):
     device_type: str | None = Field(None, alias="DeviceType")
     last_connection_time: str | None = Field(None, alias="LastConnectionTime")
     connection_state: str | None = Field(None, alias="ConnectionState")
-    zone_assignment: list[int] = Field(default_factory=list, alias="ZoneAssignment")
+    zone_assignment: list[int] = Field(
+        default_factory=list[int], alias="ZoneAssignment"
+    )
     control_capabilities: dict[str, bool] | None = Field(
         None, alias="ControlCapabilities"
     )

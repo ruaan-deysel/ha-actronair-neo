@@ -404,7 +404,9 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             return
 
         enabled_zones = coordinator_data["main"].get("EnabledZones")
-        if not isinstance(enabled_zones, list):
+        # Defensive: the parsed shape guarantees a list, but a malformed/partial
+        # push could omit it. Guard kept; the type model can't see the runtime risk.
+        if not isinstance(enabled_zones, list):  # pyright: ignore[reportUnnecessaryIsInstance]
             return
 
         now = datetime.datetime.now()  # noqa: DTZ005
@@ -451,7 +453,8 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
 
         main_data = self.last_data.get("main")
         zones_data = self.last_data.get("zones")
-        if not isinstance(main_data, dict) or not isinstance(zones_data, dict):
+        # Defensive guard against malformed/partial state; types say redundant.
+        if not isinstance(main_data, dict) or not isinstance(zones_data, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
             return
 
         self._sync_zone_enabled_state(self.last_data, enabled_zones)
@@ -491,7 +494,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
 
         """
         # Calculate hash of raw data for change detection
-        raw_data_str = str(sorted(data.items()) if isinstance(data, dict) else data)
+        raw_data_str = str(sorted(data.items()))
         raw_data_hash = hash(raw_data_str)
 
         # Return cached parsed data if raw data hasn't changed AND the cache is
@@ -549,7 +552,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         device_section: dict[str, Any] = {}
         for key, value in last_known_state.items():
             if key.startswith("<") and key.endswith(">") and isinstance(value, dict):
-                device_section = value
+                device_section = cast("dict[str, Any]", value)
                 break
 
         return {
@@ -1101,7 +1104,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
     @property
     def api_cache_size(self) -> int:
         """Return the number of entries in the API response cache."""
-        return len(self.api.response_cache._cache)  # noqa: SLF001
+        return len(self.api.response_cache)
 
     def supports_power_monitoring(self) -> bool:
         """Check if the outdoor unit supports power monitoring."""
@@ -1268,7 +1271,8 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         if isinstance(modes, str):
             modes = [m.strip().upper() for m in modes.split(",")]
         elif isinstance(modes, (list, tuple)):
-            modes = [str(m).strip().upper() for m in modes]
+            items = cast("list[Any] | tuple[Any, ...]", modes)
+            modes = [str(m).strip().upper() for m in items]
 
         supported = [m for m in modes if m in valid_modes]
         return supported or default_modes
@@ -1702,7 +1706,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             msg = "No zone data available"
             raise ConfigurationError(msg)
 
-        zones_config = {}
+        zones_config: dict[str, dict[str, Any]] = {}
         for zone_id, zone_data in self.last_data["zones"].items():
             zones_config[zone_id] = {
                 "enabled": zone_data["is_enabled"],
@@ -1963,9 +1967,11 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         if current_mode == "DRY":
             return True
 
-        dry_mode_obj = user_aircon_settings.get("DryMode", {})
-        if isinstance(dry_mode_obj, dict) and dry_mode_obj.get("Supported", False):
-            return True
+        dry_mode_obj = user_aircon_settings.get("DryMode")
+        if isinstance(dry_mode_obj, dict):
+            dry_mode = cast("dict[str, Any]", dry_mode_obj)
+            if dry_mode.get("Supported", False):
+                return True
 
         for field in ("Modes", "SupportedModes", "EnabledModes"):
             modes = user_aircon_settings.get(field)

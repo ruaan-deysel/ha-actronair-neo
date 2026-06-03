@@ -198,13 +198,12 @@ rules:
       ActronAirNeoApiClient accepts an injected aiohttp.ClientSession; the
       integration supplies a certifi-backed session for the cloud TLS chain.
   strict-typing:
-    status: todo
+    status: done
     comment: >-
-      py.typed shipped and pyright runs in strict mode. Strict errors reduced
-      from ~500 to ~48 by wiring the runtime dict/TypedDict types through the
-      coordinator pipeline, parametrising DataUpdateCoordinator[CoordinatorData],
+      py.typed shipped and pyright runs in strict mode with zero errors
+      (script/check). Achieved by wiring the runtime dict/TypedDict types through
+      the coordinator pipeline, parametrising DataUpdateCoordinator[CoordinatorData],
       typing the parse/merge helpers, and replacing the API client's dynamic
-      command-builder lambda table with a typed match dispatch. Remaining errors
-      are intentional defensive isinstance/None guards, untyped Home Assistant
-      surfaces (e.g. async_redact_data), and Pydantic Field idioms; clearing the
-      last set is tracked as future work.
+      command-builder lambda table with a typed match dispatch. Two intentional
+      defensive isinstance guards and one untyped Home Assistant surface
+      (async_redact_data) carry targeted, documented pyright-ignore comments.

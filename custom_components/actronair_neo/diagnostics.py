@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.components.diagnostics import (
+    async_redact_data,  # pyright: ignore[reportUnknownVariableType]
+)
 from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
@@ -76,7 +78,7 @@ async def async_get_config_entry_diagnostics(
         outdoor_unit = aircon_system.get("OutdoorUnit", {})
 
         push_transport = coordinator._push_transport  # noqa: SLF001
-        diagnostics_data = {
+        diagnostics_data: dict[str, Any] = {
             "entry": async_redact_data(entry.as_dict(), TO_REDACT),
             "data": {
                 "info": {
@@ -192,7 +194,7 @@ async def async_get_config_entry_diagnostics(
         }
 
         # Get RemoteZoneInfo for zone capabilities (top-level in lastKnownState)
-        remote_zone_info = full_state.get("RemoteZoneInfo", [])
+        remote_zone_info: list[dict[str, Any]] = full_state.get("RemoteZoneInfo", [])
 
         # Add zone information with enhanced capability details
         for zone_id, zone_data in coordinator.data["zones"].items():
@@ -209,13 +211,14 @@ async def async_get_config_entry_diagnostics(
             }
 
             # Find matching RemoteZoneInfo for this zone
+            empty_zone_info: dict[str, Any] = {}
             matching_zone_info: dict[str, Any] = next(
                 (
                     zone
                     for zone in remote_zone_info
                     if zone.get("NV_Title") == zone_data["name"]
                 ),
-                {},
+                empty_zone_info,
             )
 
             # Add capability information

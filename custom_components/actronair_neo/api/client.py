@@ -102,6 +102,10 @@ class ResponseCache:
         self._default_ttl = default_ttl or timedelta(seconds=30)
         self._lock = asyncio.Lock()
 
+    def __len__(self) -> int:
+        """Return the number of cached entries."""
+        return len(self._cache)
+
     async def get(self, key: str, ttl: timedelta | None = None) -> Any | None:
         """Get cached response if still valid."""
         async with self._lock:

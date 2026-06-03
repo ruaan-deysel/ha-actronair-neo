@@ -22,7 +22,7 @@ def apply_event_paths(state: dict[str, Any], event: dict[str, Any]) -> dict[str,
 
     Each path is split into nested dict keys and ``[index]`` list positions and
     written into a deep copy of ``state`` (so the input is not mutated). The
-    ``type`` marker and any unparseable path are ignored. Lists are extended
+    ``type`` marker and any unparsable path are ignored. Lists are extended
     with empty dicts when an index is beyond the current length.
     """
     result = copy.deepcopy(state)
@@ -40,7 +40,7 @@ def _set_path(root: dict[str, Any], path: str, value: Any) -> None:
     for i, part in enumerate(parts):
         match = _PATH_SEGMENT.match(part)
         if not match:
-            return  # unparseable segment — skip safely
+            return  # unparsable segment — skip safely
         key, raw_index = match.group(1), match.group(2)
         is_last = i == len(parts) - 1
 

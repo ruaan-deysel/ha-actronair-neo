@@ -9,8 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.6.1] - 2026-06-03
+
 ### Added
 
+- **Reconfiguration flow**: The integration can now be re-authorized in place from the device's "Reconfigure" action — it re-runs the device-code authorization and refreshes the stored tokens for the same system without removing and re-adding the integration. It aborts safely if you authorize with an account that does not own the configured system.
 - **Realtime push updates over MQTT (#112)**: The integration now subscribes to ActronAir's MQTT realtime channel for Neo systems, so state changes (mode, fan, setpoints, zones, temperatures, humidity) appear in Home Assistant within seconds of the unit reporting them instead of waiting for the periodic cloud poll. In live testing, changes made from Home Assistant, the ActronAir app, or the wall controller propagated to HA in roughly 0.2–3 seconds. REST polling is retained as a safety-net fallback, and the integration's `iot_class` is now `cloud_push`. Push can be turned off per device via the new "Enable realtime push updates" option. Adds the `aiomqtt` dependency.
 - **Push connection diagnostics**: Config-entry diagnostics now include a `push` block (transport, connection state, last heartbeat age, reconnect count, last error) with sensitive fields redacted.
 - **Command acknowledgement over MQTT**: The integration now subscribes to the realtime command-response channel. A command that the unit does not acknowledge is surfaced as a warning in the log, and the state change embedded in each response is applied immediately for faster confirmation.
@@ -21,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **MQTT broker TLS chain (#112)**: The Neo MQTT broker presents a leaf-only certificate and is reached by IP address, so its chain could not be verified from a standard trust store. The integration now bundles the required Sectigo intermediate CA and uses a dedicated MQTT SSL context — full chain verification is retained (`CERT_REQUIRED`); only hostname matching is relaxed for the IP connection, backstopped by the broker address coming from an authenticated, hostname-verified discovery call.
 - **Stale state after push updates (#112)**: Push messages are applied onto the last-known full state (un-flattening ActronAir's `status-change-broadcast` event paths and merging partial `full-status` payloads), so a partial push can never drop sections such as zone information. A push that would otherwise clear all zones is ignored in favour of the last good state, and per-zone entities report `unavailable` rather than raising if their zone is briefly absent.
+- **Device serial numbers leaked in diagnostics**: Indoor, outdoor, and controller serial numbers were emitted unredacted in downloadable diagnostics. They are now redacted.
+
+### Changed
+
+- **Home Assistant 2026.6.0 support**: Verified against Home Assistant 2026.6.0 and declared a config-entry-only `CONFIG_SCHEMA` to satisfy the updated integration validation. Minimum supported Home Assistant is now 2026.6.0.
 
 ## [2026.6.0] - 2026-06-01
 

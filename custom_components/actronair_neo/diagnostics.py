@@ -30,6 +30,24 @@ TO_REDACT = {
     "userId",
 }
 
+# Marker emitted in place of sensitive scalar values. Mirrors the constant used
+# by homeassistant.components.diagnostics.async_redact_data.
+REDACTED = "**REDACTED**"
+
+
+def _redact_value(value: Any) -> Any:
+    """
+    Redact a single sensitive scalar value.
+
+    ``async_redact_data`` only redacts keys inside a mapping/list, so passing it
+    a bare string (e.g. a serial number) returns the value unchanged. Use this
+    helper for scalar values, preserving "not available" markers so the output
+    still distinguishes "present but hidden" from "absent".
+    """
+    if value in (None, "", "Not Available"):
+        return value
+    return REDACTED
+
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant,  # noqa: ARG001
@@ -67,8 +85,8 @@ async def async_get_config_entry_diagnostics(
                     "indoor_unit": {
                         "model": indoor_unit.get("NV_ModelNumber", "Not Available"),
                         "firmware": indoor_unit.get("IndoorFW", "Not Available"),
-                        "serial": async_redact_data(
-                            indoor_unit.get("SerialNumber", "Not Available"), TO_REDACT
+                        "serial": _redact_value(
+                            indoor_unit.get("SerialNumber", "Not Available")
                         ),
                         "supported_fan_modes": indoor_unit.get(
                             "NV_SupportedFanModes", "Not Available"
@@ -81,15 +99,14 @@ async def async_get_config_entry_diagnostics(
                             "SoftwareVersion", "Not Available"
                         ),
                         "model": outdoor_unit.get("ModelNumber", "Not Available"),
-                        "serial": async_redact_data(
-                            outdoor_unit.get("SerialNumber", "Not Available"), TO_REDACT
+                        "serial": _redact_value(
+                            outdoor_unit.get("SerialNumber", "Not Available")
                         ),
                     },
                     "controller": {
                         "model": aircon_system.get("MasterWCModel", "Not Available"),
-                        "serial": async_redact_data(
-                            aircon_system.get("MasterSerial", "Not Available"),
-                            TO_REDACT,
+                        "serial": _redact_value(
+                            aircon_system.get("MasterSerial", "Not Available")
                         ),
                         "firmware": aircon_system.get(
                             "MasterWCFirmwareVersion", "Not Available"

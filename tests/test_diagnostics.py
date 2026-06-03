@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntryState
 
 from custom_components.actronair_neo.diagnostics import (
     TO_REDACT,
+    _redact_value,
     async_get_config_entry_diagnostics,
 )
 
@@ -67,6 +68,68 @@ def test_to_redact_contents():
     assert "refresh_token" in TO_REDACT
     assert "serial" in TO_REDACT
     assert "MAC" in TO_REDACT
+
+
+def test_redact_value_helper():
+    """_redact_value hides real values but preserves absence markers."""
+    assert _redact_value("REAL-SERIAL") == "**REDACTED**"
+    assert _redact_value("Not Available") == "Not Available"
+    assert _redact_value(None) is None
+    assert _redact_value("") == ""
+
+
+async def test_diagnostics_redacts_device_serials(
+    hass,
+    mock_config_entry,
+):
+    """Indoor/outdoor/controller serials must be redacted in the output.
+
+    Regression test: scalar serial values were previously passed to
+    async_redact_data (which only redacts mapping keys), leaking them verbatim.
+    """
+    coordinator = MagicMock()
+    coordinator.data = {
+        "main": {
+            "model": "Neo",
+            "firmware_version": "1.0",
+            "serial_number": "ABC123",
+            "compressor_state": "COOL",
+            "is_on": True,
+            "mode": "COOL",
+            "fan_mode": "AUTO",
+            "indoor_temp": 22.0,
+            "indoor_humidity": 45.0,
+        },
+        "zones": {},
+    }
+    coordinator.get_diagnostics_snapshot = MagicMock(
+        return_value={
+            "lastKnownState": {
+                "<ABC123>": {"SystemStatus_Local": {}, "Cloud": {}},
+                "AirconSystem": {
+                    "IndoorUnit": {"SerialNumber": "INDOOR-SECRET-1"},
+                    "OutdoorUnit": {"SerialNumber": "OUTDOOR-SECRET-2"},
+                    "MasterSerial": "MASTER-SECRET-3",
+                },
+                "LiveAircon": {},
+                "RemoteZoneInfo": [],
+            }
+        }
+    )
+    coordinator.get_zone_peripheral = MagicMock(return_value=None)
+    mock_config_entry.runtime_data = coordinator
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+    info = result["data"]["info"]
+    assert info["indoor_unit"]["serial"] == "**REDACTED**"
+    assert info["outdoor_unit"]["serial"] == "**REDACTED**"
+    assert info["controller"]["serial"] == "**REDACTED**"
+
+    # The raw serial values must never appear anywhere in the serialized output.
+    serialized = json.dumps(result, default=str)
+    assert "INDOOR-SECRET-1" not in serialized
+    assert "OUTDOOR-SECRET-2" not in serialized
+    assert "MASTER-SECRET-3" not in serialized
 
 
 async def test_diagnostics_includes_zone_wireless_sensor(

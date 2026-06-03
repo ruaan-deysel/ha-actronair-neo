@@ -1,0 +1,203 @@
+# Home Assistant Integration Quality Scale tracking for actronair_neo.
+#
+# Reference: https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist
+#
+# Notes specific to this integration:
+#   * This is a HACS custom integration. End-user documentation lives in the
+#     repository README / wiki rather than the core developer docs site, so all
+#     `docs-*` rules are marked `exempt`.
+#   * The ActronAir API client is maintained in-tree under
+#     `custom_components/actronair_neo/api/` (there is no external upstream
+#     library). Dependency-related rules are evaluated against that in-tree,
+#     fully-async client.
+rules:
+  # ------------------------------------------------------------------ Bronze
+  action-setup:
+    status: done
+    comment: Services are registered once in async_setup via _register_services().
+  appropriate-polling:
+    status: done
+    comment: >-
+      DataUpdateCoordinator uses a user-configurable update_interval
+      (timedelta(seconds=update_interval)); cloud_push reduces reliance on it.
+  brands:
+    status: exempt
+    comment: >-
+      Custom HACS integration; branding assets are not published to the
+      home-assistant/brands repository.
+  common-modules:
+    status: done
+    comment: Shared logic lives in coordinator.py, entity.py, const.py and types.py.
+  config-flow-test-coverage:
+    status: done
+    comment: >-
+      Dedicated tests/test_config_flow.py; config_flow.py at ~91% (a few error
+      branches uncovered).
+  config-flow:
+    status: done
+    comment: UI config flow with data_description fields in strings.json.
+  dependency-transparency:
+    status: done
+    comment: >-
+      Only external requirement is aiomqtt; the ActronAir API client is in-tree
+      under api/ with no opaque binary dependencies.
+  docs-actions:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  docs-high-level-description:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  docs-installation-instructions:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  docs-removal-instructions:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  entity-event-setup:
+    status: done
+    comment: Entities derive from CoordinatorEntity; updates handled via coordinator lifecycle.
+  entity-unique-id:
+    status: done
+    comment: ActronAirNeoEntity sets _attr_unique_id from the device serial.
+  has-entity-name:
+    status: done
+    comment: Base entity sets _attr_has_entity_name = True.
+  runtime-data:
+    status: done
+    comment: Coordinator stored in entry.runtime_data.
+  test-before-configure:
+    status: done
+    comment: Config flow authenticates and aborts with cannot_connect on failure.
+  test-before-setup:
+    status: done
+    comment: async_setup_entry raises ConfigEntryNotReady / ConfigEntryAuthFailed.
+  unique-config-entry:
+    status: done
+    comment: async_set_unique_id(serial) + _abort_if_unique_id_configured().
+
+  # ------------------------------------------------------------------ Silver
+  action-exceptions:
+    status: done
+    comment: >-
+      Service handlers raise ServiceValidationError / HomeAssistantError on
+      invalid input or failures.
+  config-entry-unloading:
+    status: done
+    comment: async_unload_entry unloads platforms; cleanup via entry.async_on_unload.
+  docs-configuration-parameters:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  docs-installation-parameters:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  entity-unavailable:
+    status: done
+    comment: Base entity available property reflects coordinator.last_update_success.
+  integration-owner:
+    status: done
+    comment: codeowners @ruaan-deysel in manifest.json.
+  log-when-unavailable:
+    status: done
+    comment: Coordinator raises UpdateFailed; HA logs unavailability once and on recovery.
+  parallel-updates:
+    status: done
+    comment: PARALLEL_UPDATES = 0 declared in every entity platform.
+  reauthentication-flow:
+    status: done
+    comment: async_step_reauth / async_step_reauth_confirm implemented.
+  test-coverage:
+    status: done
+    comment: >-
+      Total coverage 95.63% (meets >=95%). Entity platform files
+      (climate/sensor/etc.) are omitted from measurement and validated via the
+      running HA instance.
+
+  # -------------------------------------------------------------------- Gold
+  devices:
+    status: done
+    comment: Entities expose DeviceInfo with (DOMAIN, device_id) identifiers.
+  diagnostics:
+    status: done
+    comment: diagnostics.py with async_redact_data plus scalar redaction of serials.
+  discovery-update-info:
+    status: exempt
+    comment: Cloud (account-based) integration; no local network info to update.
+  discovery:
+    status: exempt
+    comment: >-
+      Devices are bound to a cloud account and are not locally discoverable
+      (manifest ssdp/zeroconf/homekit intentionally empty).
+  docs-data-update:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  docs-examples:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  docs-known-limitations:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  docs-supported-devices:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  docs-supported-functions:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  docs-troubleshooting:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  docs-use-cases:
+    status: exempt
+    comment: HACS integration; documentation maintained in the repository, not core docs.
+  dynamic-devices:
+    status: exempt
+    comment: >-
+      One AC system per config entry; zones are exposed as entities, not as
+      separately added devices.
+  entity-category:
+    status: done
+    comment: Config/diagnostic entities set _attr_entity_category appropriately.
+  entity-device-class:
+    status: done
+    comment: Device classes set across sensor/binary_sensor/number platforms.
+  entity-disabled-by-default:
+    status: done
+    comment: Noisy/less-popular entities set _attr_entity_registry_enabled_default = False.
+  entity-translations:
+    status: done
+    comment: Entities use _attr_translation_key with translations/en.json.
+  exception-translations:
+    status: done
+    comment: >-
+      Custom exceptions set translation_domain=DOMAIN; service errors raise with
+      translation_key.
+  icon-translations:
+    status: done
+    comment: icons.json provides entity/state icon translations.
+  reconfiguration-flow:
+    status: todo
+    comment: >-
+      An OptionsFlow exists for settings, but a dedicated async_step_reconfigure
+      for connection details is not yet implemented.
+  repair-issues:
+    status: done
+    comment: >-
+      repairs.py raises repair issues (auth failed, device offline, sensor
+      unavailable) with guided fix flows.
+  stale-devices:
+    status: exempt
+    comment: Single AC system per config entry; no multi-device removal scenario.
+
+  # ---------------------------------------------------------------- Platinum
+  async-dependency:
+    status: done
+    comment: In-tree API client is fully async (aiohttp); push transport uses aiomqtt.
+  inject-websession:
+    status: done
+    comment: >-
+      ActronAirNeoApiClient accepts an injected aiohttp.ClientSession; the
+      integration supplies a certifi-backed session for the cloud TLS chain.
+  strict-typing:
+    status: todo
+    comment: >-
+      py.typed shipped and pyright runs in strict mode, but strict checking does
+      not yet pass cleanly (largely untyped Home Assistant dependency surfaces).

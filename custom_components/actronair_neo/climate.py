@@ -187,10 +187,9 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
         return REVERSE_FAN_MODE_MAP.get(base_mode, FAN_LOW)
 
     @property
-    def current_humidity(self) -> int | None:
+    def current_humidity(self) -> float | None:
         """Return the current humidity."""
-        humidity = self.coordinator.data["main"]["indoor_humidity"]
-        return int(humidity) if humidity is not None else None
+        return self.coordinator.data["main"]["indoor_humidity"]
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""

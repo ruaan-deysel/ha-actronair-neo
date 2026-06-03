@@ -36,11 +36,11 @@ def apply_event_paths(state: dict[str, Any], event: dict[str, Any]) -> dict[str,
 def _set_path(root: dict[str, Any], path: str, value: Any) -> None:
     """Write ``value`` into ``root`` at a flattened ``path`` like ``a.b[2].c``."""
     parts = path.split(".")
-    cur: Any = root
+    cur: dict[str, Any] = root
     for i, part in enumerate(parts):
         match = _PATH_SEGMENT.match(part)
-        if not match or not isinstance(cur, dict):
-            return  # unparseable segment or type mismatch — skip safely
+        if not match:
+            return  # unparseable segment — skip safely
         key, raw_index = match.group(1), match.group(2)
         is_last = i == len(parts) - 1
 
@@ -52,13 +52,14 @@ def _set_path(root: dict[str, Any], path: str, value: Any) -> None:
             if not isinstance(nxt, dict):
                 nxt = {}
                 cur[key] = nxt
-            cur = nxt
+            cur = cast("dict[str, Any]", nxt)
         else:
             index = int(raw_index)
             lst = cur.get(key)
             if not isinstance(lst, list):
                 lst = []
                 cur[key] = lst
+            lst = cast("list[Any]", lst)
             while len(lst) <= index:
                 lst.append({})
             if is_last:
@@ -66,7 +67,7 @@ def _set_path(root: dict[str, Any], path: str, value: Any) -> None:
                 return
             if not isinstance(lst[index], dict):
                 lst[index] = {}
-            cur = lst[index]
+            cur = cast("dict[str, Any]", lst[index])
 
 
 def deep_merge(base: dict[str, Any], delta: dict[str, Any]) -> dict[str, Any]:

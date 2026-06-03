@@ -29,7 +29,7 @@ async def async_setup_entry(
     """Set up ActronAir Neo diagnostic sensors."""
     coordinator: ActronDataCoordinator = entry.runtime_data
 
-    entities = [
+    entities: list[BinarySensorEntity] = [
         ActronHealthMonitorSensor(coordinator),
         ActronFastHeatingSensor(coordinator),
         ActronActiveWarningsSensor(coordinator),

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
+
+if TYPE_CHECKING:
+    # Zone capabilities are produced by the API client as a Pydantic model
+    # (dot-accessed by consumers), not a plain dict.
+    from .api.models import ZoneCapabilities
 
 
 class TokenResponse(TypedDict):
@@ -84,6 +89,7 @@ class MainData(TypedDict):
     service_reminder_enabled: bool
     service_reminder_time: str
     warnings: list[str]
+    dry_mode_supported: bool
 
 
 class LiveAirconData(TypedDict):
@@ -229,18 +235,6 @@ class CommandResponse(TypedDict):
 
     success: bool
     message: str | None
-
-
-class ZoneCapabilities(TypedDict):
-    """Zone capabilities structure."""
-
-    exists: bool
-    can_operate: bool
-    has_temp_control: bool
-    has_separate_targets: bool
-    target_temp_cool: float | None
-    target_temp_heat: float | None
-    peripheral_capabilities: dict[str, bool] | None
 
 
 class PeripheralData(TypedDict):

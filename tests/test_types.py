@@ -13,7 +13,8 @@ def test_module_has_all_typeddicts() -> None:
     expected = [
         "TokenResponse",
         "DeviceInfo",
-        "ZoneCapabilities",
+        # ZoneCapabilities is a Pydantic model in api.models (dot-accessed at
+        # runtime), not a TypedDict here — see ZoneData.capabilities.
         "ZoneData",
         "MainData",
         "MasterSensorInfo",

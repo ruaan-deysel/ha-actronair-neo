@@ -55,8 +55,8 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant  # type: ignore[import-untyped]
 
     from .api import ActronAirNeoApiClient
-    from .api.models import (
-        AcStatusResponse,
+    from .api.models import ZoneCapabilities
+    from .types import (
         CloudConnectionData,
         ConnectionMetadata,
         CoordinatorData,
@@ -68,14 +68,13 @@ if TYPE_CHECKING:
         ServicingData,
         SystemStatusData,
         VFTData,
-        ZoneCapabilities,
         ZoneData,
     )
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class ActronDataCoordinator(DataUpdateCoordinator):
+class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
     """Class to manage fetching ActronAir Neo data."""
 
     def __init__(  # noqa: PLR0913
@@ -320,7 +319,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         msg = f"API communication error: {err}"
         raise UpdateFailed(msg) from err
 
-    async def _parse_data(self, data: AcStatusResponse) -> CoordinatorData:
+    async def _parse_data(self, data: dict[str, Any]) -> CoordinatorData:
         """
         Parse the data from the API into structured data for entities.
 
@@ -481,7 +480,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         self._force_fresh_on_next_update = True
         await self.async_request_refresh()
 
-    async def _parse_data_optimized(self, data: AcStatusResponse) -> CoordinatorData:
+    async def _parse_data_optimized(self, data: dict[str, Any]) -> CoordinatorData:
         """
         Parse data with performance optimizations and caching.
 
@@ -534,7 +533,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         ).total_seconds()
         return age >= PARSE_CACHE_TTL
 
-    def _extract_data_sections(self, last_known_state: dict) -> dict:
+    def _extract_data_sections(
+        self, last_known_state: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Extract and organize data sections from API response.
 
@@ -568,7 +569,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "device_section": device_section,
         }
 
-    async def _parse_main_data(self, data_sections: dict) -> MainData:
+    async def _parse_main_data(self, data_sections: dict[str, Any]) -> MainData:
         """
         Parse main system data from API response sections.
 
@@ -587,10 +588,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         alerts = data_sections["alerts"]
 
         # Get supported modes
-        supported_fan_modes: list[str] | frozenset[str]
+        supported_fan_modes: list[str]
         auto_fan_enabled = indoor_unit.get("NV_AutoFanEnabled", False)
         if auto_fan_enabled:
-            supported_fan_modes = ADVANCE_FAN_MODES
+            supported_fan_modes = list(ADVANCE_FAN_MODES)
         else:
             fan_mode = user_aircon_settings.get("FanMode", "")
             supported_fan_modes = self._validate_fan_modes(
@@ -672,7 +673,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         return main_data
 
-    async def _parse_zones_data(self, data_sections: dict) -> dict[str, ZoneData]:
+    async def _parse_zones_data(
+        self, data_sections: dict[str, Any]
+    ) -> dict[str, ZoneData]:
         """
         Parse zone data from API response sections.
 
@@ -740,7 +743,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         return zones
 
     @staticmethod
-    def _get_zone_enabled(user_aircon_settings: dict, zone_index: int) -> bool:
+    def _get_zone_enabled(
+        user_aircon_settings: dict[str, Any], zone_index: int
+    ) -> bool:
         """Check if a zone is enabled by index."""
         enabled_zones = user_aircon_settings.get("EnabledZones", [])
         if zone_index < len(enabled_zones):
@@ -749,10 +754,10 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     def _enrich_zone_with_peripheral(
         self,
-        zone: dict,
-        zone_data: dict,
+        zone: dict[str, Any],
+        zone_data: dict[str, Any],
         capabilities: ZoneCapabilities,
-        peripherals: list,
+        peripherals: list[dict[str, Any]],
     ) -> None:
         """Enrich zone data with matching peripheral information."""
         zone_sensors = zone.get("Sensors", {})
@@ -794,7 +799,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                 )
             break
 
-    def _parse_live_aircon_data(self, data_sections: dict) -> LiveAirconData:
+    def _parse_live_aircon_data(self, data_sections: dict[str, Any]) -> LiveAirconData:
         """Parse live aircon operational data."""
         live = data_sections.get("live_aircon", {})
         return cast(
@@ -813,7 +818,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             },
         )
 
-    def _parse_outdoor_unit_data(self, data_sections: dict) -> OutdoorUnitData:
+    def _parse_outdoor_unit_data(
+        self, data_sections: dict[str, Any]
+    ) -> OutdoorUnitData:
         """Parse outdoor unit live and system info data."""
         live = data_sections.get("live_aircon", {})
         ou_live = live.get("OutdoorUnit", {})
@@ -858,7 +865,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         )
 
     @staticmethod
-    def _parse_system_status_data(device_section: dict) -> SystemStatusData:
+    def _parse_system_status_data(device_section: dict[str, Any]) -> SystemStatusData:
         """Parse device system status data from serial-keyed section."""
         sys_status = device_section.get("SystemStatus_Local", {})
         wifi = sys_status.get("WiFi", {})
@@ -879,7 +886,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         )
 
     @staticmethod
-    def _parse_cloud_data(device_section: dict) -> CloudConnectionData:
+    def _parse_cloud_data(device_section: dict[str, Any]) -> CloudConnectionData:
         """Parse cloud connection data from serial-keyed section."""
         cloud = device_section.get("Cloud", {})
         connection = cloud.get("Connection", {})
@@ -904,7 +911,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         )
 
     @staticmethod
-    def _parse_servicing_data(device_section: dict) -> ServicingData:
+    def _parse_servicing_data(device_section: dict[str, Any]) -> ServicingData:
         """Parse servicing and error history data."""
         servicing = device_section.get("Servicing", {})
         return cast(
@@ -916,7 +923,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         )
 
     @staticmethod
-    def _parse_connection_metadata(data: dict) -> ConnectionMetadata:
+    def _parse_connection_metadata(data: dict[str, Any]) -> ConnectionMetadata:
         """Parse top-level connection metadata from raw API response."""
         return cast(
             "ConnectionMetadata",
@@ -928,7 +935,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         )
 
     @staticmethod
-    def _parse_vft_data(data_sections: dict) -> VFTData:
+    def _parse_vft_data(data_sections: dict[str, Any]) -> VFTData:
         """Parse variable fan technology data."""
         user_settings = data_sections.get("user_aircon_settings", {})
         vft = user_settings.get("VFT", {})
@@ -955,27 +962,26 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             # Apply either onto the last known full state so a partial push
             # never drops sections (notably RemoteZoneInfo) and so the parser
             # actually sees the changed values.
-            prior_state = (
-                prior_raw.get("lastKnownState", {})
-                if isinstance(prior_raw, dict)
-                else {}
+            prior_state: dict[str, Any] = cast(
+                "dict[str, Any]", prior_raw.get("lastKnownState") or {}
             )
             event = payload.get("event")
             incoming_state = payload.get("lastKnownState")
             if isinstance(incoming_state, dict):
-                merged_state = (
-                    deep_merge(prior_state, incoming_state)
-                    if prior_state
-                    else incoming_state
+                incoming = cast("dict[str, Any]", incoming_state)
+                merged_state: dict[str, Any] = (
+                    deep_merge(prior_state, incoming) if prior_state else incoming
                 )
             elif isinstance(event, dict):
-                merged_state = apply_event_paths(prior_state, event)
+                merged_state = apply_event_paths(
+                    prior_state, cast("dict[str, Any]", event)
+                )
             else:
                 # Tolerate a bare-state payload without a recognised wrapper.
                 bare = {k: v for k, v in payload.items() if k != "lastKnownState"}
                 merged_state = deep_merge(prior_state, bare) if prior_state else bare
             merged_raw: dict[str, Any] = {
-                **(prior_raw if isinstance(prior_raw, dict) else {}),
+                **prior_raw,
                 "lastKnownState": merged_state,
             }
             _LOGGER.debug(
@@ -1002,7 +1008,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
                     "Ignoring push update that would clear all zones "
                     "(kind=%s, state keys=%s)",
                     kind,
-                    sorted(incoming_state.keys()),
+                    sorted(merged_state.keys()),
                 )
                 self._last_raw_response = prior_raw
                 self._clear_parse_cache()
@@ -1100,7 +1106,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
     def supports_power_monitoring(self) -> bool:
         """Check if the outdoor unit supports power monitoring."""
-        ou = self.data.get("outdoor_unit", {}) if self.data else {}
+        if not self.data:
+            return False
+        ou = self.data["outdoor_unit"]
         family = ou.get("family", "")
         ctrl_board_type = ou.get("ctrl_board_type", "")
 
@@ -1115,11 +1123,11 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         supply_current = ou.get("supply_current", 0)
         compressor_on = ou.get("compressor_on", False)
 
-        if comp_power and comp_power > 0:
-            return True
-        if supply_voltage and supply_voltage > 0:
-            return True
-        if supply_current and supply_current > 0:
+        if (
+            (comp_power and comp_power > 0)
+            or (supply_voltage and supply_voltage > 0)
+            or (supply_current and supply_current > 0)
+        ):
             return True
 
         # Family-based heuristic for units that may not report live data
@@ -1630,7 +1638,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         """Clean up expired cache entries."""
         await self.api.cleanup_expired_cache()
 
-    def get_cache_stats(self) -> dict:
+    def get_cache_stats(self) -> dict[str, Any]:
         """
         Get cache statistics for monitoring.
 
@@ -1646,7 +1654,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
             "coordinator_has_data": self.last_data is not None,
         }
 
-    def get_performance_stats(self) -> dict:
+    def get_performance_stats(self) -> dict[str, Any]:
         """
         Get performance statistics for monitoring.
 
@@ -1744,7 +1752,9 @@ class ActronDataCoordinator(DataUpdateCoordinator):
 
         await self.async_request_refresh()
 
-    async def _apply_zone_preset_temps(self, zone_id: str, zone_config: dict) -> None:
+    async def _apply_zone_preset_temps(
+        self, zone_id: str, zone_config: dict[str, Any]
+    ) -> None:
         """
         Apply temperature settings from a zone preset.
 
@@ -1891,7 +1901,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
     @staticmethod
     def _parse_outdoor_temp(
         raw_value: float | None,
-        outdoor_unit: dict | None = None,
+        outdoor_unit: dict[str, Any] | None = None,
     ) -> float | None:
         """
         Parse outdoor temperature, filtering sentinel values.
@@ -1941,7 +1951,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         return None
 
     @staticmethod
-    def _detect_dry_mode_support(user_aircon_settings: dict) -> bool:
+    def _detect_dry_mode_support(user_aircon_settings: dict[str, Any]) -> bool:
         """
         Detect whether this unit supports DRY (dehumidify) mode.
 
@@ -1968,7 +1978,7 @@ class ActronDataCoordinator(DataUpdateCoordinator):
         return False
 
     @staticmethod
-    def _parse_warnings(live_aircon: dict) -> list[str]:
+    def _parse_warnings(live_aircon: dict[str, Any]) -> list[str]:
         """
         Parse active warnings from LiveAircon data.
 

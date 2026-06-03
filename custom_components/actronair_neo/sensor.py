@@ -27,6 +27,8 @@ from .const import (
 from .entity import ActronAirNeoEntity, ActronZoneEntity
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -45,7 +47,7 @@ async def async_setup_entry(
     """Set up ActronAir Neo sensors from a config entry."""
     coordinator: ActronDataCoordinator = entry.runtime_data
 
-    entities = [
+    entities: list[SensorEntity] = [
         ActronMainSensor(coordinator),
         # Enhanced diagnostic sensors
         ActronSystemDiagnosticSensor(coordinator),
@@ -170,7 +172,7 @@ class ActronZoneSensor(ActronZoneEntity, SensorEntity):
         else:
             return attributes
 
-    def _build_zone_attributes(self, zone_data: dict[str, Any]) -> dict[str, Any]:
+    def _build_zone_attributes(self, zone_data: Mapping[str, Any]) -> dict[str, Any]:
         """Build base zone attributes from zone data."""
         attributes: dict[str, Any] = {
             ATTR_ZONE_NAME: zone_data["name"],
@@ -198,7 +200,7 @@ class ActronZoneSensor(ActronZoneEntity, SensorEntity):
     def _enrich_from_peripheral(
         self,
         attributes: dict[str, Any],
-        peripheral_data: dict[str, Any],
+        peripheral_data: Mapping[str, Any],
     ) -> None:
         """Enrich zone attributes from peripheral data."""
         if (
@@ -727,7 +729,7 @@ class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
                 return f"{power / 1000:.1f} kW"
             return f"{power:.0f} W"
 
-    def _get_operational_status(self, live_aircon: dict) -> str:
+    def _get_operational_status(self, live_aircon: Mapping[str, Any]) -> str:
         """Determine operational status from live data."""
         if not live_aircon.get("system_on", False):
             return "Standby"

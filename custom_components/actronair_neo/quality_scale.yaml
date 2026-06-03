@@ -199,5 +199,10 @@ rules:
   strict-typing:
     status: todo
     comment: >-
-      py.typed shipped and pyright runs in strict mode, but strict checking does
-      not yet pass cleanly (largely untyped Home Assistant dependency surfaces).
+      py.typed shipped and pyright runs in strict mode. Strict errors reduced
+      from ~500 to ~84 by wiring the runtime dict/TypedDict types through the
+      coordinator pipeline, parametrising DataUpdateCoordinator[CoordinatorData],
+      and typing the parse/merge helpers. Remaining errors are the API client's
+      dynamic command-builder lambda table and intentional defensive isinstance/
+      None guards; clearing them needs a command-builder refactor and is tracked
+      as future work.

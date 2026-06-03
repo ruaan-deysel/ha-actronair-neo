@@ -109,17 +109,10 @@ mitmproxy-ca-cert.*
 
 # playwright-cli automation artifacts (snapshots, console logs)
 .playwright-cli/
-.claude/skills/playwright-cli/SKILL.md
-.claude/skills/playwright-cli/SKILL.md
-.claude/skills/playwright-cli/references/element-attributes.md
-.claude/skills/playwright-cli/references/playwright-tests.md
-.claude/skills/playwright-cli/references/running-code.md
-.claude/skills/playwright-cli/references/session-management.md
-.claude/skills/playwright-cli/references/spec-driven-testing.md
-.claude/skills/playwright-cli/references/test-generation.md
-.claude/skills/playwright-cli/references/tracing.md
-.claude/skills/playwright-cli/references/video-recording.md
-.claude/skills/playwright-cli/references/running-code.md
-.claude/skills/playwright-cli/references/session-management.md
-.claude/skills/playwright-cli/references/test-generation.md
-.claude/skills/playwright-cli/references/tracing.md
+
+# Claude Code / AI agent tooling (local-only, not committed)
+.claude/
+
+# Superpowers AI workflow docs (plans, specs, tasks — not committed)
+superpowers/
+docs/superpowers/

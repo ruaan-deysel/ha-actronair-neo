@@ -14,6 +14,9 @@ from homeassistant.exceptions import (  # type: ignore[import-untyped]
     ServiceValidationError,
 )
 from homeassistant.helpers import (
+    config_validation as cv,  # type: ignore[import-untyped]
+)
+from homeassistant.helpers import (
     device_registry as dr,  # type: ignore[import-untyped]
 )
 from homeassistant.helpers import (
@@ -57,6 +60,13 @@ if TYPE_CHECKING:
     )
 
 _LOGGER = logging.getLogger(__name__)
+
+# This integration is configured exclusively via the UI config flow; it has no
+# YAML configuration, so reject any domain-level YAML config. The HA helper is
+# only partially typed, hence the targeted ignores.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    DOMAIN
+)
 
 type ActronAirNeoConfigEntry = ConfigEntry[ActronDataCoordinator]
 

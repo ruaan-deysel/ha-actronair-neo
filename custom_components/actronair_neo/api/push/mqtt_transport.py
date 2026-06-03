@@ -132,9 +132,10 @@ class MqttPushTransport(PushTransport):
     @staticmethod
     def _log_command_response(data: dict[str, Any]) -> None:
         """Log a command acknowledgement, warning on any non-ack response."""
-        response = data.get("commandResponse")
-        if not isinstance(response, dict):
+        raw_response = data.get("commandResponse")
+        if not isinstance(raw_response, dict):
             return
+        response = cast("dict[str, Any]", raw_response)
         response_type = response.get("type")
         if response_type and response_type != "ack":
             _LOGGER.warning(

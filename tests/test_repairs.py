@@ -6,6 +6,7 @@ import pytest
 from homeassistant.components.repairs import ConfirmRepairFlow
 from homeassistant.data_entry_flow import FlowResultType
 
+from custom_components.actronair_neo.api.models import ZoneCapabilities
 from custom_components.actronair_neo.repairs import (
     ApiAuthenticationFailedRepairFlow,
     DeviceOfflineRepairFlow,
@@ -132,7 +133,7 @@ async def test_async_check_issues_creates_and_deletes_issue_paths():
             "zone_1": {
                 "name": "Living",
                 "temp": None,
-                "capabilities": {"exists": True},
+                "capabilities": ZoneCapabilities(exists=True),
             }
         }
     }

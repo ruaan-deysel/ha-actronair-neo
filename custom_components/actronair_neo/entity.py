@@ -55,18 +55,17 @@ class ActronAirNeoEntity(CoordinatorEntity["ActronDataCoordinator"]):
     @property
     def device_info(self) -> DeviceInfo | None:
         """Return device information."""
-        coordinator_data = self.coordinator.data
-        if isinstance(coordinator_data, dict):
-            main_data = coordinator_data.get("main", {})
-            return DeviceInfo(
-                identifiers={(DOMAIN, self.coordinator.device_id)},
-                name=self.DEVICE_NAME,
-                manufacturer=DEVICE_MANUFACTURER,
-                model=main_data.get("model"),
-                serial_number=self.coordinator.device_id,
-                sw_version=main_data.get("firmware_version"),
-            )
-        return None
+        if not self.coordinator.data:
+            return None
+        main_data = self.coordinator.data.get("main", {})
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device_id)},
+            name=self.DEVICE_NAME,
+            manufacturer=DEVICE_MANUFACTURER,
+            model=main_data.get("model"),
+            serial_number=self.coordinator.device_id,
+            sw_version=main_data.get("firmware_version"),
+        )
 
 
 class ActronZoneEntity(ActronAirNeoEntity):
@@ -84,7 +83,6 @@ class ActronZoneEntity(ActronAirNeoEntity):
     @property
     def available(self) -> bool:
         """Return True only when the backing zone is present in data."""
-        if not super().available:
+        if not super().available or not self.coordinator.data:
             return False
-        data = self.coordinator.data
-        return isinstance(data, dict) and self.zone_id in data.get("zones", {})
+        return self.zone_id in self.coordinator.data.get("zones", {})

@@ -169,12 +169,12 @@ async def async_check_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
         async_delete_issue(hass, DOMAIN, "device_offline")
 
     # Check sensor availability
-    unavailable_sensors = []
+    unavailable_sensors: list[str] = []
     zones = coordinator.data.get("zones", {}) if coordinator.data else {}
     for zone_id, zone_data in zones.items():
-        if zone_data.get("temp") is None and zone_data.get("capabilities", {}).get(
-            "exists", False
-        ):
+        capabilities = zone_data.get("capabilities")
+        zone_exists = bool(capabilities.exists) if capabilities else False
+        if zone_data.get("temp") is None and zone_exists:
             unavailable_sensors.append(zone_data.get("name", zone_id))
 
     if unavailable_sensors:
@@ -231,12 +231,9 @@ async def async_health_check(hass: HomeAssistant, entry: ConfigEntry) -> dict[st
     # Check zone sensor health
     zones = coordinator.data.get("zones", {}) if coordinator.data else {}
     for zone_id, zone_data in zones.items():
-        if (
-            zone_data.get("battery_level") is not None
-            and zone_data["battery_level"] < 20  # noqa: PLR2004
-        ):
+        battery = zone_data.get("battery_level")
+        if battery is not None and battery < 20:  # noqa: PLR2004
             zone_name = zone_data.get("name", zone_id)
-            battery = zone_data["battery_level"]
             health_status["issues"].append(
                 {
                     "type": "low_battery",
@@ -246,12 +243,9 @@ async def async_health_check(hass: HomeAssistant, entry: ConfigEntry) -> dict[st
                 }
             )
 
-        if (
-            zone_data.get("signal_strength") is not None
-            and zone_data["signal_strength"] < -70  # noqa: PLR2004
-        ):
+        signal = zone_data.get("signal_strength")
+        if signal is not None and signal < -70:  # noqa: PLR2004
             zone_name = zone_data.get("name", zone_id)
-            signal = zone_data["signal_strength"]
             health_status["issues"].append(
                 {
                     "type": "poor_signal",

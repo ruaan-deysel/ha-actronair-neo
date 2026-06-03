@@ -416,7 +416,7 @@ class ActronSystemDiagnosticSensor(ActronAirNeoEntity, SensorEntity):
                 return f"Running ({mode})"
             return "Standby"
 
-    def _format_uptime(self, seconds: int) -> str:
+    def _format_uptime(self, seconds: Any) -> str:
         """Format uptime to human readable string."""
         if not isinstance(seconds, (int, float)) or seconds < 0:
             return "Unknown"
@@ -643,7 +643,7 @@ class ActronConnectivitySensor(ActronAirNeoEntity, SensorEntity):
                 "error": "Failed to retrieve connectivity data",
             }
 
-    def _format_uptime(self, seconds: int) -> str:
+    def _format_uptime(self, seconds: Any) -> str:
         """Format uptime to human readable string."""
         if not isinstance(seconds, (int, float)) or seconds < 0:
             return "Unknown"
@@ -701,8 +701,8 @@ class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
 
             # Calculate efficiency based on compressor capacity and system status
             # Return capacity even when system is off (0%) for consistent updates
-            capacity = live_aircon.get("compressor_capacity", 0)
-            return float(capacity) if capacity is not None else 0.0
+            capacity = live_aircon.get("compressor_capacity") or 0
+            return float(capacity)
 
         except (KeyError, TypeError, ValueError):
             return None
@@ -860,14 +860,10 @@ class ActronCompressorPowerSensor(ActronAirNeoEntity, SensorEntity):
                 return 0.0
 
             # Get compressor power from outdoor unit
-            compressor_power = outdoor_unit.get("comp_power", 0)
+            compressor_power = outdoor_unit.get("comp_power") or 0
 
             # Return power as float, ensuring it's not negative
-            return (
-                max(0.0, float(compressor_power))
-                if compressor_power is not None
-                else 0.0
-            )
+            return max(0.0, float(compressor_power))
 
         except (KeyError, TypeError, ValueError):
             return None
@@ -933,12 +929,8 @@ class ActronCompressorEnergySensor(ActronAirNeoEntity, SensorEntity):
                 current_power = 0.0
             else:
                 # Get compressor power from outdoor unit
-                compressor_power = outdoor_unit.get("comp_power", 0)
-                current_power = (
-                    max(0.0, float(compressor_power))
-                    if compressor_power is not None
-                    else 0.0
-                )
+                compressor_power = outdoor_unit.get("comp_power") or 0
+                current_power = max(0.0, float(compressor_power))
 
             # Calculate energy using trapezoidal integration
             current_time = datetime.now(UTC)

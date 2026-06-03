@@ -34,6 +34,8 @@ from .const import (
 from .entity import ActronAirNeoEntity, ActronZoneEntity
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -129,9 +131,11 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
             supported_modes = self.coordinator.data["main"].get(
                 "supported_fan_modes", BASE_FAN_MODES
             )
-            if supported_modes == ADVANCE_FAN_MODES:
+            # Compare as frozensets so list/frozenset sources match by membership.
+            mode_set = frozenset(supported_modes)
+            if mode_set == ADVANCE_FAN_MODES:
                 supported_modes = ADVANCED_FAN_MODE_ORDER
-            elif supported_modes == BASE_FAN_MODES:
+            elif mode_set == BASE_FAN_MODES:
                 supported_modes = BASE_FAN_MODE_ORDER
 
             # Map Actron modes to HA modes
@@ -185,7 +189,8 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
     @property
     def current_humidity(self) -> int | None:
         """Return the current humidity."""
-        return self.coordinator.data["main"]["indoor_humidity"]
+        humidity = self.coordinator.data["main"]["indoor_humidity"]
+        return int(humidity) if humidity is not None else None
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -389,7 +394,7 @@ class ActronZoneClimate(ActronZoneEntity, ClimateEntity):
             return temp
 
     def _resolve_zone_target_temp(
-        self, zone_data: dict[str, Any], main_mode: str
+        self, zone_data: Mapping[str, Any], main_mode: str
     ) -> float | None:
         """
         Resolve target temperature for a zone.
@@ -535,7 +540,7 @@ class ActronZoneClimate(ActronZoneEntity, ClimateEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return zone specific attributes."""
         zone_data = self.coordinator.data["zones"][self.zone_id]
-        data = {
+        data: dict[str, Any] = {
             "zone_name": zone_data["name"],
             "supports_temperature_control": self._has_temp_control,
             "supports_separate_targets": self._has_separate_targets,

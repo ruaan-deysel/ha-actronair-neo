@@ -315,7 +315,10 @@ class ActronAirNeoApiClient:
     ) -> dict[str, Any] | str:
         """Execute a single HTTP request and handle the response."""
         async with self.session.request(
-            method, url, timeout=API_TIMEOUT, **kwargs
+            method,
+            url,
+            timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
+            **kwargs,
         ) as response:
             response_text = await response.text()
 
@@ -595,89 +598,60 @@ class ActronAirNeoApiClient:
 
     def create_command(self, command_type: str, **params: Any) -> dict[str, Any]:
         """Create a command based on the command type and parameters."""
-        commands: dict[str, Any] = {
-            "ON": lambda: {
-                "command": {
+        settings = self._build_command_settings(command_type, params)
+        settings["type"] = "set-settings"
+        return {"command": settings}
+
+    @staticmethod
+    def _build_command_settings(  # noqa: PLR0911, PLR0912
+        command_type: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Map a command type and its parameters to a settings payload.
+
+        Returns the ``UserAirconSettings``/``RemoteZoneInfo`` path→value pairs for
+        the command; ``create_command`` adds the ``type`` marker and wrapper.
+        """
+        match command_type:
+            case "ON":
+                return {"UserAirconSettings.isOn": True}
+            case "OFF":
+                return {"UserAirconSettings.isOn": False}
+            case "CLIMATE_MODE":
+                return {
                     "UserAirconSettings.isOn": True,
-                    "type": "set-settings",
+                    "UserAirconSettings.Mode": params["mode"],
                 }
-            },
-            "OFF": lambda: {
-                "command": {
-                    "UserAirconSettings.isOn": False,
-                    "type": "set-settings",
+            case "FAN_MODE":
+                return {"UserAirconSettings.FanMode": params["mode"]}
+            case "SET_TEMP":
+                suffix = "Cool" if params["is_cool"] else "Heat"
+                return {
+                    f"UserAirconSettings.TemperatureSetpoint_{suffix}_oC": (
+                        params["temp"]
+                    )
                 }
-            },
-            "CLIMATE_MODE": lambda mode: {
-                "command": {
-                    "UserAirconSettings.isOn": True,
-                    "UserAirconSettings.Mode": mode,
-                    "type": "set-settings",
-                }
-            },
-            "FAN_MODE": lambda mode: {
-                "command": {
-                    "UserAirconSettings.FanMode": mode,
-                    "type": "set-settings",
-                }
-            },
-            "SET_TEMP": lambda temp, is_cool: {
-                "command": {
-                    f"UserAirconSettings.TemperatureSetpoint_"
-                    f"{'Cool' if is_cool else 'Heat'}_oC": temp,
-                    "type": "set-settings",
-                }
-            },
-            "AWAY_MODE": lambda state: {
-                "command": {
-                    "UserAirconSettings.AwayMode": state,
-                    "type": "set-settings",
-                }
-            },
-            "QUIET_MODE": lambda state: {
-                "command": {
-                    "UserAirconSettings.QuietMode": state,
-                    "type": "set-settings",
-                }
-            },
-            "SET_ZONE_TEMP": lambda zone, temp, temp_key: {
-                "command": {
-                    f"RemoteZoneInfo[{zone}].{temp_key}": temp,
-                    "type": "set-settings",
-                }
-            },
-            "SET_ZONE_STATE": lambda zones: {
-                "command": {
-                    "UserAirconSettings.EnabledZones": zones,
-                    "type": "set-settings",
-                }
-            },
-            "SET_ZONE_AIRFLOW": lambda zone, airflow: {
-                "command": {
-                    f"RemoteZoneInfo[{zone}].AirflowSetpoint": airflow,
-                    "type": "set-settings",
-                }
-            },
-            "TURBO_MODE": lambda state: {
-                "command": {
-                    "UserAirconSettings.TurboMode.Enabled": state,
-                    "type": "set-settings",
-                }
-            },
-            "AFTER_HOURS_ENABLED": lambda state: {
-                "command": {
-                    "UserAirconSettings.AfterHours.Enabled": state,
-                    "type": "set-settings",
-                }
-            },
-            "AFTER_HOURS_DURATION": lambda duration: {
-                "command": {
-                    "UserAirconSettings.AfterHours.Duration": duration,
-                    "type": "set-settings",
-                }
-            },
-        }
-        return cast("dict[str, Any]", commands[command_type](**params))
+            case "AWAY_MODE":
+                return {"UserAirconSettings.AwayMode": params["state"]}
+            case "QUIET_MODE":
+                return {"UserAirconSettings.QuietMode": params["state"]}
+            case "SET_ZONE_TEMP":
+                key = f"RemoteZoneInfo[{params['zone']}].{params['temp_key']}"
+                return {key: params["temp"]}
+            case "SET_ZONE_STATE":
+                return {"UserAirconSettings.EnabledZones": params["zones"]}
+            case "SET_ZONE_AIRFLOW":
+                key = f"RemoteZoneInfo[{params['zone']}].AirflowSetpoint"
+                return {key: params["airflow"]}
+            case "TURBO_MODE":
+                return {"UserAirconSettings.TurboMode.Enabled": params["state"]}
+            case "AFTER_HOURS_ENABLED":
+                return {"UserAirconSettings.AfterHours.Enabled": params["state"]}
+            case "AFTER_HOURS_DURATION":
+                return {"UserAirconSettings.AfterHours.Duration": params["duration"]}
+            case _:
+                msg = f"Unknown command type: {command_type}"
+                raise ApiError(msg)
 
     # --- Zone operations ---
 
@@ -710,7 +684,7 @@ class ActronAirNeoApiClient:
             )
             raise ApiError(msg)
 
-        return enabled_zones
+        return cast("list[bool]", enabled_zones)
 
     async def set_zone_state(
         self,
@@ -742,8 +716,12 @@ class ActronAirNeoApiClient:
                 zone_data.get("TemperatureSetpoint_Cool_oC") is not None
                 and zone_data.get("TemperatureSetpoint_Heat_oC") is not None
             ),
-            target_temp_cool=zone_data.get("TemperatureSetpoint_Cool_oC"),
-            target_temp_heat=zone_data.get("TemperatureSetpoint_Heat_oC"),
+            target_temp_cool=cast(
+                "float | None", zone_data.get("TemperatureSetpoint_Cool_oC")
+            ),
+            target_temp_heat=cast(
+                "float | None", zone_data.get("TemperatureSetpoint_Heat_oC")
+            ),
         )
 
     async def set_zone_temperature(

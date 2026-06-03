@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 from homeassistant.exceptions import (  # type: ignore[import-untyped]
@@ -127,7 +127,7 @@ async def async_migrate_entry(
 
 async def async_setup(
     hass: HomeAssistant,
-    config: dict,  # noqa: ARG001
+    config: dict[str, Any],  # noqa: ARG001
 ) -> bool:
     """Set up the ActronAir Neo integration (register services once)."""
     _register_services(hass)

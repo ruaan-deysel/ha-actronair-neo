@@ -70,7 +70,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up the ActronAir Neo climate device from a config entry."""
     coordinator: ActronDataCoordinator = config_entry.runtime_data
-    entities = [ActronClimate(coordinator)]
+    entities: list[ClimateEntity] = [ActronClimate(coordinator)]
 
     entity_registry = er.async_get(hass)
     entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)

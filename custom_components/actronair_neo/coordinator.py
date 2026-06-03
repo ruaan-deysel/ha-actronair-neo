@@ -60,7 +60,6 @@ if TYPE_CHECKING:
         CloudConnectionData,
         ConnectionMetadata,
         CoordinatorData,
-        FanModeType,
         LiveAirconData,
         MainData,
         OutdoorUnitData,
@@ -1357,9 +1356,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         await self.api.send_command(self.device_id, command)
         await self._async_refresh_after_command()
 
-    async def set_fan_mode(
-        self, mode: FanModeType, *, continuous: bool | None = None
-    ) -> None:
+    async def set_fan_mode(self, mode: str, *, continuous: bool | None = None) -> None:
         """
         Set fan mode with state tracking, validation and retry.
 

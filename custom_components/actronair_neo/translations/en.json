@@ -43,7 +43,8 @@
       "cannot_connect": "Failed to connect to the ActronAir Neo API",
       "no_devices": "No devices found on your account",
       "reauth_successful": "Re-authentication successful",
-      "reconfigure_successful": "Reconfiguration successful"
+      "reconfigure_successful": "Reconfiguration successful",
+      "wrong_account": "The authorized account does not include this ActronAir Neo system. Re-authorize with the account that owns it."
     }
   },
   "options": {

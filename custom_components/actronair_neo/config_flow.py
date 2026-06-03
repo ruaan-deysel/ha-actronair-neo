@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import voluptuous as vol
 from homeassistant.config_entries import (
     SOURCE_REAUTH,
+    SOURCE_RECONFIGURE,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -170,6 +171,10 @@ class ActronairNeoConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-ar
                 },
             )
 
+        # For reconfigure, re-authorize but keep the same device/entry.
+        if self.source == SOURCE_RECONFIGURE:
+            return await self._async_reconfigure_entry()
+
         session = await self._async_get_session()
         api = ActronAirNeoApiClient(auth=self._auth, session=session)
 
@@ -279,6 +284,63 @@ class ActronairNeoConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-ar
             },
             options={
                 CONF_ENABLE_ZONE_CONTROL: False,
+            },
+        )
+
+    # ── Reconfigure flow ────────────────────────────────────────
+
+    async def async_step_reconfigure(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Re-authorize an existing entry without deleting it."""
+        if user_input is not None:
+            return await self.async_step_user()
+        return self.async_show_form(step_id="reconfigure")
+
+    async def _async_reconfigure_entry(self) -> ConfigFlowResult:
+        """
+        Finish a reconfigure: re-authorize and keep the same device.
+
+        After the user re-authorizes, confirm the chosen account still owns the
+        entry's device (matching unique ID), then refresh the stored tokens and
+        connection metadata in place rather than creating a new entry.
+        """
+        if self._auth is None:
+            msg = "Auth object is not initialized"
+            raise RuntimeError(msg)
+
+        reconfigure_entry = self._get_reconfigure_entry()
+        session = await self._async_get_session()
+        api = ActronAirNeoApiClient(auth=self._auth, session=session)
+
+        try:
+            devices = await api.get_devices()
+        except Exception:  # noqa: BLE001
+            return self.async_abort(reason="cannot_connect")
+        finally:
+            await self._async_close_session()
+
+        existing_serial = reconfigure_entry.unique_id
+        device = next((d for d in devices if d.serial == existing_serial), None)
+        if device is None:
+            return self.async_abort(reason="wrong_account")
+
+        await self.async_set_unique_id(existing_serial)
+        self._abort_if_unique_id_mismatch(reason="wrong_account")
+
+        return self.async_update_reload_and_abort(
+            reconfigure_entry,
+            data_updates={
+                CONF_ACCESS_TOKEN: self._auth.access_token,
+                CONF_REFRESH_TOKEN: self._auth.refresh_token_value,
+                CONF_TOKEN_EXPIRES_AT: (
+                    self._auth.token_expires_at.timestamp()
+                    if self._auth.token_expires_at
+                    else 0.0
+                ),
+                CONF_BASE_URL: device.base_url,
+                "system_id": device.id,
             },
         )
 

@@ -174,10 +174,11 @@ rules:
     status: done
     comment: icons.json provides entity/state icon translations.
   reconfiguration-flow:
-    status: todo
+    status: done
     comment: >-
-      An OptionsFlow exists for settings, but a dedicated async_step_reconfigure
-      for connection details is not yet implemented.
+      async_step_reconfigure re-runs the device-code authorization and updates
+      the existing entry's tokens + connection metadata in place, aborting with
+      wrong_account if the re-authorized account no longer owns the device.
   repair-issues:
     status: done
     comment: >-

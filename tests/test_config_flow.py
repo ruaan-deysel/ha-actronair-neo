@@ -381,3 +381,107 @@ class TestConfigFlowDirectMethods:
         flow.async_step_user = AsyncMock(return_value={"type": "progress"})
         result = await flow.async_step_reauth_confirm(user_input={})
         assert result["type"] == "progress"
+
+    @pytest.mark.asyncio
+    async def test_reconfigure_shows_form(self):
+        """Reconfigure with no input shows the confirm form."""
+        flow = ActronairNeoConfigFlow()
+        flow.async_show_form = MagicMock(side_effect=lambda **kwargs: kwargs)
+        result = await flow.async_step_reconfigure()
+        assert result["step_id"] == "reconfigure"
+
+    @pytest.mark.asyncio
+    async def test_reconfigure_routes_to_user(self):
+        """Reconfigure confirm routes to the device-code auth step."""
+        flow = ActronairNeoConfigFlow()
+        flow.async_step_user = AsyncMock(return_value={"type": "progress"})
+        result = await flow.async_step_reconfigure(user_input={})
+        assert result["type"] == "progress"
+
+    @pytest.mark.asyncio
+    async def test_finish_auth_reconfigure_dispatches(self):
+        """finish_auth routes to the reconfigure handler for that source."""
+        flow = ActronairNeoConfigFlow()
+        flow.context = {"source": config_entries.SOURCE_RECONFIGURE}
+        flow._auth = _mock_auth_instance()
+        flow._async_reconfigure_entry = AsyncMock(return_value={"type": "abort"})
+        result = await flow.async_step_finish_auth()
+        assert result["type"] == "abort"
+        flow._async_reconfigure_entry.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_reconfigure_entry_success(self):
+        """Reconfigure updates tokens + metadata in place for the same device."""
+        flow = ActronairNeoConfigFlow()
+        flow.hass = MagicMock()
+        flow._auth = _mock_auth_instance()
+        flow._session = MagicMock()
+        flow._session.closed = False
+        flow._session.close = AsyncMock()
+
+        entry = MagicMock()
+        entry.unique_id = MOCK_SERIAL
+        flow._get_reconfigure_entry = MagicMock(return_value=entry)
+        flow.async_set_unique_id = AsyncMock()
+        flow._abort_if_unique_id_mismatch = MagicMock()
+        flow.async_update_reload_and_abort = MagicMock(
+            return_value={"type": "abort", "reason": "reconfigure_successful"}
+        )
+
+        mock_api = MagicMock()
+        mock_api.get_devices = AsyncMock(return_value=[MOCK_DEVICE_1])
+        with patch(_PATCH_API, return_value=mock_api):
+            result = await flow._async_reconfigure_entry()
+
+        assert result["reason"] == "reconfigure_successful"
+        flow.async_set_unique_id.assert_awaited_once_with(MOCK_SERIAL)
+        flow._abort_if_unique_id_mismatch.assert_called_once_with(
+            reason="wrong_account"
+        )
+        data_updates = flow.async_update_reload_and_abort.call_args.kwargs[
+            "data_updates"
+        ]
+        assert data_updates[CONF_ACCESS_TOKEN] == "mock_access_token"
+        assert data_updates[CONF_REFRESH_TOKEN] == "mock_refresh_token"
+
+    @pytest.mark.asyncio
+    async def test_reconfigure_entry_wrong_account(self):
+        """Reconfigure aborts when the re-authorized account lacks the device."""
+        flow = ActronairNeoConfigFlow()
+        flow.hass = MagicMock()
+        flow._auth = _mock_auth_instance()
+        flow._session = MagicMock()
+        flow._session.closed = False
+        flow._session.close = AsyncMock()
+
+        entry = MagicMock()
+        entry.unique_id = MOCK_SERIAL
+        flow._get_reconfigure_entry = MagicMock(return_value=entry)
+        flow.async_abort = MagicMock(return_value={"reason": "wrong_account"})
+
+        mock_api = MagicMock()
+        # Account returns a different system than the one being reconfigured.
+        mock_api.get_devices = AsyncMock(return_value=[MOCK_DEVICE_2])
+        with patch(_PATCH_API, return_value=mock_api):
+            result = await flow._async_reconfigure_entry()
+
+        assert result["reason"] == "wrong_account"
+
+    @pytest.mark.asyncio
+    async def test_reconfigure_entry_cannot_connect(self):
+        """Reconfigure aborts when device fetch fails."""
+        flow = ActronairNeoConfigFlow()
+        flow.hass = MagicMock()
+        flow._auth = _mock_auth_instance()
+        flow._session = MagicMock()
+        flow._session.closed = False
+        flow._session.close = AsyncMock()
+        flow._get_reconfigure_entry = MagicMock(return_value=MagicMock())
+        flow.async_abort = MagicMock(return_value={"reason": "cannot_connect"})
+
+        mock_api = MagicMock()
+        mock_api.get_devices = AsyncMock(side_effect=Exception("boom"))
+        with patch(_PATCH_API, return_value=mock_api):
+            result = await flow._async_reconfigure_entry()
+
+        assert result["reason"] == "cannot_connect"

@@ -1,7 +1,7 @@
 # ActronAir Neo Integration - API Capabilities & Enhancement Roadmap
 
-**Date**: June 2026  
-**Status**: Stable (MQTT support fully operational)  
+**Date**: June 2026
+**Status**: Stable (MQTT support fully operational)
 **Audience**: Developers, Maintainers, Integration Users
 
 ---
@@ -45,28 +45,28 @@
 
 ### ⚠️ Conditionally Supported (Platform-Dependent)
 
-| Feature | Classic | Advance | Aires | Status |
-|---------|---------|---------|-------|--------|
-| Outdoor temperature | ❌ | ✅ | ✅ | Gracefully absent on Classic |
-| AUTO fan mode | ❌ | ✅ | ✅ | Disabled UI control when unavailable |
-| Turbo mode | ❌ | ✅ | ✅ | Gracefully hidden when unsupported |
-| Quiet mode | ❌ | ✅ | ✅ | Gracefully hidden when unsupported |
-| Dry mode | ❌ | ✅ | ✅ | Gracefully hidden when unsupported |
-| VFT (Variable Fan Tech) | ❌ | ✅ | ✅ | Displayed when available |
-| Zone damper position | ⚠️ Limited | ✅ | ✅ | May be unavailable on some systems |
+| Feature                 | Classic    | Advance | Aires | Status                               |
+| ----------------------- | ---------- | ------- | ----- | ------------------------------------ |
+| Outdoor temperature     | ❌         | ✅      | ✅    | Gracefully absent on Classic         |
+| AUTO fan mode           | ❌         | ✅      | ✅    | Disabled UI control when unavailable |
+| Turbo mode              | ❌         | ✅      | ✅    | Gracefully hidden when unsupported   |
+| Quiet mode              | ❌         | ✅      | ✅    | Gracefully hidden when unsupported   |
+| Dry mode                | ❌         | ✅      | ✅    | Gracefully hidden when unsupported   |
+| VFT (Variable Fan Tech) | ❌         | ✅      | ✅    | Displayed when available             |
+| Zone damper position    | ⚠️ Limited | ✅      | ✅    | May be unavailable on some systems   |
 
 ### ❌ Known Missing / Not Implemented
 
-| Feature | Platform | Impact | Priority |
-|---------|----------|--------|----------|
-| **Que/NX-Gen Support** | Que | Can't control any Que systems | High |
-| **ACM-2 Support** | Actron Connect | Can't control ACM-2 systems | High |
-| **SignalR/SSE Transport** | Que | MQTT not available for Que | High |
-| **Event History** | All | Actron disabled (July 2025) | Low |
-| **User Account Info** | All | No account management | Low |
-| **Batch Commands** | All | Can't send multiple commands atomically | Medium |
-| **Webhook Support** | All | Unknown if available | Unknown |
-| **System Configuration** | All | Can't modify WiFi/settings | Medium |
+| Feature                   | Platform       | Impact                                  | Priority |
+| ------------------------- | -------------- | --------------------------------------- | -------- |
+| **Que/NX-Gen Support**    | Que            | Can't control any Que systems           | High     |
+| **ACM-2 Support**         | Actron Connect | Can't control ACM-2 systems             | High     |
+| **SignalR/SSE Transport** | Que            | MQTT not available for Que              | High     |
+| **Event History**         | All            | Actron disabled (July 2025)             | Low      |
+| **User Account Info**     | All            | No account management                   | Low      |
+| **Batch Commands**        | All            | Can't send multiple commands atomically | Medium   |
+| **Webhook Support**       | All            | Unknown if available                    | Unknown  |
+| **System Configuration**  | All            | Can't modify WiFi/settings              | Medium   |
 
 ---
 
@@ -168,6 +168,7 @@ PATCH /api/v0/client/account
 The integration successfully extracts and exposes **100+ data points** per system:
 
 **AC System Level** (25+ fields):
+
 - Power state, mode, fan mode, setpoints
 - Compressor state, capacity, speed
 - WiFi signal, channel, firmware
@@ -177,6 +178,7 @@ The integration successfully extracts and exposes **100+ data points** per syste
 - Cloud connection health metrics
 
 **Zone Level** (15+ fields per zone):
+
 - Temperature, humidity, setpoint
 - Enable/disable state
 - Damper position
@@ -186,6 +188,7 @@ The integration successfully extracts and exposes **100+ data points** per syste
 - Airflow control (where available)
 
 **System Level** (20+ fields):
+
 - WiFi SSID, channel, quality
 - System uptime
 - Cloud connection status
@@ -196,15 +199,18 @@ The integration successfully extracts and exposes **100+ data points** per syste
 ### Conditional/Missing Fields
 
 **Classic Series Gaps**:
+
 - Outdoor temperature (returns fake 3000.0°C)
 - AUTO fan mode (unavailable)
 - Turbo/Quiet/Dry modes (unsupported)
 - Variable fan technology
 
 **Que/NX-Gen Systems**:
+
 - Everything (platform not supported)
 
 **ACM-2 Systems**:
+
 - Everything (platform unknown)
 
 ---
@@ -272,13 +278,15 @@ The integration successfully extracts and exposes **100+ data points** per syste
 ## Recommended Next Steps
 
 ### For Users
+
 - ✅ All features working as intended
 - ✅ MQTT real-time updates operational
 - ⚠️ If you have a Que system: currently not supported (use external library)
 - ⏳ ACM-2 support: on roadmap, ETA Q3/Q4 2026
 
 ### For Contributors
-1. **Start Here**: 
+
+1. **Start Here**:
    - Read `MQTT_TOPICS_REFERENCE.md` (newly created)
    - Review `API_DISCOVERY_REPORT_2026.md` (in `.ai-scratch/`)
    - Explore explorer scripts in `/utils/`
@@ -294,6 +302,7 @@ The integration successfully extracts and exposes **100+ data points** per syste
    - Research ACM-2 API
 
 ### For Maintainers
+
 1. **Immediate** (Week 1-2):
    - Publish MQTT reference documentation
    - Update explorer script README
@@ -316,6 +325,7 @@ The integration successfully extracts and exposes **100+ data points** per syste
 ## Technical Debt & Maintenance
 
 ### Current Health
+
 - ✅ Code quality: High
 - ✅ Type safety: Good (TypedDict)
 - ✅ Error handling: Robust
@@ -324,6 +334,7 @@ The integration successfully extracts and exposes **100+ data points** per syste
 - ⚠️ Platform support: Single-platform only
 
 ### Future Improvements
+
 - 🔄 **Type Safety**: Migrate from TypedDict to Pydantic (higher assurance)
 - 🔄 **Library**: Evaluate external `actronneoapi` library for maintenance reduction
 - 🔄 **Testing**: Add platform-specific test suites for Que/ACM-2
@@ -334,16 +345,19 @@ The integration successfully extracts and exposes **100+ data points** per syste
 ## Risk Assessment
 
 ### High Risk (Avoid for Now)
+
 - ❌ Modifying OAuth token flow (well-tested, don't touch)
 - ❌ Changing MQTT topic structure (would break deployments)
 - ❌ Removing polling fallback (breaks MQTT-unavailable scenarios)
 
 ### Medium Risk (Careful Refactoring)
+
 - ⚠️ Migrating to external library (benefits outweigh risks if planned)
 - ⚠️ Adding new platforms (requires separate test environment)
 - ⚠️ Changing coordinator data structure (affects all entities)
 
 ### Low Risk (Good to Improve)
+
 - ✅ Adding new endpoints (backward compatible)
 - ✅ Enhancing utilities (utilities not critical path)
 - ✅ Improving documentation (no code changes)
@@ -354,16 +368,19 @@ The integration successfully extracts and exposes **100+ data points** per syste
 ## External Library Comparison
 
 ### Current: Custom Implementation
+
 - **Pros**: Full control, minimal dependencies, proven stable
 - **Cons**: Only Neo support, more maintenance, reimplemented logic
 
 ### Alternative: actronneoapi v0.5.11
+
 - **Pros**: Multi-platform (Neo/Que/ACM-2), Pydantic types, active maintenance
 - **Cons**: External dependency, potential breaking changes, larger footprint
 - **Status**: Production-ready, actively maintained (latest: May 2026)
 - **Fit**: 90% - Would solve platform support gap
 
 ### Migration Path (If Chosen)
+
 ```
 Phase 1: Evaluation (Week 1-2)
   → Run side-by-side testing
@@ -405,6 +422,6 @@ The external `actronneoapi` library represents a viable path to close both gaps 
 
 ---
 
-**Document Version**: 1.0 (June 7, 2026)  
-**Status**: Ready for Review  
+**Document Version**: 1.0 (June 7, 2026)
+**Status**: Ready for Review
 **Next Review**: September 2026

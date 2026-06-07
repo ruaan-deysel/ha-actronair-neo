@@ -1,8 +1,8 @@
 # ActronAir Neo MQTT Topics Reference
 
-**Last Updated**: June 2026  
-**Platform**: Neo (Nimbus)  
-**Standard**: MQTT 3.1.1  
+**Last Updated**: June 2026
+**Platform**: Neo (Nimbus)
+**Standard**: MQTT 3.1.1
 **Broker**: Dynamically discovered via `/api/v0/messaging/connection/details`
 
 ---
@@ -42,6 +42,7 @@ actron-cloud
 ```
 
 ### Example Full Topic Path
+
 ```
 actron-cloud/neo/user_abc123/neo/ABC123XYZ/mwc/full-status
 ```
@@ -52,15 +53,17 @@ actron-cloud/neo/user_abc123/neo/ABC123XYZ/mwc/full-status
 
 ### 1. **Full Status** (`mwc/full-status`)
 
-**Publishes**: Complete system state snapshot  
-**Frequency**: On connection, after major changes  
-**QoS**: 0  
+**Publishes**: Complete system state snapshot
+**Frequency**: On connection, after major changes
+**QoS**: 0
 **Retained**: Yes
 
 #### Purpose
+
 Provides a complete snapshot of the system state, including all zones, settings, live data, and diagnostics. Used to synchronize state after connection or when incremental updates may have been missed.
 
 #### Payload Structure
+
 ```json
 {
   "AirconSystem": {
@@ -99,7 +102,7 @@ Provides a complete snapshot of the system state, including all zones, settings,
       "DamperPosition": 100,
       "BatteryLevel": 85,
       "Signal_of3": 3
-    },
+    }
     // ... zones 1-7
   ],
   "SystemSettings": {
@@ -130,24 +133,26 @@ Provides a complete snapshot of the system state, including all zones, settings,
 }
 ```
 
-**Size**: ~2-4 KB  
+**Size**: ~2-4 KB
 **Parsing**: Complete state merge, replaces coordinator data
 
 ---
 
 ### 2. **Status Change** (`mwc/status-change`)
 
-**Publishes**: Incremental state changes  
-**Frequency**: 1-5 seconds after changes  
-**QoS**: 0  
+**Publishes**: Incremental state changes
+**Frequency**: 1-5 seconds after changes
+**QoS**: 0
 **Retained**: No
 
 #### Purpose
+
 Sends only the fields that have changed since the last update. Dramatically reduces message size and network traffic compared to full-status.
 
 #### Payload Structure (Examples)
 
 **Example 1**: User changed mode
+
 ```json
 {
   "UserAirconSettings": {
@@ -158,6 +163,7 @@ Sends only the fields that have changed since the last update. Dramatically redu
 ```
 
 **Example 2**: Zone damper position changed
+
 ```json
 {
   "RemoteZoneInfo": [
@@ -170,6 +176,7 @@ Sends only the fields that have changed since the last update. Dramatically redu
 ```
 
 **Example 3**: Compressor capacity changed
+
 ```json
 {
   "LiveAircon": {
@@ -179,6 +186,7 @@ Sends only the fields that have changed since the last update. Dramatically redu
 ```
 
 **Example 4**: Multiple changes (temperature + compressor)
+
 ```json
 {
   "UserAirconSettings": {
@@ -193,23 +201,25 @@ Sends only the fields that have changed since the last update. Dramatically redu
 }
 ```
 
-**Size**: ~100-500 bytes  
-**Parsing**: Deep merge with existing state (uses `deep_merge()` function)  
+**Size**: ~100-500 bytes
+**Parsing**: Deep merge with existing state (uses `deep_merge()` function)
 **Efficiency**: ~90% smaller than full-status for typical updates
 
 ---
 
 ### 3. **Heartbeat** (`mwc/heart-beat`)
 
-**Publishes**: Connection keepalive signal  
-**Frequency**: Every 60 seconds (guaranteed)  
-**QoS**: 0  
+**Publishes**: Connection keepalive signal
+**Frequency**: Every 60 seconds (guaranteed)
+**QoS**: 0
 **Retained**: No
 
 #### Purpose
+
 Confirms the connection is alive and broker is routing messages. Detected missing heartbeats indicate potential connection issues.
 
 #### Payload Structure
+
 ```json
 {
   "Timestamp": "2026-06-07T10:30:45Z",
@@ -217,10 +227,11 @@ Confirms the connection is alive and broker is routing messages. Detected missin
 }
 ```
 
-**Size**: ~50 bytes  
+**Size**: ~50 bytes
 **Monitoring**: Integration tracks last heartbeat; considers connection stale after 3 minutes (180 seconds) without heartbeat
 
 #### Stale Detection Logic
+
 ```python
 time_since_heartbeat = now() - last_heartbeat_timestamp
 if time_since_heartbeat > 180:  # 3 minutes
@@ -232,15 +243,17 @@ if time_since_heartbeat > 180:  # 3 minutes
 
 ### 4. **Command Response** (`mwc/cmd-response/{machine}/{commandId}`)
 
-**Publishes**: Response to control commands sent via API  
-**Frequency**: Within 1-5 seconds of command  
-**QoS**: 0  
+**Publishes**: Response to control commands sent via API
+**Frequency**: Within 1-5 seconds of command
+**QoS**: 0
 **Retained**: No
 
 #### Purpose
+
 Acknowledges command execution and returns the resulting state change. Allows zero-latency feedback to Home Assistant for user-initiated controls.
 
 #### Topic Pattern
+
 ```
 actron-cloud/neo/{user_id}/neo/{serial}/mwc/cmd-response/{machine_id}/{command_uuid}
 ```
@@ -248,6 +261,7 @@ actron-cloud/neo/{user_id}/neo/{serial}/mwc/cmd-response/{machine_id}/{command_u
 #### Payload Structure
 
 **Successful Command**:
+
 ```json
 {
   "CommandId": "550e8400-e29b-41d4-a716-446655440000",
@@ -261,6 +275,7 @@ actron-cloud/neo/{user_id}/neo/{serial}/mwc/cmd-response/{machine_id}/{command_u
 ```
 
 **Failed Command**:
+
 ```json
 {
   "CommandId": "550e8400-e29b-41d4-a716-446655440000",
@@ -270,29 +285,30 @@ actron-cloud/neo/{user_id}/neo/{serial}/mwc/cmd-response/{machine_id}/{command_u
 }
 ```
 
-**Size**: ~200-1000 bytes  
-**Timeout**: If no response received within 30 seconds, command considered failed  
+**Size**: ~200-1000 bytes
+**Timeout**: If no response received within 30 seconds, command considered failed
 **State Sync**: On success, also contains a status-change event (no separate message)
 
 ---
 
 ## Message Timing & Latency
 
-| Scenario | Topic | Latency | Size |
-| --- | --- | --- | --- |
-| System power on | status-change | <2s | ~200B |
-| Mode change (user) | status-change | <2s | ~150B |
-| Temperature sensor update | status-change | 5-10s | ~100B |
-| Compressor state change | status-change | <1s | ~80B |
-| Command acknowledgment | cmd-response | <5s | ~300B |
-| Scheduled heartbeat | heart-beat | ~60s | ~50B |
-| Connection lost/regain | full-status | <10s | ~3KB |
+| Scenario                  | Topic         | Latency | Size  |
+| ------------------------- | ------------- | ------- | ----- |
+| System power on           | status-change | <2s     | ~200B |
+| Mode change (user)        | status-change | <2s     | ~150B |
+| Temperature sensor update | status-change | 5-10s   | ~100B |
+| Compressor state change   | status-change | <1s     | ~80B  |
+| Command acknowledgment    | cmd-response  | <5s     | ~300B |
+| Scheduled heartbeat       | heart-beat    | ~60s    | ~50B  |
+| Connection lost/regain    | full-status   | <10s    | ~3KB  |
 
 ---
 
 ## Connection Lifecycle
 
 ### 1. Initial Connection
+
 ```
 Client connects with OAuth token
   ↓
@@ -312,6 +328,7 @@ Entities update (climate, sensors, switches, etc.)
 ```
 
 ### 2. Normal Operation
+
 ```
 User makes change in HA
   ↓
@@ -331,6 +348,7 @@ Entities reflect change
 ```
 
 ### 3. Connection Loss Recovery
+
 ```
 Network interruption
   ↓
@@ -348,6 +366,7 @@ Integration merges (corrects any missed updates)
 ```
 
 ### 4. Token Expiration
+
 ```
 Token expires (typically 72 hours)
   ↓
@@ -421,21 +440,22 @@ The integration gracefully falls back to HTTP polling if:
 
 ### Error Handling
 
-| Situation | Handling |
-| --- | --- |
-| Malformed JSON payload | Log warning, ignore message, continue |
-| Unknown field in state | Preserve in raw data, don't crash |
-| Heartbeat missed (1 time) | Log info, continue monitoring |
-| Heartbeat missed (3+ times) | Mark push degraded, recommend polling check |
-| Command fails | Entity retains last known state, shows error in diagnostics |
-| Broker certificate invalid | Use certifi bundle, log SSL error |
-| Broker unreachable | Exponential backoff (0.5s → 60s), fall back to polling |
+| Situation                   | Handling                                                    |
+| --------------------------- | ----------------------------------------------------------- |
+| Malformed JSON payload      | Log warning, ignore message, continue                       |
+| Unknown field in state      | Preserve in raw data, don't crash                           |
+| Heartbeat missed (1 time)   | Log info, continue monitoring                               |
+| Heartbeat missed (3+ times) | Mark push degraded, recommend polling check                 |
+| Command fails               | Entity retains last known state, shows error in diagnostics |
+| Broker certificate invalid  | Use certifi bundle, log SSL error                           |
+| Broker unreachable          | Exponential backoff (0.5s → 60s), fall back to polling      |
 
 ---
 
 ## Debugging & Troubleshooting
 
 ### Enable MQTT Debugging
+
 ```yaml
 # config/configuration.yaml
 logger:
@@ -444,6 +464,7 @@ logger:
 ```
 
 ### Monitor MQTT in Real-time
+
 ```bash
 # Terminal 1: Listen to all topics for your serial
 mosquitto_sub -h <broker_host> -p <port> \
@@ -453,13 +474,17 @@ mosquitto_sub -h <broker_host> -p <port> \
 ```
 
 ### Check Last Heartbeat
+
 Look in Home Assistant diagnostics under "Push Transport" section:
+
 - `last_heartbeat`: ISO timestamp of last heartbeat received
 - `reconnect_count`: Total reconnection attempts
 - `state`: Current push state (RUNNING, DEGRADED, FAILED)
 
 ### Verify Message Parsing
+
 Add temporary debug logging to coordinator:
+
 ```python
 _LOGGER.debug("MQTT message received: %s", payload)
 _LOGGER.debug("Merged state: %s", coordinator.data)
@@ -470,17 +495,20 @@ _LOGGER.debug("Merged state: %s", coordinator.data)
 ## Platform-Specific Notes
 
 ### Neo (Current)
+
 - ✅ MQTT via aiomqtt library
 - ✅ QoS 0 (sufficient for real-time state sync)
 - ✅ Broker discovered dynamically
 - ✅ Topic structure: `actron-cloud/neo/{user}/{serial}/mwc/*`
 
 ### Que (NX-Gen) - NOT IMPLEMENTED
+
 - ❌ Uses SignalR or EventSource instead of MQTT
 - ❌ Different topic structure (if MQTT used at all)
 - ❌ Requires separate transport implementation
 
 ### ACM-2 (Actron Connect) - UNKNOWN
+
 - ❌ API structure unknown
 - ❌ Real-time transport method unknown
 - ❌ Requires research
@@ -490,16 +518,19 @@ _LOGGER.debug("Merged state: %s", coordinator.data)
 ## Performance Characteristics
 
 ### Bandwidth Usage
+
 - **Full status**: ~3KB every 300s (if only polling) = **80 bytes/s**
 - **MQTT with heartbeat**: ~200B every 60s (heartbeat) + ~300B per user action = **~100-200 bytes/s** (idle)
 - **Reduction**: ~60-70% bandwidth savings vs polling alone
 
 ### Latency Improvements
+
 - **Polling**: 0-30 second latency (until next poll interval)
 - **MQTT**: <2 second latency for most state changes
 - **Improvement**: 93-98% latency reduction
 
 ### Broker Load
+
 - **Connections**: 1 per system per user (multiplexed)
 - **Messages/minute**: ~1 heartbeat + ~0-5 status changes = **~1-6 messages/min** (typical)
 - **Scalability**: Broker can handle thousands of concurrent connections
@@ -511,7 +542,7 @@ _LOGGER.debug("Merged state: %s", coordinator.data)
 - **Coordinator**: `coordinator.py` (state merging logic)
 - **MQTT Transport**: `api/push/mqtt_transport.py` (connection management)
 - **Merge Logic**: `api/push/merge.py` (deep_merge, apply_event_paths)
-- **Constants**: `api/const.py` (MQTT_* constants)
+- **Constants**: `api/const.py` (MQTT\_\* constants)
 - **Types**: `types.py` (CoordinatorData structure)
 
 ---

@@ -18,8 +18,10 @@ rules:
   appropriate-polling:
     status: done
     comment: >-
-      DataUpdateCoordinator uses a user-configurable update_interval
-      (timedelta(seconds=update_interval)); cloud_push reduces reliance on it.
+      DataUpdateCoordinator polls every 30 s (DEFAULT_REFRESH_INTERVAL), which
+      matches the cloud API's own refresh cadence; the MQTT push transport
+      (cloud_push) delivers state changes immediately and reduces reliance on
+      polling.
   brands:
     status: exempt
     comment: >-
@@ -183,7 +185,8 @@ rules:
     status: done
     comment: >-
       repairs.py raises repair issues (auth failed, device offline, sensor
-      unavailable) with guided fix flows.
+      unavailable) with guided fix flows; issue and fix-flow text is
+      translatable via the issues section of strings.json.
   stale-devices:
     status: exempt
     comment: Single AC system per config entry; no multi-device removal scenario.

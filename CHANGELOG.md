@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.6.2] - 2026-06-12
+
+### Fixed
+
+- **Hourly integration reloads on token refresh**: The options update listener fired on every config-entry update — including the periodic OAuth token refresh persisted into the entry — causing a full integration reload (entities briefly unavailable, MQTT push reconnect) roughly every hour. The listener now reloads only when an option (zone control, realtime push) actually changes.
+- **Duplicated climate entity name**: The main climate entity set its own name to the device name while using `has_entity_name`, producing the friendly name "ActronAir Neo ActronAir Neo". The entity now takes the device name directly. Existing entity IDs are preserved; only the displayed name changes.
+- **Untranslated repair issues**: Repair issues (authentication failed, device offline, sensor unavailable) referenced translation keys that did not exist in `strings.json`, so they rendered untranslated in the repairs UI. Issue titles and fix-flow guidance are now provided via the `issues` translation section, replacing the previous hard-coded English placeholders in `repairs.py`.
+
+### Changed
+
+- **Minimum Home Assistant raised to 2026.6.0 in HACS**: `hacs.json` previously allowed installs on Home Assistant 2024.6.0, far older than the integration actually supports (it targets HA 2026.6.x on Python 3.14). HACS now enforces the correct minimum.
+- **Manifest cleanup (quality scale)**: Declared `integration_type: device` (one AC system per config entry) and removed the empty `homekit`/`ssdp`/`zeroconf` discovery stubs from `manifest.json`. Also removed the dead `async_reload_entry` helper, which Home Assistant never calls and which bypassed proper unload cleanup.
+
 ## [2026.6.1] - 2026-06-03
 
 ### Added

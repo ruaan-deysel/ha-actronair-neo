@@ -5,11 +5,9 @@
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/ruaan-deysel/ha-actronair-neo",
-  "homekit": {},
+  "integration_type": "device",
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/ruaan-deysel/ha-actronair-neo/issues",
   "requirements": ["aiomqtt>=2.0.0"],
-  "ssdp": [],
-  "version": "2026.6.1",
-  "zeroconf": []
+  "version": "2026.6.2"
 }

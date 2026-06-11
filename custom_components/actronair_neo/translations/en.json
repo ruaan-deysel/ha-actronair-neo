@@ -138,6 +138,41 @@
       }
     }
   },
+  "issues": {
+    "api_authentication_failed": {
+      "title": "Authentication with the ActronAir cloud is failing",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "ActronAir Neo authentication failed",
+            "description": "The integration cannot authenticate with the ActronAir servers. This usually happens when your ActronAir account password has changed, your account has been suspended, or the ActronAir servers are experiencing issues.\n\nVerify your account by signing in to the ActronAir Neo app, then re-authenticate the integration from its configuration page if the problem persists. Select **Submit** to dismiss this issue."
+          }
+        }
+      }
+    },
+    "device_offline": {
+      "title": "ActronAir Neo system is offline",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "ActronAir Neo system is offline",
+            "description": "Your ActronAir Neo system appears to be offline. Check that the system is powered on, that its Wi-Fi connection is working (see the wall controller display), and that your internet connection is up. If the ActronAir Neo mobile app can reach the system, restart Home Assistant.\n\nSelect **Submit** to dismiss this issue."
+          }
+        }
+      }
+    },
+    "sensor_unavailable": {
+      "title": "ActronAir Neo zone sensors are unavailable",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Zone sensors unavailable",
+            "description": "Some zone sensors are not reporting data. This typically occurs when zone sensors have low batteries, poor wireless signal, or have been disconnected.\n\nCheck the sensors' batteries, signal strength, and placement. Select **Submit** to dismiss this issue."
+          }
+        }
+      }
+    }
+  },
   "exceptions": {
     "unknown_error": {
       "message": "An unexpected error occurred: {error}"

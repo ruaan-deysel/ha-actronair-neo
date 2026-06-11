@@ -47,24 +47,9 @@ class ApiAuthenticationFailedRepairFlow(RepairsFlow):
             # Mark as resolved - user will need to reconfigure integration
             return self.async_create_entry(data={})
 
-        return self.async_show_form(
-            step_id="init",
-            description_placeholders={
-                "title": "ActronAir Neo Authentication Failed",
-                "description": (
-                    "The integration cannot authenticate with ActronAir servers. "
-                    "This usually happens when:\n\n"
-                    "• Your ActronAir account password has changed\n"
-                    "• Your account has been suspended or deactivated\n"
-                    "• ActronAir servers are experiencing issues\n\n"
-                    "To resolve this issue:\n"
-                    "1. Verify your ActronAir account credentials\n"
-                    "2. Try logging into the ActronAir Neo app\n"
-                    "3. If successful, restart Home Assistant\n"
-                    "4. If the issue persists, reconfigure the integration"
-                ),
-            },
-        )
+        # Guidance text comes from issues.api_authentication_failed.fix_flow
+        # in strings.json / translations.
+        return self.async_show_form(step_id="init")
 
 
 class DeviceOfflineRepairFlow(RepairsFlow):
@@ -77,26 +62,9 @@ class DeviceOfflineRepairFlow(RepairsFlow):
         if user_input is not None:
             return self.async_create_entry(data={})
 
-        return self.async_show_form(
-            step_id="init",
-            description_placeholders={
-                "title": "ActronAir Neo Device Offline",
-                "description": (
-                    "Your ActronAir Neo system appears to be offline. "
-                    "This can happen when:\n\n"
-                    "• The system has lost WiFi connectivity\n"
-                    "• The system is powered off\n"
-                    "• Network connectivity issues\n"
-                    "• ActronAir cloud service issues\n\n"
-                    "To resolve this issue:\n"
-                    "1. Check that your AC system is powered on\n"
-                    "2. Verify WiFi connectivity on the system display\n"
-                    "3. Check your internet connection\n"
-                    "4. Try using the ActronAir Neo mobile app\n"
-                    "5. If the app works, restart Home Assistant"
-                ),
-            },
-        )
+        # Guidance text comes from issues.device_offline.fix_flow in
+        # strings.json / translations.
+        return self.async_show_form(step_id="init")
 
 
 class SensorUnavailableRepairFlow(RepairsFlow):
@@ -109,26 +77,9 @@ class SensorUnavailableRepairFlow(RepairsFlow):
         if user_input is not None:
             return self.async_create_entry(data={})
 
-        return self.async_show_form(
-            step_id="init",
-            description_placeholders={
-                "title": "ActronAir Neo Sensors Unavailable",
-                "description": (
-                    "Some sensors are reporting unavailable status. "
-                    "This typically occurs when:\n\n"
-                    "• Zone sensors have low battery levels\n"
-                    "• Wireless sensors have poor signal strength\n"
-                    "• Sensors are disconnected or malfunctioning\n"
-                    "• System configuration has changed\n\n"
-                    "To resolve this issue:\n"
-                    "1. Check battery levels in zone sensors\n"
-                    "2. Verify sensor signal strength\n"
-                    "3. Check sensor placement and obstructions\n"
-                    "4. Restart the integration if sensors are working\n"
-                    "5. Contact ActronAir support for hardware issues"
-                ),
-            },
-        )
+        # Guidance text comes from issues.sensor_unavailable.fix_flow in
+        # strings.json / translations.
+        return self.async_show_form(step_id="init")
 
 
 async def async_check_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:

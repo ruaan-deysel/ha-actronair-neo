@@ -102,7 +102,10 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
     def __init__(self, coordinator: ActronDataCoordinator) -> None:
         """Initialize the climate entity."""
         super().__init__(coordinator, "climate")
-        self._attr_name = self.DEVICE_NAME
+        # Main feature entity of the device: leave the entity name unset so it
+        # takes the device name (has-entity-name rule) instead of duplicating
+        # it ("ActronAir Neo ActronAir Neo").
+        self._attr_name = None
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_min_temp = MIN_TEMP
         self._attr_max_temp = MAX_TEMP

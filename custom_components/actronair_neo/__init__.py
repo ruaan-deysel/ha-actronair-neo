@@ -312,14 +312,6 @@ async def async_unload_entry(
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
-async def async_reload_entry(
-    hass: HomeAssistant, entry: ActronAirNeoConfigEntry
-) -> None:
-    """Reload config entry."""
-    await async_unload_entry(hass, entry)
-    await async_setup_entry(hass, entry)
-
-
 async def async_remove_config_entry_device(
     hass: HomeAssistant,  # noqa: ARG001
     config_entry: ActronAirNeoConfigEntry,
@@ -339,6 +331,13 @@ async def update_listener(hass: HomeAssistant, entry: ActronAirNeoConfigEntry) -
     coordinator = entry.runtime_data
     old_zone = coordinator.enable_zone_control
     new_zone = entry.options.get(CONF_ENABLE_ZONE_CONTROL, False)
+    new_push = entry.options.get(CONF_ENABLE_PUSH, DEFAULT_ENABLE_PUSH)
+
+    # The listener fires on every entry update, including the periodic token
+    # refresh persisted into entry.data. Only a real options change warrants a
+    # reload — otherwise the integration would restart on every token refresh.
+    if new_zone == old_zone and new_push == coordinator.enable_push:
+        return
 
     if old_zone and not new_zone:
         entity_registry = er.async_get(hass)

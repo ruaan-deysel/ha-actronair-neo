@@ -403,22 +403,6 @@ async def test_create_api_client_token_refresh_callback_updates_entry(hass):
     hass.config_entries.async_update_entry.assert_called_once()
 
 
-async def test_async_reload_entry_calls_unload_and_setup(hass):
-    """Test async_reload_entry sequences unload then setup."""
-    entry = MagicMock()
-    with (
-        patch(
-            "custom_components.actronair_neo.async_unload_entry", new=AsyncMock()
-        ) as unload,
-        patch(
-            "custom_components.actronair_neo.async_setup_entry", new=AsyncMock()
-        ) as setup,
-    ):
-        await integration.async_reload_entry(hass, entry)
-    unload.assert_awaited_once_with(hass, entry)
-    setup.assert_awaited_once_with(hass, entry)
-
-
 def test_require_coordinator_success(hass):
     """Test require coordinator returns coordinator when valid and enabled."""
     coordinator = MagicMock()

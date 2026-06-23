@@ -9,6 +9,7 @@ deduplication.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from datetime import datetime, timedelta
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING, Any, cast
 import aiohttp
 
 from custom_components.actronair_neo.exceptions import (
+    ActronAirNeoError,
     ApiError,
     AuthenticationError,
     DeviceOfflineError,
@@ -495,8 +497,12 @@ class ActronAirNeoApiClient:
             try:
                 response = await self._pending_requests[request_key]
                 return cast("dict[str, Any]", response)
-            except (ApiError, TimeoutError, aiohttp.ClientError):
-                pass
+            except (ActronAirNeoError, TimeoutError, aiohttp.ClientError) as err:
+                _LOGGER.debug(
+                    "Pending request for %s failed (%s); issuing new request",
+                    serial,
+                    err,
+                )
 
         # Create new request future
         future: asyncio.Future[Any] = asyncio.Future()
@@ -526,8 +532,16 @@ class ActronAirNeoApiClient:
         except Exception as err:
             if not future.done():
                 future.set_exception(err)
+            with contextlib.suppress(Exception):
+                future.exception()
             raise
         finally:
+            # Safety net: if the future holds an unretrieved exception (e.g. set
+            # via a code path that bypassed the except block), retrieve it here
+            # to prevent the asyncio "Future exception was never retrieved" warning.
+            if future.done():
+                with contextlib.suppress(Exception):
+                    future.exception()
             self._pending_requests.pop(request_key, None)
 
     @property

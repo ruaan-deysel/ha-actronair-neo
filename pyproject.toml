@@ -32,14 +32,14 @@ dev = [
     "homeassistant>=2026.6.4,<2027",
     "colorlog>=6.0.0",
     "pre-commit>=3.6.0",
-    "pyright>=1.1.410",
-    "ruff>=0.15.18",
+    "pyright>=1.1.411",
+    "ruff>=0.15.20",
     "mypy>=2.1.0",
     "codespell>=2.2.0",
 ]
 test = [
     "pytest>=9.0.3",
-    "pytest-asyncio>=0.23.0",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=4.1.0",
     "pytest-homeassistant-custom-component>=0.13.340",
     "pytest-timeout>=2.2.0",

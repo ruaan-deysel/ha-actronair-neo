@@ -23,6 +23,7 @@ from .const import (
     ATTR_LAST_UPDATED,
     ATTR_ZONE_NAME,
     ATTR_ZONE_TYPE,
+    WATTS_PER_KILOWATT,
 )
 from .entity import ActronAirNeoEntity, ActronZoneEntity
 
@@ -55,8 +56,8 @@ def _format_power(value: float | None) -> str:
         return str(value)
     if power == 0:
         return "0 W"
-    if power >= 1000:  # noqa: PLR2004
-        return f"{power / 1000:.1f} kW"
+    if power >= WATTS_PER_KILOWATT:
+        return f"{power / WATTS_PER_KILOWATT:.1f} kW"
     return f"{power:.0f} W"
 
 

@@ -138,3 +138,6 @@ HUMIDITY_UNAVAILABLE: Final = 3000.0
 
 SUPPLY_VOLTAGE_SCALE_FACTOR: Final = 10
 COMP_POWER_SCALE_FACTOR: Final = 100
+
+# Conversion factor used when formatting power values for display
+WATTS_PER_KILOWATT: Final = 1000

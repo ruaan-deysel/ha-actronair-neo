@@ -548,7 +548,7 @@ class TestFormatPowerHelper:
         assert _format_power(1000) == "1.0 kW"
         assert _format_power(4500) == "4.5 kW"
         assert _format_power(230) == "230 W"
-        # Invalid string falls back gracefully
+        # Non-numeric string falls back gracefully to the original string
         assert _format_power("bad") == "bad"
 
     def test_diagnostic_sensor_delegates_to_shared_helper(self, coordinator):

@@ -135,6 +135,8 @@ HUMIDITY_UNAVAILABLE: Final = 3000.0
 #
 # SupplyPowerRMS_W / OutputPowerRMS_W: scaling not yet confirmed from a
 # live payload with non-zero values; left unscaled pending further data.
+# See utils/actron_api_structure.md (NTW-series Telemetry Scaling section)
+# for details on sharing live payload data to confirm these factors.
 
 SUPPLY_VOLTAGE_SCALE_FACTOR: Final = 10  # raw VAC x 10 = actual VAC (NTW-series)
 COMP_POWER_SCALE_FACTOR: Final = 100  # raw W x 100 = actual W (NTW-series)

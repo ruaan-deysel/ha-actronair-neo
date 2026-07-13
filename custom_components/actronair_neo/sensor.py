@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 PARALLEL_UPDATES = 0
 
 
-def _format_power(value: float | None) -> str:
+def _format_power(value: float | str | None) -> str:
     """
     Format a power value (watts) to a human-readable string.
 

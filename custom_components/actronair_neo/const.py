@@ -120,3 +120,21 @@ BASE_FAN_MODE_ORDER: Final = ["LOW", "MED", "HIGH"]
 
 OUTDOOR_TEMP_UNAVAILABLE: Final = 3000.0
 HUMIDITY_UNAVAILABLE: Final = 3000.0
+
+# ── Outdoor-unit telemetry scaling factors ────────────────────────
+# NTW-series (Advance/Inverter) units report telemetry at reduced scale
+# in the raw API payload. These factors correct the values to real-world
+# engineering units.
+#
+# SupplyVoltage_Vac: NTW-1000 evidence shows raw 23.0 -> actual 230 VAC
+# (factor of 10). Confirmed via GitHub issue #133: supply_voltage x 10
+# matches meter readings when cross-checked with supply_current.
+#
+# CompPower: Raw 45 -> actual ~4500 W (factor of 100). P ~= V x I gives
+# 230 V x 19 A ~= 4370 W, consistent with 45 x 100 = 4500 W.
+#
+# SupplyPowerRMS_W / OutputPowerRMS_W: scaling not yet confirmed from a
+# live payload with non-zero values; left unscaled pending further data.
+
+SUPPLY_VOLTAGE_SCALE_FACTOR: Final = 10
+COMP_POWER_SCALE_FACTOR: Final = 100

@@ -532,3 +532,56 @@ class TestSensorRemainingBranches:
         coordinator.data.get = MagicMock(side_effect=TypeError)
         assert power_sensor.extra_state_attributes["error"]
         assert energy_sensor.extra_state_attributes["error"]
+
+
+class TestFormatPowerHelper:
+    """Tests for the module-level _format_power helper and delegating wrappers."""
+
+    def test_module_level_format_power(self):
+        from custom_components.actronair_neo.sensor import _format_power
+
+        assert _format_power(0) == "0 W"
+        assert _format_power(0.0) == "0 W"
+        assert _format_power(None) == "Unknown"
+        assert _format_power("Unknown") == "Unknown"
+        assert _format_power(999) == "999 W"
+        assert _format_power(1000) == "1.0 kW"
+        assert _format_power(4500) == "4.5 kW"
+        assert _format_power(230) == "230 W"
+        # Invalid string falls back gracefully
+        assert _format_power("bad") == "bad"
+
+    def test_diagnostic_sensor_delegates_to_shared_helper(self, coordinator):
+        """_format_power_value delegates to the module-level _format_power."""
+        sensor = ActronSystemDiagnosticSensor(coordinator)
+        assert sensor._format_power_value(0) == "0 W"
+        assert sensor._format_power_value(4500) == "4.5 kW"
+        assert sensor._format_power_value(800) == "800 W"
+
+    def test_performance_sensor_delegates_to_shared_helper(self, coordinator):
+        """ActronPerformanceSensor._format_power delegates to _format_power."""
+        sensor = ActronPerformanceSensor(coordinator)
+        assert sensor._format_power(None) == "Unknown"
+        assert sensor._format_power(4500) == "4.5 kW"
+        assert sensor._format_power(800) == "800 W"
+
+    def test_corrected_comp_power_renders_as_kw(self, coordinator, mock_status):
+        """After scaling, ~4500 W renders as '4.5 kW' in diagnostic attributes."""
+        mock_status["outdoor_unit"]["comp_power"] = 4500.0
+        sensor = ActronSystemDiagnosticSensor(coordinator)
+        attrs = sensor.extra_state_attributes
+        assert attrs["compressor_power"] == "4.5 kW"
+
+    def test_corrected_supply_voltage_renders_correctly(self, coordinator, mock_status):
+        """After scaling, 230.0 VAC renders as '230.0 VAC' in diagnostic attributes."""
+        mock_status["outdoor_unit"]["supply_voltage"] = 230.0
+        sensor = ActronSystemDiagnosticSensor(coordinator)
+        attrs = sensor.extra_state_attributes
+        assert attrs["supply_voltage"] == "230.0 VAC"
+
+    def test_system_capacity_has_one_decimal(self, coordinator, mock_status):
+        """system_capacity is formatted with one decimal place."""
+        mock_status["outdoor_unit"]["capacity_kw"] = 13.0
+        sensor = ActronSystemDiagnosticSensor(coordinator)
+        attrs = sensor.extra_state_attributes
+        assert attrs["system_capacity"] == "13.0 kW"

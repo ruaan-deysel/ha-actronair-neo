@@ -26,6 +26,7 @@ from .api.push.merge import apply_event_paths, deep_merge
 from .api.push.models import PushState
 from .const import (
     ADVANCE_FAN_MODES,
+    COMP_POWER_SCALE_FACTOR,
     DEFAULT_ENABLE_PUSH,
     DOMAIN,
     FAN_MODE_SUFFIX_CONT,
@@ -36,6 +37,7 @@ from .const import (
     NEO_SERIES_WC,
     OUTDOOR_TEMP_UNAVAILABLE,
     PARSE_CACHE_TTL,
+    SUPPLY_VOLTAGE_SCALE_FACTOR,
     VALID_FAN_MODES,
     ZONE_OVERRIDE_TTL,
 )
@@ -837,15 +839,24 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             "SupplyPowerRMS_W", ou_live.get("SuppyPowerRMS_W", 0)
         )
 
+        # NTW-series units report voltage and compressor power at reduced scale;
+        # multiply by the correction factors from const.py.  Raw 0 is preserved
+        # as 0 (absent field stays absent, not a false-scaled artefact).
+        raw_voltage = ou_live.get("SupplyVoltage_Vac", 0)
+        supply_voltage = raw_voltage * SUPPLY_VOLTAGE_SCALE_FACTOR if raw_voltage else 0
+
+        raw_comp_power = ou_live.get("CompPower", 0)
+        comp_power = raw_comp_power * COMP_POWER_SCALE_FACTOR if raw_comp_power else 0
+
         return cast(
             "OutdoorUnitData",
             {
-                "comp_power": ou_live.get("CompPower", 0),
+                "comp_power": comp_power,
                 "compressor_on": ou_live.get("CompressorOn", False),
                 "comp_speed": ou_live.get("CompSpeed", 0),
                 "coil_temp": ou_live.get("CoilTemp"),
                 "amb_temp": ou_live.get("AmbTemp"),
-                "supply_voltage": ou_live.get("SupplyVoltage_Vac", 0),
+                "supply_voltage": supply_voltage,
                 "supply_current": supply_current,
                 "supply_power": supply_power,
                 "reverse_valve_position": ou_live.get(

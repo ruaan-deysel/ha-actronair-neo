@@ -136,8 +136,7 @@ HUMIDITY_UNAVAILABLE: Final = 3000.0
 # SupplyPowerRMS_W / OutputPowerRMS_W: scaling not yet confirmed from a
 # live payload with non-zero values; left unscaled pending further data.
 
-SUPPLY_VOLTAGE_SCALE_FACTOR: Final = 10
-COMP_POWER_SCALE_FACTOR: Final = 100
+SUPPLY_VOLTAGE_SCALE_FACTOR: Final = 10  # raw VAC x 10 = actual VAC (NTW-series)
+COMP_POWER_SCALE_FACTOR: Final = 100  # raw W x 100 = actual W (NTW-series)
 
-# Conversion factor used when formatting power values for display
-WATTS_PER_KILOWATT: Final = 1000
+WATTS_PER_KILOWATT: Final = 1000  # W -> kW conversion for power display formatting

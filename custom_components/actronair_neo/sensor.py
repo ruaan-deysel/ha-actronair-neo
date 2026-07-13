@@ -54,8 +54,6 @@ def _format_power(value: float | str | None) -> str:
         power = float(value)
     except (ValueError, TypeError):
         return str(value)
-    if power == 0:
-        return "0 W"
     if power >= WATTS_PER_KILOWATT:
         return f"{power / WATTS_PER_KILOWATT:.1f} kW"
     return f"{power:.0f} W"

@@ -840,13 +840,19 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         )
 
         # NTW-series units report voltage and compressor power at reduced scale;
-        # multiply by the correction factors from const.py.  The ``or 0`` guard
-        # handles the rare case where the API returns null for a field (the
-        # default of 0 only applies when the key is absent entirely).
+        # multiply by the correction factors from const.py.  Use explicit None
+        # checks so that a genuine zero reading (e.g. compressor off) is
+        # preserved as 0 and not mistaken for a missing value.
+        raw_voltage = ou_live.get("SupplyVoltage_Vac")
         supply_voltage = (
-            ou_live.get("SupplyVoltage_Vac") or 0
-        ) * SUPPLY_VOLTAGE_SCALE_FACTOR
-        comp_power = (ou_live.get("CompPower") or 0) * COMP_POWER_SCALE_FACTOR
+            raw_voltage * SUPPLY_VOLTAGE_SCALE_FACTOR if raw_voltage is not None else 0
+        )
+        raw_comp_power = ou_live.get("CompPower")
+        comp_power = (
+            raw_comp_power * COMP_POWER_SCALE_FACTOR
+            if raw_comp_power is not None
+            else 0
+        )
 
         return cast(
             "OutdoorUnitData",

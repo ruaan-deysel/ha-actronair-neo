@@ -1670,7 +1670,7 @@ class TestOutdoorUnitScaling:
         assert result["comp_power"] == 0
         assert result["supply_voltage"] == 0
 
-    def test_typo_fallback_keys_still_work(
+    def test_supply_current_typo_fallback(
         self, coordinator_instance: ActronDataCoordinator
     ) -> None:
         """API typo variant 'SuppyCurrentRMS_A' is accepted for supply_current."""

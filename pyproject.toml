@@ -31,17 +31,17 @@ dev = [
     # newest stable at runtime; this lower bound only affects uv resolution.
     "homeassistant>=2026.7.1,<2027",
     "colorlog>=6.0.0",
-    "pre-commit>=3.6.0",
+    "pre-commit>=4.6.1",
     "pyright>=1.1.411",
-    "ruff>=0.15.20",
-    "mypy>=2.1.0",
-    "codespell>=2.2.0",
+    "ruff>=0.16.0",
+    "mypy>=2.3.0",
+    "codespell>=2.4.3",
 ]
 test = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=4.1.0",
-    "pytest-homeassistant-custom-component>=0.13.345",
+    "pytest-homeassistant-custom-component>=0.13.348",
     "pytest-timeout>=2.2.0",
     "pytest-xdist>=3.5.0",
     "freezegun>=1.2.0",

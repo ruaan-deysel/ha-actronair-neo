@@ -100,6 +100,7 @@ ActronAir Neo has per-zone entities (switches, climate control per zone):
 ```python
 from __future__ import annotations
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from .coordinator import ActronDataCoordinator
 ```

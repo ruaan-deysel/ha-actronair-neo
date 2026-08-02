@@ -1682,10 +1682,43 @@ class TestOutdoorUnitScaling:
                     "SuppyCurrentRMS_A": 19.0,  # intentional typo (API bug)
                 }
             },
-            "aircon_system": {"OutdoorUnit": {}},
+            "aircon_system": {
+                "OutdoorUnit": {
+                    "Family": "Tru-Inverter",  # NTW-series: scaling must apply
+                }
+            },
         }
         result = coordinator_instance._parse_outdoor_unit_data(sections)
 
         assert result["supply_current"] == pytest.approx(19.0)
         assert result["comp_power"] == pytest.approx(4500.0)
         assert result["supply_voltage"] == pytest.approx(230.0)
+
+    def test_classic_unit_not_scaled(
+        self, coordinator_instance: ActronDataCoordinator
+    ) -> None:
+        """Classic (Fixed Speed) units must NOT have scaling applied to telemetry."""
+        sections = {
+            "live_aircon": {
+                "OutdoorUnit": {
+                    "CompPower": 4500,  # already in Watts — must NOT be multiplied
+                    "SupplyVoltage_Vac": 230.0,  # already in VAC — must NOT scale
+                    "SupplyCurrentRMS_A": 19.0,
+                    "CompressorOn": True,
+                    "CompSpeed": 0,
+                }
+            },
+            "aircon_system": {
+                "OutdoorUnit": {
+                    "Family": "Fixed Speed: Classic",
+                    "CtrlBoardType": "Type 100",
+                    "Capacity_kW": 5.0,
+                }
+            },
+        }
+        result = coordinator_instance._parse_outdoor_unit_data(sections)
+
+        # Values must pass through unscaled for Classic units
+        assert result["comp_power"] == pytest.approx(4500.0)
+        assert result["supply_voltage"] == pytest.approx(230.0)
+        assert result["supply_current"] == pytest.approx(19.0)

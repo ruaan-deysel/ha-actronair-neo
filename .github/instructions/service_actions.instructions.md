@@ -67,6 +67,7 @@ set_away_mode:
 ```python
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
+
 async def handle_set_away_mode(call: ServiceCall) -> None:
     """Handle set_away_mode service call."""
     device_id = call.data[CONF_DEVICE_ID]

@@ -391,41 +391,27 @@ The integration uses **deep merge** with path-based updates:
 
 ```python
 # Incoming status-change message
-incoming = {
-  "UserAirconSettings": {
-    "Mode": "HEAT"
-  },
-  "MasterInfo": {
-    "LiveTemp_oC": 21.8
-  }
-}
+incoming = {"UserAirconSettings": {"Mode": "HEAT"}, "MasterInfo": {"LiveTemp_oC": 21.8}}
 
 # Existing state
 existing = {
-  "UserAirconSettings": {
-    "Mode": "COOL",
-    "isOn": True,
-    "FanMode": "AUTO"
-  },
-  "MasterInfo": {
-    "LiveTemp_oC": 21.5,
-    "LiveHumidity_pc": 45.0
-  },
-  "RemoteZoneInfo": [...]
+    "UserAirconSettings": {"Mode": "COOL", "isOn": True, "FanMode": "AUTO"},
+    "MasterInfo": {"LiveTemp_oC": 21.5, "LiveHumidity_pc": 45.0},
+    "RemoteZoneInfo": [...],
 }
 
 # After merge
 result = {
-  "UserAirconSettings": {
-    "Mode": "HEAT",           # Updated
-    "isOn": True,              # Preserved
-    "FanMode": "AUTO"          # Preserved
-  },
-  "MasterInfo": {
-    "LiveTemp_oC": 21.8,       # Updated
-    "LiveHumidity_pc": 45.0    # Preserved
-  },
-  "RemoteZoneInfo": [...]     # Preserved
+    "UserAirconSettings": {
+        "Mode": "HEAT",  # Updated
+        "isOn": True,  # Preserved
+        "FanMode": "AUTO",  # Preserved
+    },
+    "MasterInfo": {
+        "LiveTemp_oC": 21.8,  # Updated
+        "LiveHumidity_pc": 45.0,  # Preserved
+    },
+    "RemoteZoneInfo": [...],  # Preserved
 }
 ```
 

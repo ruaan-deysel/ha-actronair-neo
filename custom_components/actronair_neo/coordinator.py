@@ -26,6 +26,7 @@ from .api.push.merge import apply_event_paths, deep_merge
 from .api.push.models import PushState
 from .const import (
     ADVANCE_FAN_MODES,
+    COMP_POWER_SCALE_FACTOR,
     DEFAULT_ENABLE_PUSH,
     DOMAIN,
     FAN_MODE_SUFFIX_CONT,
@@ -36,6 +37,7 @@ from .const import (
     NEO_SERIES_WC,
     OUTDOOR_TEMP_UNAVAILABLE,
     PARSE_CACHE_TTL,
+    SUPPLY_VOLTAGE_SCALE_FACTOR,
     VALID_FAN_MODES,
     ZONE_OVERRIDE_TTL,
 )
@@ -829,6 +831,14 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         aircon_system = data_sections.get("aircon_system", {})
         ou_system = aircon_system.get("OutdoorUnit", {})
 
+        # NTW-series (Advance/Inverter) units report SupplyVoltage_Vac and
+        # CompPower at reduced scale; other series (Classic, Aires) report
+        # engineering-unit values already.  Gate scaling to Inverter family
+        # only to prevent over-scaling on non-NTW devices (e.g. 230 VAC ->
+        # 2300 VAC on a Classic unit).
+        family = ou_system.get("Family", "")
+        is_ntw_series = "Inverter" in family
+
         # Handle API typos in field names
         supply_current = ou_live.get(
             "SupplyCurrentRMS_A", ou_live.get("SuppyCurrentRMS_A", 0)
@@ -837,15 +847,34 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             "SupplyPowerRMS_W", ou_live.get("SuppyPowerRMS_W", 0)
         )
 
+        # Apply correction factors only for NTW-series units.  Use explicit
+        # None checks so that a genuine zero reading (e.g. compressor off) is
+        # preserved as 0 and not mistaken for a missing value.
+        raw_voltage = ou_live.get("SupplyVoltage_Vac")
+        if raw_voltage is None:
+            supply_voltage: float = 0
+        elif is_ntw_series:
+            supply_voltage = raw_voltage * SUPPLY_VOLTAGE_SCALE_FACTOR
+        else:
+            supply_voltage = raw_voltage
+
+        raw_comp_power = ou_live.get("CompPower")
+        if raw_comp_power is None:
+            comp_power: float = 0
+        elif is_ntw_series:
+            comp_power = raw_comp_power * COMP_POWER_SCALE_FACTOR
+        else:
+            comp_power = raw_comp_power
+
         return cast(
             "OutdoorUnitData",
             {
-                "comp_power": ou_live.get("CompPower", 0),
+                "comp_power": comp_power,
                 "compressor_on": ou_live.get("CompressorOn", False),
                 "comp_speed": ou_live.get("CompSpeed", 0),
                 "coil_temp": ou_live.get("CoilTemp"),
                 "amb_temp": ou_live.get("AmbTemp"),
-                "supply_voltage": ou_live.get("SupplyVoltage_Vac", 0),
+                "supply_voltage": supply_voltage,
                 "supply_current": supply_current,
                 "supply_power": supply_power,
                 "reverse_valve_position": ou_live.get(

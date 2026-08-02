@@ -972,8 +972,30 @@ Based on the live API data and GitHub issue reports:
 | `LiveOutdoorTemp_oC`       | `3000.0` (error)       | actual reading  | actual reading |
 | Compressor power telemetry | Limited (fixed speed)  | Full (VSD data) | Partial        |
 
+### Advance/Inverter (NTW-series) Telemetry Scaling
+
+NTW-series units (e.g. NTW-1000, firmware 2.6.2.5) report certain live
+telemetry fields at reduced scale in the raw API payload.  The integration
+applies correction factors at parse time (see `const.py`):
+
+| Raw field            | Scale factor | Corrected unit | Evidence / reasoning                         |
+| -------------------- | ------------ | -------------- | -------------------------------------------- |
+| `SupplyVoltage_Vac`  | × 10         | VAC            | Raw 23.0 → 230 VAC; confirmed NTW-1000 #133 |
+| `CompPower`          | × 100        | W              | Raw 45 → 4500 W; P ≈ V×I = 230×19 ≈ 4370 W |
+| `SupplyCurrentRMS_A` | × 1 (none)   | A              | Reads correctly at face value                |
+| `Capacity_kW`        | × 1 (none)   | kW             | Reads correctly at face value                |
+
+> **⚠️ Unconfirmed:** `SupplyPowerRMS_W` and `OutputPowerRMS_W` scaling has
+> not yet been verified from a live payload with non-zero values.  These
+> fields are left unscaled pending confirmation from additional NTW-series
+> devices.  If you have a live payload showing non-zero values for these
+> fields, please share it in GitHub issue #133.
+
 ## Changelog
 
+- **July 2026**: Documented NTW-series telemetry scaling for
+  `SupplyVoltage_Vac` (×10) and `CompPower` (×100).  Flagged
+  `SupplyPowerRMS_W` / `OutputPowerRMS_W` as unconfirmed.  See issue #133.
 - **February 2026**: Complete rewrite from live API data. Documented all
   `lastKnownState` sections including serial-keyed section, SystemState,
   SystemStatus_Local, Peripherals, NV_SystemSettings. Updated auth to Device

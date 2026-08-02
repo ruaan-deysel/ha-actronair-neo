@@ -38,6 +38,7 @@ script/test --cov-html
 
 ```python
 """Tests for coordinator.py."""
+
 from unittest.mock import AsyncMock, patch
 import pytest
 from homeassistant.core import HomeAssistant

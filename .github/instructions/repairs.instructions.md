@@ -29,7 +29,7 @@ ir.async_create_issue(
     hass,
     DOMAIN,
     "issue_id",
-    is_fixable=True,          # Shows "Fix" button
+    is_fixable=True,  # Shows "Fix" button
     severity=ir.IssueSeverity.WARNING,
     translation_key="issue_id",
     translation_placeholders={"key": "value"},
@@ -51,6 +51,7 @@ async def async_create_fix_flow(
 ) -> RepairsFlow:
     """Create flow for issue_id."""
     return MyRepairFlow()
+
 
 class MyRepairFlow(RepairsFlow):
     async def async_step_init(self, user_input=None):

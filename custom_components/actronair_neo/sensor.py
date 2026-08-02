@@ -23,6 +23,7 @@ from .const import (
     ATTR_LAST_UPDATED,
     ATTR_ZONE_NAME,
     ATTR_ZONE_TYPE,
+    WATTS_PER_KILOWATT,
 )
 from .entity import ActronAirNeoEntity, ActronZoneEntity
 
@@ -37,6 +38,25 @@ if TYPE_CHECKING:
     from .coordinator import ActronDataCoordinator
 
 PARALLEL_UPDATES = 0
+
+
+def _format_power(value: float | str | None) -> str:
+    """
+    Format a power value (watts) to a human-readable string.
+
+    Values of 1000 W or above are displayed in kW with one decimal place;
+    lower values are displayed in whole watts.  ``None`` and ``"Unknown"``
+    are returned as ``"Unknown"``.
+    """
+    if value is None or value == "Unknown":
+        return "Unknown"
+    try:
+        power = float(value)
+    except (ValueError, TypeError):
+        return str(value)
+    if power >= WATTS_PER_KILOWATT:
+        return f"{power / WATTS_PER_KILOWATT:.1f} kW"
+    return f"{power:.0f} W"
 
 
 async def async_setup_entry(
@@ -479,15 +499,11 @@ class ActronSystemDiagnosticSensor(ActronAirNeoEntity, SensorEntity):
                     "fan_rpm", 0
                 ),  # Alias for user request
                 # Power and Electrical Data (GitHub Issue #16)
-                "compressor_power": self._format_power_value(
-                    outdoor_unit.get("comp_power", 0)
-                ),
+                "compressor_power": _format_power(outdoor_unit.get("comp_power", 0)),
                 "supply_voltage": (f"{outdoor_unit.get('supply_voltage', 0):.1f} VAC"),
                 "supply_current": (f"{outdoor_unit.get('supply_current', 0):.1f} A"),
-                "supply_power": self._format_power_value(
-                    outdoor_unit.get("supply_power", 0)
-                ),
-                "system_capacity": f"{outdoor_unit.get('capacity_kw', 0)} kW",
+                "supply_power": _format_power(outdoor_unit.get("supply_power", 0)),
+                "system_capacity": f"{outdoor_unit.get('capacity_kw', 0):.1f} kW",
                 # Air Volume Data (if available)
                 "air_volume": f"{vft.get('airflow', 0):.1f} m\u00b3/h"
                 if vft.get("supported", False)
@@ -522,12 +538,14 @@ class ActronSystemDiagnosticSensor(ActronAirNeoEntity, SensorEntity):
             }
 
     def _format_power_value(self, power_value: float) -> str:
-        """Format power value with appropriate units."""
-        if power_value == 0:
-            return "0 W"
-        if power_value >= 1000:  # noqa: PLR2004
-            return f"{power_value / 1000:.1f} kW"
-        return f"{power_value:.0f} W"
+        """
+        Format power value with appropriate units.
+
+        Delegates to the module-level :func:`_format_power` helper.
+        Kept for backwards compatibility with any callers that reference
+        this method directly (e.g. existing tests).
+        """
+        return _format_power(power_value)
 
 
 class ActronConnectivitySensor(ActronAirNeoEntity, SensorEntity):
@@ -717,17 +735,14 @@ class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
             return str(value)
 
     def _format_power(self, value: Any) -> str:
-        """Format power value."""
-        if value is None or value == "Unknown":
-            return "Unknown"
-        try:
-            power = float(value)
-        except (ValueError, TypeError):
-            return str(value)
-        else:
-            if power >= 1000:  # noqa: PLR2004
-                return f"{power / 1000:.1f} kW"
-            return f"{power:.0f} W"
+        """
+        Format power value.
+
+        Delegates to the module-level :func:`_format_power` helper.
+        Kept for backwards compatibility with any callers that reference
+        this method directly (e.g. existing tests).
+        """
+        return _format_power(value)
 
     def _get_operational_status(self, live_aircon: Mapping[str, Any]) -> str:
         """Determine operational status from live data."""

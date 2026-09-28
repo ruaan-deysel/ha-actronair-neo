@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import datetime
+import inspect
 import logging
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, cast
@@ -521,7 +522,11 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
 
         """
         # Calculate hash of raw data for change detection
-        raw_data_str = str(sorted(data.items()))
+        raw_data_str = (
+            str(sorted(data.items()))
+            if isinstance(data, dict)  # pyright: ignore[reportUnnecessaryIsInstance]
+            else str(data)
+        )
         raw_data_hash = hash(raw_data_str)
 
         # Return cached parsed data if raw data hasn't changed AND the cache is
@@ -1175,6 +1180,16 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         # context bundles the missing Sectigo intermediate and disables
         # hostname checking while keeping chain verification on. See #112.
         ssl_context = await async_get_mqtt_ssl_context(self.hass)
+        username = ""
+        with contextlib.suppress(Exception):
+            maybe_email: Any = self.api.get_account_email()
+            if inspect.isawaitable(maybe_email):
+                resolved_email = await maybe_email
+                if isinstance(resolved_email, str):
+                    username = resolved_email
+            elif isinstance(maybe_email, str):
+                username = maybe_email
+        client_id = f"ha-{self.device_id.lower()}-{details.user_id}"
         transport = create_push_transport(
             platform=self.api.platform,
             details=details,
@@ -1182,6 +1197,8 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             token_provider=self.api.get_realtime_access_token,
             on_update=self._handle_push_update,
             ssl_context=ssl_context,
+            username=username,
+            client_id=client_id,
         )
         if transport is None:
             return

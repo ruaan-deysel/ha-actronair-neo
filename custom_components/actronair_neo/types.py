@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict
 
 if TYPE_CHECKING:
     # Zone capabilities are produced by the API client as a Pydantic model
@@ -90,6 +90,16 @@ class MainData(TypedDict):
     service_reminder_time: str
     warnings: list[str]
     dry_mode_supported: bool
+    supported_hvac_modes: NotRequired[list[str]]
+    min_temp_cool: NotRequired[float]
+    max_temp_cool: NotRequired[float]
+    min_temp_heat: NotRequired[float]
+    max_temp_heat: NotRequired[float]
+    zone_temp_variance: NotRequired[float]
+    variance_above_cool: NotRequired[float | None]
+    variance_below_cool: NotRequired[float | None]
+    variance_above_heat: NotRequired[float | None]
+    variance_below_heat: NotRequired[float | None]
 
 
 class LiveAirconData(TypedDict):
@@ -125,6 +135,8 @@ class OutdoorUnitData(TypedDict):
     family: str
     ctrl_board_type: str
     capacity_kw: float
+    model_number: NotRequired[str]
+    software_version: NotRequired[str]
 
 
 class SystemStatusData(TypedDict):

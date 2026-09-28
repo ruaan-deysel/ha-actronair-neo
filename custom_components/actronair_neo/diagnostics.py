@@ -24,7 +24,11 @@ TO_REDACT = {
     "MAC",
     "mac",
     "serial",
+    "serial_number",
+    "SerialNumber",
+    "MasterSerial",
     "id",
+    "system_id",
     "ip_address",
     "MACAddress",
     "endpoint",
@@ -69,15 +73,25 @@ async def async_get_config_entry_diagnostics(
         full_state = raw_data.get("lastKnownState", {})
         # Use device serial to access the serial-keyed device section
         # (contains SystemStatus_Local, Cloud, etc.)
-        device_serial = coordinator.data["main"]["serial_number"]
-        device_section = full_state.get(f"<{device_serial.upper()}>", {})
+        device_serial = (
+            coordinator.data["main"].get("serial_number") or coordinator.device_id or ""
+        )
+        device_section: dict[str, Any] = (
+            full_state.get(f"<{str(device_serial).upper()}>", {})
+            if device_serial
+            else {}
+        )
         # Top-level sections (AirconSystem, LiveAircon, etc.)
         aircon_system = full_state.get("AirconSystem", {})
         live_aircon = full_state.get("LiveAircon", {})
         indoor_unit = aircon_system.get("IndoorUnit", {})
         outdoor_unit = aircon_system.get("OutdoorUnit", {})
 
-        push_transport = coordinator._push_transport  # noqa: SLF001
+        push_transport = getattr(
+            coordinator,
+            "push_transport",
+            coordinator._push_transport,  # noqa: SLF001
+        )
         diagnostics_data: dict[str, Any] = {
             "entry": async_redact_data(entry.as_dict(), TO_REDACT),
             "data": {

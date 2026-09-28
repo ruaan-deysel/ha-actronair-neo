@@ -2,14 +2,73 @@
 Data models for the ActronAir Neo API.
 
 All API response structures and internal data types are defined here
-as Pydantic BaseModel classes with full validation.
+as Pydantic BaseModel classes with full validation and coercion aligned
+with kclif9/actronneoapi.
 """
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+
+FALLBACK_SUPPORTED_MODES: tuple[str, ...] = ("COOL", "HEAT", "FAN", "AUTO")
+_SENTINEL_THRESHOLD = 1000.0
+_MAX_HUMIDITY = 100.0
+
+
+def _coerce_optional_str(value: Any) -> str | None:
+    """Coerce numeric firmware/model/serial fields (e.g. ModelNumber=561) to str."""
+    if value is None or isinstance(value, bool):
+        return None
+    return str(value)
+
+
+def _coerce_str(value: Any) -> str:
+    """Coerce non-None scalar values to string."""
+    if value is None or isinstance(value, bool):
+        return ""
+    return str(value)
+
+
+def _filter_sentinel_temp(value: Any) -> float | None:
+    """Filter Actron API sentinel values (>= 1000.0, e.g. 3000.0) for temperatures."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    if num >= _SENTINEL_THRESHOLD:
+        return None
+    return num
+
+
+def _filter_sentinel_humidity(value: Any) -> float | None:
+    """Filter Actron API sentinel values and out-of-range readings for humidity."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    if num < 0.0 or num > _MAX_HUMIDITY:
+        return None
+    return num
+
+
+def _coerce_signal(value: Any) -> int | None:
+    """Coerce Signal_of3 (int or string like '2' or 'NA') to int | None."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
 
 # --- API response models ---
 
@@ -17,7 +76,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class TokenResponse(BaseModel):
     """Response from the OAuth token endpoint."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     access_token: str
     token_type: str = Field(default="Bearer")
@@ -25,16 +84,83 @@ class TokenResponse(BaseModel):
     refresh_token: str | None = None
 
 
+class ActronAirUserInfo(BaseModel):
+    """User account information from /api/v0/client/account."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
+
+    id: str = Field(default="", validation_alias=AliasChoices("id", "sub", "userId"))
+    email: str = Field(default="")
+    name: str = Field(default="")
+
+
 class DeviceInfo(BaseModel):
     """Device information returned from the AC systems endpoint."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
     serial: str
     name: str
     type: str
     id: str
     base_url: str = ""
+    links: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("serial", "name", "type", "id", mode="before")
+    @classmethod
+    def _coerce_strings(cls, value: Any) -> str:
+        return _coerce_str(value)
+
+
+class ModeSupport(BaseModel):
+    """Hardware HVAC mode support flags from UserAirconSettings.ModeSupport."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
+
+    cool: bool = Field(default=True, alias="Cool")
+    heat: bool = Field(default=True, alias="Heat")
+    fan: bool = Field(default=True, alias="Fan")
+    auto: bool = Field(default=True, alias="Auto")
+    dry: bool = Field(default=False, alias="Dry")
+
+    @property
+    def supported_modes(self) -> list[str]:
+        """Return list of enabled Actron HVAC modes."""
+        modes: list[str] = []
+        if self.cool:
+            modes.append("COOL")
+        if self.heat:
+            modes.append("HEAT")
+        if self.fan:
+            modes.append("FAN")
+        if self.auto:
+            modes.append("AUTO")
+        if self.dry:
+            modes.append("DRY")
+        return modes or list(FALLBACK_SUPPORTED_MODES)
+
+
+class UserSetpointLimits(BaseModel):
+    """Hardware temperature setpoint limits and Que/NX-Gen signed zone variances."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
+
+    set_cool_min: float = Field(default=16.0, alias="setCool_Min")
+    set_cool_max: float = Field(default=30.0, alias="setCool_Max")
+    set_heat_min: float = Field(default=16.0, alias="setHeat_Min")
+    set_heat_max: float = Field(default=30.0, alias="setHeat_Max")
+    variance_above_cool: float | None = Field(
+        default=None, alias="VarianceAboveMasterCool"
+    )
+    variance_below_cool: float | None = Field(
+        default=None, alias="VarianceBelowMasterCool"
+    )
+    variance_above_heat: float | None = Field(
+        default=None, alias="VarianceAboveMasterHeat"
+    )
+    variance_below_heat: float | None = Field(
+        default=None, alias="VarianceBelowMasterHeat"
+    )
 
 
 # --- Zone-related models ---
@@ -43,7 +169,7 @@ class DeviceInfo(BaseModel):
 class ZoneCapabilities(BaseModel):
     """Capabilities for a single zone."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     exists: bool = False
     can_operate: bool = False
@@ -52,12 +178,17 @@ class ZoneCapabilities(BaseModel):
     target_temp_cool: float | None = None
     target_temp_heat: float | None = None
     peripheral_capabilities: dict[str, bool] | None = None
+    nv_vav: bool = False
+    nv_itc: bool = False
+    nv_itd: bool = False
+    nv_ihd: bool = False
+    nv_iac: bool = False
 
 
 class ZoneData(BaseModel):
     """Parsed zone data used by the coordinator and entities."""
 
-    model_config = ConfigDict(frozen=False)
+    model_config = ConfigDict(frozen=False, extra="ignore")
 
     name: str
     temp: float | None = None
@@ -81,6 +212,21 @@ class ZoneData(BaseModel):
     zone_max_position: int | None = None
     zone_min_position: int | None = None
 
+    @field_validator("temp", mode="before")
+    @classmethod
+    def _validate_temp(cls, value: Any) -> float | None:
+        return _filter_sentinel_temp(value)
+
+    @field_validator("humidity", mode="before")
+    @classmethod
+    def _validate_humidity(cls, value: Any) -> float | None:
+        return _filter_sentinel_humidity(value)
+
+    @field_validator("signal_strength", mode="before")
+    @classmethod
+    def _validate_signal(cls, value: Any) -> int | None:
+        return _coerce_signal(value)
+
 
 # --- Main AC data model ---
 
@@ -88,7 +234,7 @@ class ZoneData(BaseModel):
 class MainData(BaseModel):
     """Main AC system data parsed from the API response."""
 
-    model_config = ConfigDict(frozen=False, populate_by_name=True)
+    model_config = ConfigDict(frozen=False, populate_by_name=True, extra="ignore")
 
     is_on: bool = False
     mode: str = "OFF"
@@ -125,12 +271,44 @@ class MainData(BaseModel):
     service_reminder_time: str = "NA"
     warnings: list[str] = Field(default_factory=list)
     dry_mode_supported: bool = False
+    supported_hvac_modes: list[str] = Field(
+        default_factory=lambda: list(FALLBACK_SUPPORTED_MODES)
+    )
+    min_temp_cool: float = 16.0
+    max_temp_cool: float = 30.0
+    min_temp_heat: float = 16.0
+    max_temp_heat: float = 30.0
+    zone_temp_variance: float = 0.0
+    variance_above_cool: float | None = None
+    variance_below_cool: float | None = None
+    variance_above_heat: float | None = None
+    variance_below_heat: float | None = None
+
+    @field_validator("model", "firmware_version", mode="before")
+    @classmethod
+    def _coerce_required_str(cls, value: Any) -> str:
+        return _coerce_str(value)
+
+    @field_validator("indoor_model", "serial_number", mode="before")
+    @classmethod
+    def _coerce_opt_str(cls, value: Any) -> str | None:
+        return _coerce_optional_str(value)
+
+    @field_validator("indoor_temp", "outdoor_temp", mode="before")
+    @classmethod
+    def _validate_temps(cls, value: Any) -> float | None:
+        return _filter_sentinel_temp(value)
+
+    @field_validator("indoor_humidity", mode="before")
+    @classmethod
+    def _validate_humidity(cls, value: Any) -> float | None:
+        return _filter_sentinel_humidity(value)
 
 
 class LiveAirconData(BaseModel):
     """Live aircon operational data."""
 
-    model_config = ConfigDict(frozen=False)
+    model_config = ConfigDict(frozen=False, extra="ignore")
 
     system_on: bool = False
     compressor_capacity: int = 0
@@ -147,7 +325,7 @@ class LiveAirconData(BaseModel):
 class OutdoorUnitData(BaseModel):
     """Outdoor unit live and system data."""
 
-    model_config = ConfigDict(frozen=False)
+    model_config = ConfigDict(frozen=False, extra="ignore")
 
     comp_power: float = 0.0
     compressor_on: bool = False
@@ -164,12 +342,21 @@ class OutdoorUnitData(BaseModel):
     family: str = ""
     ctrl_board_type: str = ""
     capacity_kw: float = 0.0
+    model_number: str = ""
+    software_version: str = ""
+
+    @field_validator(
+        "family", "ctrl_board_type", "model_number", "software_version", mode="before"
+    )
+    @classmethod
+    def _coerce_strings(cls, value: Any) -> str:
+        return _coerce_str(value)
 
 
 class SystemStatusData(BaseModel):
     """Device system status data."""
 
-    model_config = ConfigDict(frozen=False)
+    model_config = ConfigDict(frozen=False, extra="ignore")
 
     uptime_seconds: int = 0
     board_temp: float | None = None
@@ -183,7 +370,7 @@ class SystemStatusData(BaseModel):
 class CloudConnectionData(BaseModel):
     """Cloud connection data."""
 
-    model_config = ConfigDict(frozen=False)
+    model_config = ConfigDict(frozen=False, extra="ignore")
 
     connection_state: str = "Unknown"
     session_uptime: int = 0
@@ -198,7 +385,7 @@ class CloudConnectionData(BaseModel):
 class ServicingData(BaseModel):
     """Servicing and error history data."""
 
-    model_config = ConfigDict(frozen=False)
+    model_config = ConfigDict(frozen=False, extra="ignore")
 
     error_history: list[Any] = Field(default_factory=list)
     event_history: list[Any] = Field(default_factory=list)
@@ -207,7 +394,7 @@ class ServicingData(BaseModel):
 class ConnectionMetadata(BaseModel):
     """Top-level connection metadata."""
 
-    model_config = ConfigDict(frozen=False)
+    model_config = ConfigDict(frozen=False, extra="ignore")
 
     is_online: bool = False
     last_status_update: str = "Unknown"
@@ -217,7 +404,7 @@ class ConnectionMetadata(BaseModel):
 class VFTData(BaseModel):
     """Variable fan technology data."""
 
-    model_config = ConfigDict(frozen=False)
+    model_config = ConfigDict(frozen=False, extra="ignore")
 
     supported: bool = False
     airflow: float = 0.0
@@ -245,7 +432,7 @@ class CoordinatorData(BaseModel):
 class MasterSensorInfo(BaseModel):
     """Master sensor information from API."""
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
     live_temp: float | None = Field(None, alias="LiveTemp_oC")
     live_humidity: float | None = Field(None, alias="LiveHumidity_pc")
@@ -254,7 +441,7 @@ class MasterSensorInfo(BaseModel):
 class LiveAirconInfo(BaseModel):
     """Live aircon information from API."""
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
     compressor_mode: str = Field("OFF", alias="CompressorMode")
     filter_info: dict[str, bool | int] = Field(default_factory=dict, alias="Filter")
@@ -263,7 +450,7 @@ class LiveAirconInfo(BaseModel):
 class UserAirconSettings(BaseModel):
     """User aircon settings from API."""
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
     is_on: bool = Field(default=False, alias="isOn")
     mode: str = Field(default="OFF", alias="Mode")
@@ -272,13 +459,16 @@ class UserAirconSettings(BaseModel):
     temp_setpoint_heat: float = Field(default=22.0, alias="TemperatureSetpoint_Heat_oC")
     enabled_zones: list[bool] = Field(default_factory=list[bool], alias="EnabledZones")
     away_mode: bool = Field(default=False, alias="AwayMode")
-    quiet_mode: bool = Field(default=False, alias="QuietMode")
+    quiet_mode: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("QuietMode", "QuietModeEnabled"),
+    )
 
 
 class LastKnownState(BaseModel):
     """Last known state of the AC system from API."""
 
-    model_config = ConfigDict(frozen=False, populate_by_name=True)
+    model_config = ConfigDict(frozen=False, populate_by_name=True, extra="ignore")
 
     master_info: dict[str, Any] = Field(default_factory=dict, alias="MasterInfo")
     live_aircon: dict[str, Any] = Field(default_factory=dict, alias="LiveAircon")
@@ -295,7 +485,7 @@ class LastKnownState(BaseModel):
 class AcStatusResponse(BaseModel):
     """AC status response from the API."""
 
-    model_config = ConfigDict(frozen=False, populate_by_name=True)
+    model_config = ConfigDict(frozen=False, populate_by_name=True, extra="ignore")
 
     last_known_state: LastKnownState = Field(
         default_factory=LastKnownState, alias="lastKnownState"
@@ -305,7 +495,7 @@ class AcStatusResponse(BaseModel):
 class CommandResponse(BaseModel):
     """Response from sending a command to the AC system."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     success: bool = True
     message: str | None = None
@@ -314,7 +504,7 @@ class CommandResponse(BaseModel):
 class PeripheralData(BaseModel):
     """Peripheral device data from API."""
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
     remaining_battery_capacity: int | None = Field(
         None, alias="RemainingBatteryCapacity_pc"
@@ -330,6 +520,16 @@ class PeripheralData(BaseModel):
         None, alias="ControlCapabilities"
     )
     serial_number: str | None = Field(None, alias="SerialNumber")
+
+    @field_validator("signal_of3", mode="before")
+    @classmethod
+    def _validate_signal(cls, value: Any) -> int | None:
+        return _coerce_signal(value)
+
+    @field_validator("serial_number", mode="before")
+    @classmethod
+    def _validate_serial(cls, value: Any) -> str | None:
+        return _coerce_optional_str(value)
 
 
 class CommandData(BaseModel):

@@ -12,10 +12,11 @@ import asyncio
 import contextlib
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 import aiohttp
+from pydantic import ValidationError
 
 from custom_components.actronair_neo.exceptions import (
     ActronAirNeoError,
@@ -33,6 +34,7 @@ from .const import (
     ENDPOINT_AC_COMMANDS,
     ENDPOINT_AC_STATUS,
     ENDPOINT_AC_SYSTEMS,
+    ENDPOINT_ACCOUNT,
     ENDPOINT_REALTIME_DETAILS,
     HEALTH_PROBE_COOLDOWN,
     MAX_REQUESTS_PER_MINUTE,
@@ -42,18 +44,27 @@ from .const import (
     SYSTEM_TYPE_NXGEN,
 )
 from .models import (
+    ActronAirUserInfo,
     CommandData,
     DeviceInfo,
     FanModeType,
     HvacModeType,
     ZoneCapabilities,
 )
+from .push.merge import loads_repairing_escapes
 from .push.models import RealtimeConnectionDetails
 
 if TYPE_CHECKING:
     from .auth import ActronAirNeoAuth
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _now_matching(reference: datetime | None = None) -> datetime:
+    """Return current datetime matching tz-awareness of reference (defaults to UTC)."""
+    if reference is not None and reference.tzinfo is None:
+        return datetime.now()  # noqa: DTZ005
+    return datetime.now(UTC)
 
 
 class RateLimiter:
@@ -76,16 +87,20 @@ class RateLimiter:
     async def acquire(self) -> None:
         """Acquire a slot for making an API call."""
         await self.semaphore.acquire()
-        now = datetime.now()  # noqa: DTZ005
-        self.call_times = [t for t in self.call_times if now - t < timedelta(minutes=1)]
+        self.call_times = [
+            t for t in self.call_times if _now_matching(t) - t < timedelta(minutes=1)
+        ]
         if len(self.call_times) >= self.calls_per_minute:
-            sleep_time = 60 - (now - self.call_times[0]).total_seconds()
-            await asyncio.sleep(sleep_time)
-            now = datetime.now()  # noqa: DTZ005
+            first = self.call_times[0]
+            sleep_time = 60 - (_now_matching(first) - first).total_seconds()
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
             self.call_times = [
-                t for t in self.call_times if now - t < timedelta(minutes=1)
+                t
+                for t in self.call_times
+                if _now_matching(t) - t < timedelta(minutes=1)
             ]
-        self.call_times.append(now)
+        self.call_times.append(datetime.now(UTC))
 
     def release(self) -> None:
         """Release the acquired slot."""
@@ -117,7 +132,7 @@ class ResponseCache:
             data, timestamp = self._cache[key]
             cache_ttl = ttl or self._default_ttl
 
-            if datetime.now() - timestamp > cache_ttl:  # noqa: DTZ005
+            if _now_matching(timestamp) - timestamp > cache_ttl:
                 del self._cache[key]
                 return None
 
@@ -126,7 +141,7 @@ class ResponseCache:
     async def set(self, key: str, value: Any) -> None:
         """Set cached response."""
         async with self._lock:
-            self._cache[key] = (value, datetime.now())  # noqa: DTZ005
+            self._cache[key] = (value, datetime.now(UTC))
 
     async def invalidate(self, key: str) -> None:
         """Remove a specific key from the cache."""
@@ -141,11 +156,10 @@ class ResponseCache:
     async def cleanup_expired(self) -> None:
         """Remove expired entries from cache."""
         async with self._lock:
-            now = datetime.now()  # noqa: DTZ005
             expired_keys = [
                 key
                 for key, (_, timestamp) in self._cache.items()
-                if now - timestamp > self._default_ttl
+                if _now_matching(timestamp) - timestamp > self._default_ttl
             ]
             for key in expired_keys:
                 del self._cache[key]
@@ -168,6 +182,8 @@ class ActronAirNeoApiClient:
         self.actron_system_id: str = ""
         self._base_url: str = API_URL
         self._device_base_urls: dict[str, str] = {}
+        self._device_links: dict[str, dict[str, str]] = {}
+        self._account_email: str | None = None
 
         # API health tracking
         self.error_count: int = 0
@@ -176,7 +192,7 @@ class ActronAirNeoApiClient:
         # Circuit breaker: timestamp of the last half-open recovery probe.
         # Initialised to "now" so a freshly degraded client waits a full
         # cooldown before probing rather than probing immediately.
-        self._last_health_probe_time: datetime = datetime.now()  # noqa: DTZ005
+        self._last_health_probe_time: datetime = datetime.now(UTC)
 
         # Rate limiting and caching
         self.rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
@@ -204,16 +220,16 @@ class ActronAirNeoApiClient:
         return bool(
             self.error_count > _max_errors
             and self.last_successful_request
-            and datetime.now() - self.last_successful_request  # noqa: DTZ005
+            and _now_matching(self.last_successful_request)
+            - self.last_successful_request
             < timedelta(minutes=_health_window_minutes)
         )
 
     def _is_health_probe_due(self) -> bool:
         """Return True when a half-open recovery probe is permitted."""
-        return (
-            datetime.now() - self._last_health_probe_time  # noqa: DTZ005
-            >= timedelta(seconds=HEALTH_PROBE_COOLDOWN)
-        )
+        return _now_matching(
+            self._last_health_probe_time
+        ) - self._last_health_probe_time >= timedelta(seconds=HEALTH_PROBE_COOLDOWN)
 
     def is_api_healthy(self) -> bool:
         """
@@ -248,7 +264,10 @@ class ActronAirNeoApiClient:
             self._base_url = base_url
         elif serial_number in self._device_base_urls:
             self._base_url = self._device_base_urls[serial_number]
-        # else: keep current _base_url (default API_URL)
+        # Sync OAuth endpoint base URL when switching between Neo and Que (PR #57)
+        update_auth_url = getattr(self.auth, "update_base_url", None)
+        if callable(update_auth_url):
+            update_auth_url(self._base_url)
 
     async def initialize(self) -> None:
         """Initialize the API client by validating authentication."""
@@ -332,7 +351,7 @@ class ActronAirNeoApiClient:
 
             if response.status == 200:  # noqa: PLR2004
                 self.error_count = 0
-                self.last_successful_request = datetime.now()  # noqa: DTZ005
+                self.last_successful_request = datetime.now(UTC)
                 if response_json is not None:
                     return response_json
                 return response_text
@@ -340,9 +359,9 @@ class ActronAirNeoApiClient:
             return self._handle_error_status(response, response_text, attempt)
 
     def _try_parse_json(self, response_text: str) -> dict[str, Any] | None:
-        """Attempt to parse response text as JSON."""
+        """Attempt to parse response text as JSON, repairing firmware escapes."""
         try:
-            result: dict[str, Any] = json.loads(response_text)
+            result: dict[str, Any] = loads_repairing_escapes(response_text)
         except json.JSONDecodeError:
             return None
         else:
@@ -426,6 +445,31 @@ class ActronAirNeoApiClient:
 
     # --- Device and status methods ---
 
+    @staticmethod
+    def _extract_hal_links(system: dict[str, Any]) -> dict[str, str]:
+        """Extract HAL _links mapping (rel -> href) from a system payload."""
+        raw_links = system.get("_links")
+        if not isinstance(raw_links, dict):
+            return {}
+        links: dict[str, str] = {}
+        for rel, target in cast("dict[str, Any]", raw_links).items():
+            if isinstance(target, dict):
+                href = cast("dict[str, Any]", target).get("href")
+                if isinstance(href, str) and href:
+                    links[str(rel)] = href
+        return links
+
+    def _resolve_endpoint_url(
+        self, serial: str, rel: str, default_path_with_query: str
+    ) -> str:
+        """Resolve a HAL link for ``serial`` or fall back to default path."""
+        href = self._device_links.get(serial, {}).get(rel)
+        if href:
+            if href.startswith(("http://", "https://")):
+                return href
+            return f"{self._base_url}/{href.lstrip('/')}"
+        return f"{self._base_url}{default_path_with_query}"
+
     async def get_devices(self) -> list[DeviceInfo]:
         """
         Fetch the list of devices from the API.
@@ -445,16 +489,20 @@ class ActronAirNeoApiClient:
         ):
             for system in response["_embedded"]["ac-system"]:
                 device_base_url = self._resolve_base_url(system)
-                serial = system.get("serial", "Unknown")
+                serial = str(system.get("serial", "Unknown"))
+                hal_links = self._extract_hal_links(system)
                 device = DeviceInfo(
                     serial=serial,
-                    name=system.get("description", "Unknown Device"),
-                    type=system.get("type", "Unknown"),
-                    id=system.get("id", "Unknown"),
+                    name=str(system.get("description", "Unknown Device")),
+                    type=str(system.get("type", "Unknown")),
+                    id=str(system.get("id", "Unknown")),
                     base_url=device_base_url,
+                    links=hal_links,
                 )
                 devices.append(device)
                 self._device_base_urls[serial] = device_base_url
+                if hal_links:
+                    self._device_links[serial] = hal_links
         return devices
 
     @staticmethod
@@ -512,10 +560,12 @@ class ActronAirNeoApiClient:
             # If the breaker is open we only reached here because a half-open
             # probe is due — record it so we don't hammer a degraded API.
             if self._circuit_open:
-                self._last_health_probe_time = datetime.now()  # noqa: DTZ005
+                self._last_health_probe_time = datetime.now(UTC)
                 _LOGGER.debug("API degraded; sending half-open recovery probe")
 
-            url = f"{self._base_url}{ENDPOINT_AC_STATUS}?serial={serial}"
+            url = self._resolve_endpoint_url(
+                serial, "ac-status", f"{ENDPOINT_AC_STATUS}?serial={serial}"
+            )
             response = await self._make_request("GET", url)
 
             # Update both caches
@@ -549,6 +599,27 @@ class ActronAirNeoApiClient:
         """Return the platform family ("neo" or "que") from the base URL."""
         return "que" if "que" in self._base_url.lower() else "neo"
 
+    async def get_account_email(self) -> str:
+        """
+        Fetch the authenticated user's account email (used as MQTT username).
+
+        Aligned with kclif9/actronneoapi PR #91; falls back to empty string
+        if the endpoint is unavailable.
+        """
+        if self._account_email is not None:
+            return self._account_email
+        url = f"{self._base_url}{ENDPOINT_ACCOUNT}"
+        try:
+            response = await self._make_request("GET", url)
+            if isinstance(response, dict):
+                info = ActronAirUserInfo.model_validate(response)
+                self._account_email = info.email
+                return info.email
+        except (ActronAirNeoError, ValidationError):
+            _LOGGER.debug("Account email lookup failed; using empty MQTT username")
+        self._account_email = ""
+        return ""
+
     async def get_realtime_access_token(self) -> str:
         """Return a fresh OAuth access token for use as the MQTT password."""
         await self.auth.ensure_valid_token()
@@ -560,10 +631,12 @@ class ActronAirNeoApiClient:
 
     async def get_realtime_connection_details(
         self,
-        serial: str,  # noqa: ARG002
+        serial: str,
     ) -> RealtimeConnectionDetails | None:
         """Fetch and parse broker connection details for realtime push."""
-        url = f"{self._base_url}{ENDPOINT_REALTIME_DETAILS}"
+        url = self._resolve_endpoint_url(
+            serial, "rtc-details", ENDPOINT_REALTIME_DETAILS
+        )
         response = await self._make_request("GET", url)
         if not isinstance(response, dict):
             return None
@@ -573,7 +646,9 @@ class ActronAirNeoApiClient:
         self, serial: str, command: CommandData | dict[str, Any]
     ) -> dict[str, Any]:
         """Send a command to the AC system and invalidate cache."""
-        url = f"{self._base_url}{ENDPOINT_AC_COMMANDS}?serial={serial}"
+        url = self._resolve_endpoint_url(
+            serial, "commands", f"{ENDPOINT_AC_COMMANDS}?serial={serial}"
+        )
 
         # Convert CommandData to dict if needed
         cmd_dict = command.model_dump() if isinstance(command, CommandData) else command
@@ -723,13 +798,13 @@ class ActronAirNeoApiClient:
     def get_zone_capabilities(
         self, zone_data: dict[str, str | int | bool | float]
     ) -> ZoneCapabilities:
-        """Extract zone capabilities from zone data."""
+        """Extract zone capabilities from zone data (actronneoapi PR #62)."""
+        nv_vav = bool(zone_data.get("NV_VAV", False))
+        nv_itc = bool(zone_data.get("NV_ITC", False))
         return ZoneCapabilities(
             can_operate=bool(zone_data.get("CanOperate", False)),
             exists=bool(zone_data.get("NV_Exists", False)),
-            has_temp_control=bool(
-                zone_data.get("NV_VAV", False) and zone_data.get("NV_ITC", False)
-            ),
+            has_temp_control=bool(nv_vav and nv_itc),
             has_separate_targets=bool(
                 zone_data.get("TemperatureSetpoint_Cool_oC") is not None
                 and zone_data.get("TemperatureSetpoint_Heat_oC") is not None
@@ -740,6 +815,11 @@ class ActronAirNeoApiClient:
             target_temp_heat=cast(
                 "float | None", zone_data.get("TemperatureSetpoint_Heat_oC")
             ),
+            nv_vav=nv_vav,
+            nv_itc=nv_itc,
+            nv_itd=bool(zone_data.get("NV_ITD", False)),
+            nv_ihd=bool(zone_data.get("NV_IHD", False)),
+            nv_iac=bool(zone_data.get("NV_IAC", False)),
         )
 
     async def set_zone_temperature(
@@ -854,7 +934,7 @@ class ActronAirNeoApiClient:
         async with self._fan_mode_change_lock:
             if self._last_fan_mode_change:
                 elapsed = (
-                    datetime.now()  # noqa: DTZ005
+                    _now_matching(self._last_fan_mode_change)
                     - self._last_fan_mode_change
                 ).total_seconds()
                 if elapsed < self._min_fan_mode_interval:
@@ -878,9 +958,7 @@ class ActronAirNeoApiClient:
                         continue
                     raise
                 else:
-                    self._last_fan_mode_change = (
-                        datetime.now()  # noqa: DTZ005
-                    )
+                    self._last_fan_mode_change = datetime.now(UTC)
                     self._continuous_fan = continuous
                     return
 

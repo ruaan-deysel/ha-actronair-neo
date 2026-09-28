@@ -8,13 +8,12 @@ and token lifecycle management (refresh, expiry, persistence via callback).
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import aiohttp
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from custom_components.actronair_neo.exceptions import AuthenticationError
 
@@ -29,6 +28,8 @@ from .const import (
     REFRESH_RETRY_DELAY,
     TOKEN_EXPIRY_BUFFER,
 )
+from .models import TokenResponse
+from .push.merge import loads_repairing_escapes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,16 +38,17 @@ _LOGGER = logging.getLogger(__name__)
 type TokenRefreshCallback = Any  # Callable[[str, str, float], Awaitable[None]]
 
 
-@dataclass(frozen=True)
-class DeviceCodeResponse:
+class DeviceCodeResponse(BaseModel):
     """Data returned when requesting a device code."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     device_code: str
     user_code: str
     verification_uri: str
     verification_uri_complete: str
-    expires_in: int
-    interval: int
+    expires_in: int = 300
+    interval: int = DEVICE_CODE_POLL_INTERVAL
 
 
 class ActronAirNeoAuth:
@@ -63,22 +65,34 @@ class ActronAirNeoAuth:
     ``set_token_refresh_callback`` hook.
     """
 
-    def __init__(self, session: aiohttp.ClientSession) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        base_url: str = API_URL,
+    ) -> None:
         """
         Initialize the authentication manager.
 
         Args:
             session: aiohttp client session for HTTP requests.
+            base_url: Base URL for OAuth endpoints (Neo or Que).
 
         """
         self.session = session
+        self.base_url = base_url.rstrip("/")
 
         self.access_token: str | None = None
         self.refresh_token_value: str | None = None
         self.token_expires_at: datetime | None = None
+        self._actual_token_expires_at: datetime | None = None
 
         self._refresh_lock = asyncio.Lock()
         self._token_refresh_callback: TokenRefreshCallback | None = None
+
+    def update_base_url(self, base_url: str) -> None:
+        """Update OAuth base URL in-place (e.g. when switching between Neo and Que)."""
+        if base_url:
+            self.base_url = base_url.rstrip("/")
 
     # ── Callback management ──────────────────────────────────────
 
@@ -110,12 +124,28 @@ class ActronAirNeoAuth:
 
     # ── Token state helpers ──────────────────────────────────────
 
+    @staticmethod
+    def _now_for(reference: datetime | None) -> datetime:
+        """Return current datetime matching the tz-awareness of reference."""
+        if reference is not None and reference.tzinfo is None:
+            return datetime.now()  # noqa: DTZ005
+        return datetime.now(UTC)
+
     @property
     def is_token_valid(self) -> bool:
         """Return True if the current access token has not expired."""
         if not self.access_token or not self.token_expires_at:
             return False
-        return datetime.now() < self.token_expires_at  # noqa: DTZ005
+        return self._now_for(self.token_expires_at) < self.token_expires_at
+
+    @property
+    def _is_token_actually_unexpired(self) -> bool:
+        """Return True if the access token is still within its unbuffered lifetime."""
+        if not self.access_token or not self._actual_token_expires_at:
+            return False
+        return (
+            self._now_for(self._actual_token_expires_at) < self._actual_token_expires_at
+        )
 
     def set_tokens(
         self,
@@ -134,7 +164,10 @@ class ActronAirNeoAuth:
         """
         self.access_token = access_token
         self.refresh_token_value = refresh_token
-        self.token_expires_at = datetime.fromtimestamp(expires_at)  # noqa: DTZ006
+        self.token_expires_at = datetime.fromtimestamp(expires_at, tz=UTC)
+        self._actual_token_expires_at = self.token_expires_at + timedelta(
+            seconds=TOKEN_EXPIRY_BUFFER
+        )
 
     # ── Device Code Flow (used by config_flow) ───────────────────
 
@@ -150,7 +183,7 @@ class ActronAirNeoAuth:
             AuthenticationError: If the API rejects the request.
 
         """
-        url = f"{API_URL}{ENDPOINT_OAUTH_TOKEN}"
+        url = f"{self.base_url}{ENDPOINT_OAUTH_TOKEN}"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "client_id": CLIENT_ID,
@@ -162,18 +195,22 @@ class ActronAirNeoAuth:
         )
 
         try:
-            verification_uri = response.get("verification_uri", f"{API_URL}/connect")
-            return DeviceCodeResponse(
-                device_code=response["device_code"],
-                user_code=response["user_code"],
-                verification_uri=verification_uri,
-                verification_uri_complete=response.get(
-                    "verification_uri_complete", verification_uri
-                ),
-                expires_in=response.get("expires_in", 300),
-                interval=response.get("interval", DEVICE_CODE_POLL_INTERVAL),
+            verification_uri = response.get(
+                "verification_uri", f"{self.base_url}/connect"
             )
-        except KeyError as err:
+            return DeviceCodeResponse.model_validate(
+                {
+                    "device_code": response["device_code"],
+                    "user_code": response["user_code"],
+                    "verification_uri": verification_uri,
+                    "verification_uri_complete": response.get(
+                        "verification_uri_complete", verification_uri
+                    ),
+                    "expires_in": response.get("expires_in", 300),
+                    "interval": response.get("interval", DEVICE_CODE_POLL_INTERVAL),
+                }
+            )
+        except (KeyError, ValidationError) as err:
             msg = f"Incomplete device code response: {err}"
             raise AuthenticationError(msg) from err
 
@@ -198,7 +235,7 @@ class ActronAirNeoAuth:
             AuthenticationError: On timeout, denial, or connection error.
 
         """
-        url = f"{API_URL}{ENDPOINT_OAUTH_TOKEN}"
+        url = f"{self.base_url}{ENDPOINT_OAUTH_TOKEN}"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "grant_type": DEVICE_CODE_GRANT_TYPE,
@@ -206,10 +243,10 @@ class ActronAirNeoAuth:
             "client_id": CLIENT_ID,
         }
 
-        deadline = datetime.now() + timedelta(seconds=expires_in)  # noqa: DTZ005
+        deadline = datetime.now(UTC) + timedelta(seconds=expires_in)
         poll_interval = interval
 
-        while datetime.now() < deadline:  # noqa: DTZ005
+        while datetime.now(UTC) < deadline:
             try:
                 async with self.session.post(
                     url,
@@ -220,12 +257,12 @@ class ActronAirNeoAuth:
                     body = await resp.text()
 
                     if resp.status == 200:  # noqa: PLR2004
-                        result: dict[str, Any] = json.loads(body)
+                        result: dict[str, Any] = loads_repairing_escapes(body)
                         self._store_token_response(result)
                         return result
 
                     if resp.status == 400:  # noqa: PLR2004
-                        error_data = json.loads(body)
+                        error_data = loads_repairing_escapes(body)
                         error = error_data.get("error", "")
 
                         if error == "authorization_pending":
@@ -262,7 +299,19 @@ class ActronAirNeoAuth:
         """Ensure a valid access token is available, refreshing if needed."""
         async with self._refresh_lock:
             if not self.is_token_valid:
-                await self.refresh_access_token()
+                try:
+                    await self.refresh_access_token()
+                except AuthenticationError:
+                    # Aligned with kclif9/actronneoapi PR #59: if proactive
+                    # refresh fails while the token is still within its actual
+                    # unbuffered expiry window, log and continue using it.
+                    if self._is_token_actually_unexpired:
+                        _LOGGER.warning(
+                            "Proactive token refresh failed, but current access "
+                            "token has not yet expired; continuing with existing token"
+                        )
+                        return
+                    raise
 
     async def get_auth_headers(self) -> dict[str, str]:
         """Get authorization headers with a valid token."""
@@ -275,7 +324,7 @@ class ActronAirNeoAuth:
             msg = "No refresh token available"
             raise AuthenticationError(msg)
 
-        url = f"{API_URL}{ENDPOINT_OAUTH_TOKEN}"
+        url = f"{self.base_url}{ENDPOINT_OAUTH_TOKEN}"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "grant_type": "refresh_token",
@@ -309,20 +358,24 @@ class ActronAirNeoAuth:
     # ── Internal helpers ─────────────────────────────────────────
 
     def _store_token_response(self, response: dict[str, Any]) -> None:
-        """Extract and store tokens from an API response."""
-        access_token = response.get("access_token")
-        if not access_token:
+        """Extract and store tokens from an API response using Pydantic validation."""
+        try:
+            parsed = TokenResponse.model_validate(response)
+        except ValidationError as err:
+            msg = "No access token in response"
+            raise AuthenticationError(msg) from err
+
+        if not parsed.access_token:
             msg = "No access token in response"
             raise AuthenticationError(msg)
 
-        expires_in = response.get("expires_in", 3600)
-        self.access_token = access_token
-        self.refresh_token_value = response.get(
-            "refresh_token", self.refresh_token_value
+        now = datetime.now(UTC)
+        self.access_token = parsed.access_token
+        self.refresh_token_value = parsed.refresh_token or self.refresh_token_value
+        self.token_expires_at = now + timedelta(
+            seconds=parsed.expires_in - TOKEN_EXPIRY_BUFFER
         )
-        self.token_expires_at = datetime.now() + timedelta(  # noqa: DTZ005
-            seconds=expires_in - TOKEN_EXPIRY_BUFFER
-        )
+        self._actual_token_expires_at = now + timedelta(seconds=parsed.expires_in)
 
     async def _make_auth_request(
         self, method: str, url: str, **kwargs: Any
@@ -338,7 +391,7 @@ class ActronAirNeoAuth:
                 response_text = await response.text()
 
                 if response.status == 200:  # noqa: PLR2004
-                    return json.loads(response_text)
+                    return loads_repairing_escapes(response_text)
 
                 error_msg = f"Auth request failed: {response.status}, {response_text}"
                 raise AuthenticationError(error_msg)  # noqa: TRY301

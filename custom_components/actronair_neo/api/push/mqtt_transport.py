@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import inspect
 import json
 import logging
 import ssl
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from aiomqtt import Client, MqttError
@@ -17,6 +19,7 @@ from custom_components.actronair_neo.api.const import (
     MQTT_PLATFORM_NEO,
     MQTT_RECONNECT_INITIAL,
     MQTT_RECONNECT_MAX,
+    MQTT_TOPIC_APP_CMD,
     MQTT_TOPIC_CMD_RESPONSE,
     MQTT_TOPIC_FULL_STATUS,
     MQTT_TOPIC_HEART_BEAT,
@@ -25,6 +28,7 @@ from custom_components.actronair_neo.api.const import (
 )
 
 from .base import PushTransport
+from .merge import loads_repairing_escapes
 from .models import PushState
 
 if TYPE_CHECKING:
@@ -48,12 +52,16 @@ class MqttPushTransport(PushTransport):
         on_update: UpdateSink,
         ssl_context: ssl.SSLContext | None = None,
         client_factory: Callable[[str], Client] | None = None,
+        username: str = "",
+        client_id: str | None = None,
     ) -> None:
         """Initialise the transport (no connection is opened here)."""
         super().__init__()
         self._details = details
         self._token_provider = token_provider
         self._on_update = on_update
+        self._username = username
+        self._client_id = client_id
         # A certifi-backed SSL context built off the event loop by the caller.
         # Building it here would do blocking file I/O inside the loop and fall
         # back to the OS trust store, which fails to verify the broker cert
@@ -68,6 +76,7 @@ class MqttPushTransport(PushTransport):
         self._reconnect_initial: float = MQTT_RECONNECT_INITIAL
         self._reconnect_max: float = MQTT_RECONNECT_MAX
         base = f"{MQTT_TOPIC_PREFIX}/{details.user_id}/{MQTT_PLATFORM_NEO}/{serial}"
+        self._app_cmd_topic = f"{base}/{MQTT_TOPIC_APP_CMD}"
         self._topics = [
             f"{base}/{MQTT_TOPIC_FULL_STATUS}",
             f"{base}/{MQTT_TOPIC_STATUS_CHANGE}",
@@ -78,16 +87,15 @@ class MqttPushTransport(PushTransport):
 
     def _default_client_factory(self, token: str) -> Client:
         """Build an aiomqtt client for the discovered broker."""
+        identifier = self._client_id or uuid.uuid4().hex
         kwargs: dict[str, Any] = {
-            "username": "",
+            "username": self._username,
             "password": token,
             "keepalive": MQTT_KEEPALIVE,
-            "identifier": uuid.uuid4().hex,
-            # A fresh random identifier is used on every (re)connect and topics
-            # are re-subscribed each time, so there is no session to resume.
-            # Use a clean session to avoid leaving orphaned persistent sessions
-            # on the broker after each reconnect.
-            "clean_session": True,
+            "identifier": identifier,
+            # When an explicit client_id is provided, allow persistent sessions;
+            # otherwise use a clean session for ephemeral random identifiers.
+            "clean_session": self._client_id is None,
         }
         if self._details.uses_tls:
             # Prefer the injected certifi-backed context; only fall back to a
@@ -96,14 +104,38 @@ class MqttPushTransport(PushTransport):
             kwargs["tls_context"] = self._ssl_context or ssl.create_default_context()
         return Client(self._details.endpoint, self._details.port, **kwargs)
 
+    async def _request_full_status(self, client: Any) -> None:
+        """
+        Publish a ``getAll`` request to prompt an immediate full-status broadcast.
+
+        Neo wall controllers only emit ``full-status-broadcast`` periodically
+        (~15 min) unless prompted on ``.../app/cmd`` upon connect/reconnect
+        (aligned with kclif9/actronneoapi v0.5.16 / PR #98).
+        """
+        publish_fn = getattr(client, "publish", None)
+        if not callable(publish_fn):
+            return
+        client_id_prefix = self._client_id or "HA"
+        payload = json.dumps(
+            {
+                "command": {"type": "getAll"},
+                "correlationId": f"{client_id_prefix}/{uuid.uuid4()}",
+                "OptOutOfLogging": False,
+            }
+        )
+        with contextlib.suppress(Exception):
+            result = publish_fn(self._app_cmd_topic, payload=payload)
+            if inspect.isawaitable(result):
+                await result
+
     async def _dispatch(self, topic: str, payload: bytes) -> None:
         """Route one incoming MQTT message to the sink or heartbeat tracker."""
         if topic.endswith(MQTT_TOPIC_HEART_BEAT):
-            self._last_heartbeat = datetime.now()  # noqa: DTZ005
+            self._last_heartbeat = datetime.now(UTC)
             self._state = PushState.CONNECTED
             return
         try:
-            data = json.loads(payload.decode("utf-8"))
+            data = loads_repairing_escapes(payload.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             _LOGGER.debug("Dropping undecodable push message on %s", topic)
             return
@@ -166,6 +198,7 @@ class MqttPushTransport(PushTransport):
                     delay = self._reconnect_initial
                     for topic in self._topics:
                         await client.subscribe(topic)
+                    await self._request_full_status(client)
                     async for message in client.messages:
                         await self._dispatch(str(message.topic), message.payload)  # type: ignore[arg-type]
             except asyncio.CancelledError:

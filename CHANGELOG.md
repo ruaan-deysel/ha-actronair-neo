@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.9.0] - 2026-09-28
+
+### Added
+
+- **Full `actronneoapi` (`v0.5.16` + PR #95 / Issue #99) Alignment**:
+  - **MQTT `getAll` Full-Status Request on Connect**: Automatically publishes a `getAll` command to `<type>/<serial>/<user_id>/app/cmd` upon MQTT connect and reconnect (`actronneoapi` `v0.5.16`), ensuring fresh full-system telemetry immediately when realtime push attaches.
+  - **Authenticated MQTT Session & Account Email Discovery**: Added `get_account_email()` (`/api/v0/client/account`) and persistent MQTT `client_id` / `username` support (`actronneoapi` PR #91, #94).
+  - **HAL `_links` Discovery**: Extracts and resolves `ac-status`, `commands`, and `rtc-details` hypermedia links per device from the systems endpoint (`actronneoapi` PR #8).
+  - **Dynamic `ModeSupport` & `UserSetpointLimits` (`NV_Limits`)**: Parses `MasterWCModel.ModeSupport` (`Cool`, `Heat`, `Fan`, `Auto`, `Dry`) and `NV_Limits.UserSetpoint_oC` (`setCool_Min`, `setCool_Max`, `setHeat_Min`, `setHeat_Max`, plus signed `VarianceAboveMaster*` / `VarianceBelowMaster*` from `actronneoapi` PR #95) for accurate master and per-zone temperature bounds on Neo and Que/NX-Gen systems.
+  - **Expanded `ZoneCapabilities` Hardware Flags**: Exposed `NV_VAV`, `NV_ITC`, `NV_ITD`, `NV_IHD`, and `NV_IAC` zone flags (`actronneoapi` PR #62).
+- **Energy Sensor State Restoration**: `ActronCompressorEnergySensor` now inherits from `RestoreSensor` and restores accumulated kWh across Home Assistant restarts.
+
+### Fixed
+
+- **Malformed Firmware JSON Escapes in Push Payloads**: Added `loads_repairing_escapes()` to repair invalid `\'` apostrophe escape sequences emitted by Actron firmware (`actronneoapi` `v0.5.15` / PR #96).
+- **Push Event Path Un-flattening & `full-status-broadcast` Merging**:
+  - Preserved `<serial>` peripheral keys without splitting on internal dots and padded boolean arrays (`EnabledZones[n]`) with `False` instead of `{}` (`actronneoapi` PR #90, #93).
+  - Fixed `_handle_push_update` so `full-status-broadcast` payloads are deep-merged into `lastKnownState` rather than treated as dotted path deltas (`actronneoapi` PR #90).
+- **Integer `OutdoorUnit.ModelNumber` & Numeric `SoftwareVersion` Coercion**: Added Pydantic v2 `@field_validator`s to coerce integer `ModelNumber` (`0`), numeric `SoftwareVersion`, `Signal_of3`, and `3000.0` temperature sentinels (`actronneoapi` PR #89, Issue #99).
+- **NTW-Series Power Telemetry Scaling**: Hardened compressor power (`CompPower`) scaling for `NTW`-series outdoor units when `CompPower < 10.0` kW (`actronneoapi` PR #88).
+- **Proactive OAuth2 Token Refresh Grace Fallback**: If a proactive token refresh fails due to a transient network error while the existing token is still within its unbuffered validity window, the existing token is reused rather than failing the update cycle (`actronneoapi` PR #59).
+- **Bulk Zone Operations Service Logging**: Fixed `KeyError: 'zone'` when logging failed zone operations in `_handle_bulk_zone_operation`.
+- **Diagnostics Redaction**: Added `serial_number`, `SerialNumber`, `MasterSerial`, and `system_id` to `TO_REDACT` in `diagnostics.py` so serial numbers in `entry.data` and nested payloads are never exposed.
+
+### Changed
+
+- **Pydantic v2 Validation Across API, Push, Coordinator & Presets**:
+  - Converted `RealtimeConnectionDetails` and `DeviceCodeResponse` to Pydantic v2 `BaseModel`s with `ConfigDict` and `AliasChoices`.
+  - Validated coordinator `MainData`, `ZoneData`, and `OutdoorUnitData` and `zone_presets.py` storage schemas with Pydantic v2 `BaseModel.model_validate()`.
+- **Home Assistant 2026.9 Best Practices**:
+  - Passed `config_entry` explicitly to `ActronDataCoordinator` (`DataUpdateCoordinator`) and wired `translation_domain` / `translation_key` / `translation_placeholders` into `ActronAirNeoError` (`HomeAssistantError`).
+
 ## [2026.6.2] - 2026-06-12
 
 ### Fixed

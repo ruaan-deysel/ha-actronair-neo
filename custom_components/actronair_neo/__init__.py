@@ -237,6 +237,7 @@ async def async_setup_entry(
         DEFAULT_REFRESH_INTERVAL,
         enable_zone_control=entry.options.get(CONF_ENABLE_ZONE_CONTROL, False),
         enable_push=entry.options.get(CONF_ENABLE_PUSH, DEFAULT_ENABLE_PUSH),
+        config_entry=entry,
     )
 
     await coordinator.async_config_entry_first_refresh()
@@ -247,16 +248,24 @@ async def async_setup_entry(
     with contextlib.suppress(HomeAssistantError, KeyError, TypeError):
         await async_migrate_entities(hass, entry)
 
+    await coordinator.async_initialize_zone_management()
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(update_listener))
-
-    await coordinator.async_initialize_zone_management()
 
     await coordinator.async_start_push()
     entry.async_on_unload(coordinator.async_stop_push)
 
     # Schedule repairs check.
-    hass.async_create_task(repairs.async_check_issues(hass, entry))
+    create_bg_task = getattr(entry, "async_create_background_task", None)
+    if callable(create_bg_task):
+        create_bg_task(
+            hass,
+            repairs.async_check_issues(hass, entry),
+            f"{DOMAIN}_repairs_{entry.entry_id}",
+        )
+    else:
+        hass.async_create_task(repairs.async_check_issues(hass, entry))
     return True
 
 
@@ -502,7 +511,11 @@ async def _handle_bulk_zone_operation(call: ServiceCall) -> None:
         results = await coordinator.async_bulk_zone_operation(
             operation, zones, **kwargs
         )
-        failed = [r["zone"] for r in results if r["status"] != "success"]
+        failed = [
+            r.get("zone_id", r.get("zone", "unknown"))
+            for r in results
+            if r["status"] != "success"
+        ]
         if failed:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,

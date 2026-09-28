@@ -21,6 +21,20 @@ from homeassistant.helpers.update_coordinator import (  # type: ignore[import-un
 )
 
 from .api.const import HEARTBEAT_STALE_AFTER, MIN_FAN_MODE_INTERVAL
+from .api.models import (
+    FALLBACK_SUPPORTED_MODES,
+    ModeSupport,
+    UserSetpointLimits,
+)
+from .api.models import (
+    MainData as MainDataModel,
+)
+from .api.models import (
+    OutdoorUnitData as OutdoorUnitDataModel,
+)
+from .api.models import (
+    ZoneData as ZoneDataModel,
+)
 from .api.push import PushTransport, create_push_transport
 from .api.push.merge import apply_event_paths, deep_merge
 from .api.push.models import PushState
@@ -54,6 +68,7 @@ from .ssl_helper import async_get_mqtt_ssl_context
 from .zone_presets import ZonePresetManager
 
 if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry  # type: ignore[import-untyped]
     from homeassistant.core import HomeAssistant  # type: ignore[import-untyped]
 
     from .api import ActronAirNeoApiClient
@@ -75,6 +90,13 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _now_matching(reference: datetime.datetime | None = None) -> datetime.datetime:
+    """Return current datetime matching tz-awareness of reference."""
+    if reference is not None and reference.tzinfo is not None:
+        return datetime.datetime.now(datetime.UTC)
+    return datetime.datetime.now()  # noqa: DTZ005
+
+
 class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
     """Class to manage fetching ActronAir Neo data."""
 
@@ -87,6 +109,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         *,
         enable_zone_control: bool,
         enable_push: bool = DEFAULT_ENABLE_PUSH,
+        config_entry: ConfigEntry | None = None,
     ) -> None:
         """
         Initialize the data coordinator.
@@ -98,11 +121,13 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             update_interval: Update interval in seconds
             enable_zone_control: Whether zone control is enabled
             enable_push: Whether realtime MQTT push transport is enabled
+            config_entry: Optional ConfigEntry associated with this coordinator
 
         """
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=update_interval),
         )
@@ -570,6 +595,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             "peripherals": last_known_state.get("AirconSystem", {}).get(
                 "Peripherals", []
             ),
+            "nv_limits": last_known_state.get("NV_Limits", {}),
             "device_section": device_section,
         }
 
@@ -619,8 +645,38 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         if model in NEO_SERIES_WC:
             model = indoor_unit.get("NV_ModelNumber", "")
 
-        # Create main data structure
-        main_data: MainData = {  # type: ignore[assignment]
+        # Parse hardware ModeSupport (kclif9/actronneoapi PR #61, #69)
+        raw_mode_support = user_aircon_settings.get("ModeSupport")
+        if isinstance(raw_mode_support, dict):
+            mode_support = ModeSupport.model_validate(raw_mode_support)
+            supported_hvac_modes = mode_support.supported_modes
+        else:
+            supported_hvac_modes = list(FALLBACK_SUPPORTED_MODES)
+            if self._detect_dry_mode_support(user_aircon_settings):
+                supported_hvac_modes.append("DRY")
+
+        # Parse NV_Limits.UserSetpoint_oC (kclif9/actronneoapi PR #70 & PR #95)
+        nv_limits_raw = data_sections.get("nv_limits", {})
+        user_setpoint_limits_raw: Any = (
+            cast("dict[str, Any]", nv_limits_raw).get("UserSetpoint_oC", {})
+            if isinstance(nv_limits_raw, dict)
+            else {}
+        )
+        setpoint_limits = UserSetpointLimits.model_validate(
+            user_setpoint_limits_raw
+            if isinstance(user_setpoint_limits_raw, dict)
+            else {}
+        )
+        zone_variance_raw = user_aircon_settings.get(
+            "ZoneTemperatureSetpointVariance_oC", 0.0
+        )
+        try:
+            zone_temp_variance = float(zone_variance_raw or 0.0)
+        except (TypeError, ValueError):
+            zone_temp_variance = 0.0
+
+        # Create and validate main data structure via Pydantic v2
+        raw_main_data = {
             "is_on": user_aircon_settings.get("isOn", False),
             "mode": user_aircon_settings.get("Mode", "OFF"),
             "fan_mode": fan_mode,
@@ -638,11 +694,13 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             "compressor_state": live_aircon.get("CompressorMode", "OFF"),
             "EnabledZones": user_aircon_settings.get("EnabledZones", []),
             "away_mode": user_aircon_settings.get("AwayMode", False),
-            "quiet_mode": user_aircon_settings.get("QuietMode", False),
+            "quiet_mode": user_aircon_settings.get(
+                "QuietMode", user_aircon_settings.get("QuietModeEnabled", False)
+            ),
             "model": model,
             "indoor_model": indoor_unit.get("NV_ModelNumber"),
             "serial_number": aircon_system.get("MasterSerial"),
-            "firmware_version": aircon_system.get("MasterWCFirmwareVersion"),
+            "firmware_version": aircon_system.get("MasterWCFirmwareVersion") or "",
             "filter_clean_required": alerts.get("CleanFilter", False),
             "defrosting": alerts.get("Defrosting", False),
             # Extended API coverage fields
@@ -673,9 +731,26 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             ).get("Time", "NA"),
             "warnings": self._parse_warnings(live_aircon),
             "dry_mode_supported": self._detect_dry_mode_support(user_aircon_settings),
+            "supported_hvac_modes": supported_hvac_modes,
+            "min_temp_cool": setpoint_limits.set_cool_min,
+            "max_temp_cool": setpoint_limits.set_cool_max,
+            "min_temp_heat": setpoint_limits.set_heat_min,
+            "max_temp_heat": setpoint_limits.set_heat_max,
+            "zone_temp_variance": zone_temp_variance,
+            "variance_above_cool": setpoint_limits.variance_above_cool,
+            "variance_below_cool": setpoint_limits.variance_below_cool,
+            "variance_above_heat": setpoint_limits.variance_above_heat,
+            "variance_below_heat": setpoint_limits.variance_below_heat,
         }
-
-        return main_data
+        validated_main = MainDataModel.model_validate(raw_main_data).model_dump(
+            by_alias=True
+        )
+        # Preserve original serial_number None vs string semantics
+        if aircon_system.get("MasterSerial") is None:
+            validated_main["serial_number"] = None
+        if aircon_system.get("MasterWCFirmwareVersion") is None:
+            validated_main["firmware_version"] = None  # type: ignore[typeddict-item]
+        return cast("MainData", validated_main)
 
     async def _parse_zones_data(
         self, data_sections: dict[str, Any]
@@ -695,8 +770,12 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         peripherals = data_sections["peripherals"]
         user_aircon_settings = data_sections["user_aircon_settings"]
 
-        for i, zone in enumerate(remote_zone_info):
-            if i < MAX_ZONES:
+        if not isinstance(remote_zone_info, list):
+            return zones
+
+        for i, zone_raw in enumerate(cast("list[Any]", remote_zone_info)):
+            if i < MAX_ZONES and isinstance(zone_raw, dict):
+                zone = cast("dict[str, Any]", zone_raw)
                 zone_id = f"zone_{i + 1}"
 
                 # Get zone capabilities including existence check
@@ -704,7 +783,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
 
                 if capabilities.exists:
                     # Create base zone data
-                    zone_data = {
+                    zone_data: dict[str, Any] = {
                         "name": zone.get("NV_Title", f"Zone {i + 1}"),
                         "temp": zone.get("LiveTemp_oC"),
                         "setpoint": zone.get("TemperatureSetpoint_oC"),
@@ -742,7 +821,10 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
                         zone, zone_data, capabilities, peripherals
                     )
 
-                    zones[zone_id] = cast("ZoneData", zone_data)
+                    validated_zone = ZoneDataModel.model_validate(zone_data)
+                    dumped_zone = validated_zone.model_dump()
+                    dumped_zone["capabilities"] = validated_zone.capabilities
+                    zones[zone_id] = cast("ZoneData", dumped_zone)
 
         return zones
 
@@ -866,33 +948,34 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         else:
             comp_power = raw_comp_power
 
+        raw_outdoor = {
+            "comp_power": comp_power,
+            "compressor_on": ou_live.get("CompressorOn", False),
+            "comp_speed": ou_live.get("CompSpeed", 0),
+            "coil_temp": ou_live.get("CoilTemp"),
+            "amb_temp": ou_live.get("AmbTemp"),
+            "supply_voltage": supply_voltage,
+            "supply_current": supply_current,
+            "supply_power": supply_power,
+            "reverse_valve_position": ou_live.get("ReverseValvePosition", "Unknown"),
+            "defrost_mode": ou_live.get("DefrostMode", 0),
+            "drm": ou_live.get("DRM", False),
+            "err_codes": [
+                ou_live.get("ErrCode_1", 0),
+                ou_live.get("ErrCode_2", 0),
+                ou_live.get("ErrCode_3", 0),
+                ou_live.get("ErrCode_4", 0),
+                ou_live.get("ErrCode_5", 0),
+            ],
+            "family": ou_system.get("Family", ""),
+            "ctrl_board_type": ou_system.get("CtrlBoardType", ""),
+            "capacity_kw": ou_system.get("Capacity_kW", 0),
+            "model_number": ou_system.get("ModelNumber", ""),
+            "software_version": ou_system.get("SoftwareVersion", ""),
+        }
         return cast(
             "OutdoorUnitData",
-            {
-                "comp_power": comp_power,
-                "compressor_on": ou_live.get("CompressorOn", False),
-                "comp_speed": ou_live.get("CompSpeed", 0),
-                "coil_temp": ou_live.get("CoilTemp"),
-                "amb_temp": ou_live.get("AmbTemp"),
-                "supply_voltage": supply_voltage,
-                "supply_current": supply_current,
-                "supply_power": supply_power,
-                "reverse_valve_position": ou_live.get(
-                    "ReverseValvePosition", "Unknown"
-                ),
-                "defrost_mode": ou_live.get("DefrostMode", 0),
-                "drm": ou_live.get("DRM", False),
-                "err_codes": [
-                    ou_live.get("ErrCode_1", 0),
-                    ou_live.get("ErrCode_2", 0),
-                    ou_live.get("ErrCode_3", 0),
-                    ou_live.get("ErrCode_4", 0),
-                    ou_live.get("ErrCode_5", 0),
-                ],
-                "family": ou_system.get("Family", ""),
-                "ctrl_board_type": ou_system.get("CtrlBoardType", ""),
-                "capacity_kw": ou_system.get("Capacity_kW", 0),
-            },
+            OutdoorUnitDataModel.model_validate(raw_outdoor).model_dump(),
         )
 
     @staticmethod
@@ -1004,9 +1087,23 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
                     deep_merge(prior_state, incoming) if prior_state else incoming
                 )
             elif isinstance(event, dict):
-                merged_state = apply_event_paths(
-                    prior_state, cast("dict[str, Any]", event)
-                )
+                event_dict = cast("dict[str, Any]", event)
+                event_type = event_dict.get("type")
+                if event_type == "full-status-broadcast":
+                    # Neo /mwc/full-status wraps the nested state dict inside
+                    # payload["event"] with type="full-status-broadcast"
+                    # (kclif9/actronneoapi PR #90). Merge it recursively rather
+                    # than treating keys as flat dotted paths.
+                    full_event_state = {
+                        k: v for k, v in event_dict.items() if k != "type"
+                    }
+                    merged_state = (
+                        deep_merge(prior_state, full_event_state)
+                        if prior_state
+                        else full_event_state
+                    )
+                else:
+                    merged_state = apply_event_paths(prior_state, event_dict)
             else:
                 # Tolerate a bare-state payload without a recognised wrapper.
                 bare = {k: v for k, v in payload.items() if k != "lastKnownState"}
@@ -1106,6 +1203,11 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             self._push_task = None
 
     @property
+    def push_transport(self) -> PushTransport | None:
+        """Return the active push transport instance, if any."""
+        return self._push_transport
+
+    @property
     def push_state(self) -> PushState:
         """Return the current push health state for diagnostics."""
         if not self.enable_push or self._push_transport is None:
@@ -1114,8 +1216,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         if (
             self._push_transport.state is PushState.CONNECTED
             and last is not None
-            and (datetime.datetime.now() - last).total_seconds()  # noqa: DTZ005
-            > HEARTBEAT_STALE_AFTER
+            and (_now_matching(last) - last).total_seconds() > HEARTBEAT_STALE_AFTER
         ):
             return PushState.STALE
         return self._push_transport.state

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -688,7 +690,7 @@ class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
         super().__init__(
             coordinator, "sensor", "Performance Metrics", is_diagnostic=True
         )
-        self._attr_native_unit_of_measurement = "%"
+        self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_device_class = None
         self._attr_state_class = None
         # Explicitly disable polling - coordinator handles updates
@@ -909,7 +911,7 @@ class ActronCompressorPowerSensor(ActronAirNeoEntity, SensorEntity):
             return {"error": "Failed to retrieve power data"}
 
 
-class ActronCompressorEnergySensor(ActronAirNeoEntity, SensorEntity):
+class ActronCompressorEnergySensor(ActronAirNeoEntity, RestoreSensor):
     """Compressor energy sensor for energy dashboard compatibility."""
 
     _attr_translation_key = "compressor_energy"
@@ -925,6 +927,15 @@ class ActronCompressorEnergySensor(ActronAirNeoEntity, SensorEntity):
         self._last_power = 0.0
         self._last_update: datetime | None = None
         self._total_energy = 0.0
+
+    async def async_added_to_hass(self) -> None:
+        """Restore previous total energy consumption state on startup."""
+        await super().async_added_to_hass()
+        if (
+            last_sensor_data := await self.async_get_last_sensor_data()
+        ) is not None and last_sensor_data.native_value is not None:
+            with contextlib.suppress(ValueError, TypeError):
+                self._total_energy = max(0.0, float(str(last_sensor_data.native_value)))
 
     @property
     def native_value(self) -> float | None:

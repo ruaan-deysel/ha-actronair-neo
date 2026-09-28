@@ -77,7 +77,7 @@ else
     log_header "Running tests"
 fi
 echo ""
-pytest "${COVERAGE_ARGS[@]}" "${PYTEST_ARGS[@]}"
+pytest ${COVERAGE_ARGS[@]+"${COVERAGE_ARGS[@]}"} ${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}
 
 if [[ ${#COVERAGE_ARGS[@]} -gt 0 ]] && [[ " ${COVERAGE_ARGS[*]} " =~ " --cov-report=html " ]]; then
     echo ""

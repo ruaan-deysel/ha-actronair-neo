@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .const import DOMAIN
 from .exceptions import ConfigurationError
@@ -18,6 +19,43 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
+
+
+class ZonePresetData(BaseModel):
+    """Pydantic v2 schema for validating persisted zone presets."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    zones: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    description: str = ""
+    created_at: datetime = Field(default_factory=dt_util.utcnow)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def _parse_created_at(cls, value: Any) -> datetime:
+        """Coerce ISO timestamp strings or invalid values to a UTC datetime."""
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str) and value:
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return dt_util.utcnow()
+        return dt_util.utcnow()
+
+
+class ZoneScheduleData(BaseModel):
+    """Pydantic v2 schema for validating persisted zone schedules."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    preset_name: str
+    time_start: time
+    time_end: time
+    days: list[int]
+    enabled: bool = True
 
 
 class ZonePreset:
@@ -57,19 +95,13 @@ class ZonePreset:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ZonePreset:
-        """Create preset from dictionary."""
-        created_at = None
-        if data.get("created_at"):
-            try:
-                created_at = datetime.fromisoformat(data["created_at"])
-            except ValueError:
-                created_at = dt_util.utcnow()
-
+        """Create preset from dictionary using Pydantic v2 validation."""
+        validated = ZonePresetData.model_validate(data)
         return cls(
-            name=data["name"],
-            zones=data["zones"],
-            description=data.get("description", ""),
-            created_at=created_at,
+            name=validated.name,
+            zones=validated.zones,
+            description=validated.description,
+            created_at=validated.created_at,
         )
 
 
@@ -118,14 +150,15 @@ class ZoneSchedule:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ZoneSchedule:
-        """Create schedule from dictionary."""
+        """Create schedule from dictionary using Pydantic v2 validation."""
+        validated = ZoneScheduleData.model_validate(data)
         return cls(
-            name=data["name"],
-            preset_name=data["preset_name"],
-            time_start=time.fromisoformat(data["time_start"]),
-            time_end=time.fromisoformat(data["time_end"]),
-            days=data["days"],
-            enabled=data.get("enabled", True),
+            name=validated.name,
+            preset_name=validated.preset_name,
+            time_start=validated.time_start,
+            time_end=validated.time_end,
+            days=validated.days,
+            enabled=validated.enabled,
         )
 
     def is_active_now(self) -> bool:

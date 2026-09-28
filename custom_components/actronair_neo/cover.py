@@ -59,10 +59,11 @@ class ActronZoneDamperCover(ActronZoneEntity, CoverEntity):
 
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
         """Initialize the zone damper cover entity."""
+        zone_info = coordinator.data.get("zones", {}).get(zone_id)
         zone_name = (
-            coordinator.data.get("zones", {})
-            .get(zone_id, {})
-            .get("name", f"Zone {zone_id}")
+            zone_info.get("name", f"Zone {zone_id}")
+            if zone_info is not None
+            else f"Zone {zone_id}"
         )
         super().__init__(
             coordinator,
@@ -86,11 +87,13 @@ class ActronZoneDamperCover(ActronZoneEntity, CoverEntity):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        zone_data = self.coordinator.data["zones"].get(self.zone_id, {})
+        zone_data = self.coordinator.data["zones"].get(self.zone_id)
+        if zone_data is None:
+            return False
         return (
             self.coordinator.last_update_success
-            and zone_data.get("airflow_control_enabled", False)
-            and not zone_data.get("airflow_control_locked", False)
+            and bool(zone_data.get("airflow_control_enabled", False))
+            and not bool(zone_data.get("airflow_control_locked", False))
         )
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
@@ -111,7 +114,9 @@ class ActronZoneDamperCover(ActronZoneEntity, CoverEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
-        zone_data = self.coordinator.data["zones"].get(self.zone_id, {})
+        zone_data = self.coordinator.data["zones"].get(self.zone_id)
+        if zone_data is None:
+            return {"zone_id": self.zone_id}
         return {
             "zone_id": self.zone_id,
             "zone_name": zone_data.get("name"),

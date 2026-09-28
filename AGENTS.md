@@ -148,52 +148,54 @@ specification
 
 ## Integration Architecture
 
-This integration controls ActronAir Neo HVAC systems via cloud polling.
+This integration controls ActronAir Neo HVAC systems via cloud push (MQTT) with REST polling fallback (`iot_class: cloud_push`).
 
 ### File Structure
 
 ```text
 custom_components/actronair_neo/
 ├── __init__.py          # Integration setup (async_setup_entry, async_unload_entry)
-├── api.py               # Legacy API client (prefer api_wrapper.py for new code)
-├── api_wrapper.py       # Primary API client (zone management, AC commands)
-├── base_entity.py       # ActronAirNeoBaseEntity base class
+├── api/                 # API client package (client.py, auth.py, models.py, const.py, push/)
+├── entity.py            # ActronAirNeoEntity and ActronZoneEntity base classes
 ├── binary_sensor.py     # Binary sensor platform
 ├── climate.py           # Main climate platform (HVAC control)
-├── config_flow.py       # Configuration flow
+├── config_flow.py       # Configuration flow (OAuth2 device code flow)
 ├── const.py             # All constants (DOMAIN, modes, features)
 ├── coordinator.py       # DataUpdateCoordinator (ActronDataCoordinator)
+├── cover.py             # Cover platform (YourZone damper position control)
 ├── diagnostics.py       # Diagnostics (redact sensitive data!)
 ├── exceptions.py        # Custom exception hierarchy
+├── icons.json           # Entity MDI icon mappings
 ├── manifest.json        # Integration metadata
-├── number.py            # Number platform (temperature setpoints, zone limits)
+├── number.py            # Number platform (temperature setpoints, after-hours duration)
 ├── repairs.py           # Repair flows for issue recovery
-├── sensor.py            # Sensor platform (temperature, humidity, status)
+├── sensor.py            # Sensor platform (temperature, humidity, energy, status)
 ├── strings.json         # Translation source
-├── switch.py            # Switch platform (zone toggles, continuous fan, etc.)
-├── types.py             # TypedDict definitions for API responses
-├── zone_presets.py      # Zone preset management
+├── switch.py            # Switch platform (zone toggles, continuous fan, quiet, turbo)
+├── types.py             # Pydantic v2 models and TypedDict definitions for coordinator data
+├── zone_presets.py      # Zone preset and schedule management
 └── translations/
     └── en.json          # English translations
 ```
 
 ### Data Flow (CRITICAL)
 
-Entities → Coordinator → API Wrapper — Never skip layers
+Entities → Coordinator (`entry.runtime_data`) → API Client (`api/client.py`) — Never skip layers
 
 - **Entities:** Read `coordinator.data` only, never call API directly
-- **Coordinator:** Calls `api_wrapper.py`, transforms data, handles errors
-- **API Wrapper:** HTTP communication with ActronAir cloud, auth, command dispatch
+- **Coordinator:** Calls `api/client.py` and subscribes to `api/push/`, transforms data using Pydantic v2 models, handles errors
+- **API Client:** HTTP/MQTT communication with ActronAir cloud, OAuth2 auth, command dispatch
 
 ### Entity Platforms
 
 | Platform           | Purpose                                                    |
 | ------------------ | ---------------------------------------------------------- |
 | `climate.py`       | Main HVAC entity — mode, fan speed, setpoint, zones        |
+| `cover.py`         | Zone damper position control (`CoverDeviceClass.DAMPER`)   |
 | `sensor.py`        | Temperature, humidity, compressor, indoor/outdoor readings |
-| `binary_sensor.py` | On/off states (defrost, compressor on, away mode, etc.)    |
-| `switch.py`        | Zone toggles, continuous fan, quiet mode, away mode        |
-| `number.py`        | Zone temperature limits, fan time settings                 |
+| `binary_sensor.py` | On/off states (defrost, compressor on, warnings, etc.)     |
+| `switch.py`        | Zone toggles, continuous fan, quiet mode, turbo, after-hrs |
+| `number.py`        | Zone temperature limits, after-hours duration              |
 
 ### Zone Architecture
 

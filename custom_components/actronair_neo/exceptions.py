@@ -19,8 +19,14 @@ class ActronAirNeoError(HomeAssistantError):
     translation_key: str = "unknown_error"
 
     def __init__(self, message: str, *args: object) -> None:
-        """Initialize the base error."""
-        super().__init__(message, *args)
+        """Initialize the base error with Home Assistant translation metadata."""
+        super().__init__(
+            message,
+            *args,
+            translation_domain=self.translation_domain,
+            translation_key=self.translation_key,
+            translation_placeholders={"error": str(message)},
+        )
 
 
 class ApiError(ActronAirNeoError):

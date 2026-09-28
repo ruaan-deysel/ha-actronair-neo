@@ -26,6 +26,8 @@ def create_push_transport(  # noqa: PLR0913
     token_provider: TokenProvider,
     on_update: UpdateSink,
     ssl_context: ssl.SSLContext | None = None,
+    username: str = "",
+    client_id: str | None = None,
 ) -> PushTransport | None:
     """Return a push transport for the platform, or None if unsupported."""
     if platform == "neo":
@@ -38,6 +40,8 @@ def create_push_transport(  # noqa: PLR0913
             token_provider=token_provider,
             on_update=on_update,
             ssl_context=ssl_context,
+            username=username,
+            client_id=client_id,
         )
     _LOGGER.info(
         "Realtime push not yet implemented for platform %r; polling only", platform

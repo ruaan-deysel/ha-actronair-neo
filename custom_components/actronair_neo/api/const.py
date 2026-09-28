@@ -35,6 +35,7 @@ DEVICE_CODE_POLL_INTERVAL: Final = 5  # seconds
 
 # API endpoints
 ENDPOINT_OAUTH_TOKEN: Final = "/api/v0/oauth/token"  # noqa: S105
+ENDPOINT_ACCOUNT: Final = "/api/v0/client/account"
 ENDPOINT_AC_SYSTEMS: Final = "/api/v0/client/ac-systems"
 ENDPOINT_AC_STATUS: Final = "/api/v0/client/ac-systems/status/latest"
 ENDPOINT_AC_COMMANDS: Final = "/api/v0/client/ac-systems/cmds/send"
@@ -57,6 +58,7 @@ MQTT_PLATFORM_NEO: Final = "neo"
 MQTT_TOPIC_FULL_STATUS: Final = "mwc/full-status"
 MQTT_TOPIC_STATUS_CHANGE: Final = "mwc/status-change"
 MQTT_TOPIC_HEART_BEAT: Final = "mwc/heart-beat"
+MQTT_TOPIC_APP_CMD: Final = "app/cmd"
 # Command-response topic carries an ack/nack plus a status-change event. The
 # broker publishes to .../mwc/cmd-response/{machine}/{commandId}, so the
 # subscription needs two trailing single-level wildcards.

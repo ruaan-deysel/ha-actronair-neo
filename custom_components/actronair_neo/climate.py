@@ -93,7 +93,7 @@ async def async_setup_entry(
             if entry.unique_id.startswith(zone_prefixes):
                 entity_registry.async_remove(entry.entity_id)
 
-    async_add_entities(entities, update_before_add=True)
+    async_add_entities(entities)
 
 
 class ActronClimate(ActronAirNeoEntity, ClimateEntity):
@@ -117,15 +117,51 @@ class ActronClimate(ActronAirNeoEntity, ClimateEntity):
         )
 
     @property
+    def min_temp(self) -> float:
+        """Return the minimum temperature supported by the unit."""
+        try:
+            main_data = self.coordinator.data["main"]
+            if self.hvac_mode == HVACMode.HEAT:
+                return float(main_data.get("min_temp_heat", MIN_TEMP))
+            return float(main_data.get("min_temp_cool", MIN_TEMP))
+        except (KeyError, TypeError, ValueError):
+            return MIN_TEMP
+
+    @property
+    def max_temp(self) -> float:
+        """Return the maximum temperature supported by the unit."""
+        try:
+            main_data = self.coordinator.data["main"]
+            if self.hvac_mode == HVACMode.HEAT:
+                return float(main_data.get("max_temp_heat", MAX_TEMP))
+            return float(main_data.get("max_temp_cool", MAX_TEMP))
+        except (KeyError, TypeError, ValueError):
+            return MAX_TEMP
+
+    @property
     def hvac_modes(self) -> list[HVACMode]:
         """Return the list of available HVAC modes for this unit."""
-        modes = list(BASE_HVAC_MODES)
         try:
-            if self.coordinator.data["main"].get("dry_mode_supported", False):
+            main_data = self.coordinator.data["main"]
+            if supported := main_data.get("supported_hvac_modes"):
+                modes: list[HVACMode] = [HVACMode.OFF]
+                for actron_mode in supported:
+                    ha_mode = self._actron_to_ha_hvac_mode(actron_mode)
+                    if ha_mode not in modes:
+                        modes.append(ha_mode)
+                if (
+                    main_data.get("dry_mode_supported", False)
+                    and HVACMode.DRY not in modes
+                ):
+                    modes.append(HVACMode.DRY)
+                return modes
+            modes = list(BASE_HVAC_MODES)
+            if main_data.get("dry_mode_supported", False):
                 modes.append(HVACMode.DRY)
         except (KeyError, TypeError):
-            pass
-        return modes
+            return list(BASE_HVAC_MODES)
+        else:
+            return modes
 
     @property
     def fan_modes(self) -> list[str]:
@@ -347,6 +383,72 @@ class ActronZoneClimate(ActronZoneEntity, ClimateEntity):
                 features |= ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
 
         self._attr_supported_features = features
+
+    def _get_zone_temp_bounds(self) -> tuple[float, float]:
+        """Calculate zone min/max temperature bounds from master setpoint."""
+        try:
+            main_data = self.coordinator.data["main"]
+            mode = str(main_data.get("mode", "COOL")).upper()
+            is_heat = mode == "HEAT" or (
+                mode == "AUTO"
+                and str(main_data.get("compressor_state", "")).upper() == "HEAT"
+            )
+            abs_min = float(
+                main_data.get("min_temp_heat", MIN_TEMP)
+                if is_heat
+                else main_data.get("min_temp_cool", MIN_TEMP)
+            )
+            abs_max = float(
+                main_data.get("max_temp_heat", MAX_TEMP)
+                if is_heat
+                else main_data.get("max_temp_cool", MAX_TEMP)
+            )
+            master_target = (
+                main_data.get("temp_setpoint_heat")
+                if is_heat
+                else main_data.get("temp_setpoint_cool")
+            )
+            if not isinstance(master_target, (int, float)):
+                return abs_min, abs_max
+
+            variance = float(main_data.get("zone_temp_variance") or 0.0)
+            if variance > 0:
+                below = -abs(variance)
+                above = abs(variance)
+            else:
+                raw_below = (
+                    main_data.get("variance_below_heat")
+                    if is_heat
+                    else main_data.get("variance_below_cool")
+                )
+                raw_above = (
+                    main_data.get("variance_above_heat")
+                    if is_heat
+                    else main_data.get("variance_above_cool")
+                )
+                below = float(raw_below or 0.0)
+                above = float(raw_above or 0.0)
+                if below == 0.0 and above == 0.0:
+                    return abs_min, abs_max
+                below = -abs(below)
+                above = abs(above)
+
+            return (
+                max(abs_min, float(master_target) + below),
+                min(abs_max, float(master_target) + above),
+            )
+        except (KeyError, TypeError, ValueError):
+            return MIN_TEMP, MAX_TEMP
+
+    @property
+    def min_temp(self) -> float:
+        """Return the minimum temperature allowed for this zone."""
+        return self._get_zone_temp_bounds()[0]
+
+    @property
+    def max_temp(self) -> float:
+        """Return the maximum temperature allowed for this zone."""
+        return self._get_zone_temp_bounds()[1]
 
     @property
     def available(self) -> bool:

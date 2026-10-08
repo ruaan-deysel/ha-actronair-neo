@@ -19,7 +19,7 @@ https://nimbus.actronair.com.au
 ```
 
 > **Note**: ActronAir also operates a Que platform at `https://que.actronair.com.au`
-> with a similar API. The `actronneoapi` Python library supports both platforms
+> with a similar API. The integration supports both platforms
 > with auto-detection.
 
 ## Authentication

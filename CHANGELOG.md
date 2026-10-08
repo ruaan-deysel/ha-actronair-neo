@@ -13,16 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`actronneoapi` Alignment (PR #100, #101, #102 & #96)**:
-  - **Controller-Published Zone Setpoint Limits (PR #101)**: Parse `MinCoolSetpoint`, `MaxCoolSetpoint`, `MinHeatSetpoint`, and `MaxHeatSetpoint` published on `RemoteZoneInfo` by wall controllers.
-  - **Zone Temperature Bounds Resolution Hierarchy (PR #101)**: Implemented 3-step resolution order for zone climate entities:
-    1. Zone's own published limits (`MinHeatSetpoint`/`MaxHeatSetpoint` in heat mode, `MinCoolSetpoint`/`MaxCoolSetpoint` otherwise).
-    2. Master setpoint +/- `NV_Limits.UserSetpoint_oC` signed variances (`VarianceAboveMaster*`/`VarianceBelowMaster*`).
-    3. Master setpoint +/- legacy `zone_temp_variance`.
-       Always clamped to system min/max limits.
-  - **Outdoor Unit String Coercion for Identification Fields (PR #100)**: Coerce `SerialNumber`, `ModelNumber`, `Family`, and `SoftwareVersion` to string across Pydantic models and coordinator parsing, preventing validation failures when outdoor units return integer or null values (e.g., `"ModelNumber": 561` or numeric serials).
-  - **Que Realtime MQTT Broadcast & Flat Payload Support (PR #102)**: Support Que/NX-Gen `-broadcast` topic channels (`mwc/status-change-broadcast`, `mwc/full-status-broadcast`) and parse top-level flat deltas and bare state blocks.
-  - **Detailed JSON Parse Error Diagnostics (PR #96)**: Log offending fragment and position at warning level when incoming MQTT push payloads fail JSON parsing.
+- **Controller-Published Zone Setpoint Limits**: Parse `MinCoolSetpoint`, `MaxCoolSetpoint`, `MinHeatSetpoint`, and `MaxHeatSetpoint` published on `RemoteZoneInfo` by wall controllers.
+- **Zone Temperature Bounds Resolution Hierarchy**: Implemented 3-step resolution order for zone climate entities:
+  1. Zone's own published limits (`MinHeatSetpoint`/`MaxHeatSetpoint` in heat mode, `MinCoolSetpoint`/`MaxCoolSetpoint` otherwise).
+  2. Master setpoint +/- `NV_Limits.UserSetpoint_oC` signed variances (`VarianceAboveMaster*`/`VarianceBelowMaster*`).
+  3. Master setpoint +/- legacy `zone_temp_variance`.
+     Always clamped to system min/max limits.
+- **Outdoor Unit String Coercion for Identification Fields**: Coerce `SerialNumber`, `ModelNumber`, `Family`, and `SoftwareVersion` to string across Pydantic models and coordinator parsing, preventing validation failures when outdoor units return integer or null values (e.g., `"ModelNumber": 561` or numeric serials).
+- **Que Realtime MQTT Broadcast & Flat Payload Support**: Support Que/NX-Gen `-broadcast` topic channels (`mwc/status-change-broadcast`, `mwc/full-status-broadcast`) and parse top-level flat deltas and bare state blocks.
+- **Detailed JSON Parse Error Diagnostics**: Log offending fragment and position at warning level when incoming MQTT push payloads fail JSON parsing.
 
 ### Changed
 
@@ -33,23 +32,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Full `actronneoapi` (`v0.5.16` + PR #95 / Issue #99) Alignment**:
-  - **MQTT `getAll` Full-Status Request on Connect**: Automatically publishes a `getAll` command to `<type>/<serial>/<user_id>/app/cmd` upon MQTT connect and reconnect (`actronneoapi` `v0.5.16`), ensuring fresh full-system telemetry immediately when realtime push attaches.
-  - **Authenticated MQTT Session & Account Email Discovery**: Added `get_account_email()` (`/api/v0/client/account`) and persistent MQTT `client_id` / `username` support (`actronneoapi` PR #91, #94).
-  - **HAL `_links` Discovery**: Extracts and resolves `ac-status`, `commands`, and `rtc-details` hypermedia links per device from the systems endpoint (`actronneoapi` PR #8).
-  - **Dynamic `ModeSupport` & `UserSetpointLimits` (`NV_Limits`)**: Parses `MasterWCModel.ModeSupport` (`Cool`, `Heat`, `Fan`, `Auto`, `Dry`) and `NV_Limits.UserSetpoint_oC` (`setCool_Min`, `setCool_Max`, `setHeat_Min`, `setHeat_Max`, plus signed `VarianceAboveMaster*` / `VarianceBelowMaster*` from `actronneoapi` PR #95) for accurate master and per-zone temperature bounds on Neo and Que/NX-Gen systems.
-  - **Expanded `ZoneCapabilities` Hardware Flags**: Exposed `NV_VAV`, `NV_ITC`, `NV_ITD`, `NV_IHD`, and `NV_IAC` zone flags (`actronneoapi` PR #62).
+- **API & Protocol Enhancements**:
+  - **MQTT `getAll` Full-Status Request on Connect**: Automatically publishes a `getAll` command to `<type>/<serial>/<user_id>/app/cmd` upon MQTT connect and reconnect, ensuring fresh full-system telemetry immediately when realtime push attaches.
+  - **Authenticated MQTT Session & Account Email Discovery**: Added `get_account_email()` (`/api/v0/client/account`) and persistent MQTT `client_id` / `username` support.
+  - **HAL `_links` Discovery**: Extracts and resolves `ac-status`, `commands`, and `rtc-details` hypermedia links per device from the systems endpoint.
+  - **Dynamic `ModeSupport` & `UserSetpointLimits` (`NV_Limits`)**: Parses `MasterWCModel.ModeSupport` (`Cool`, `Heat`, `Fan`, `Auto`, `Dry`) and `NV_Limits.UserSetpoint_oC` (`setCool_Min`, `setCool_Max`, `setHeat_Min`, `setHeat_Max`, plus signed `VarianceAboveMaster*` / `VarianceBelowMaster*`) for accurate master and per-zone temperature bounds on Neo and Que/NX-Gen systems.
+  - **Expanded `ZoneCapabilities` Hardware Flags**: Exposed `NV_VAV`, `NV_ITC`, `NV_ITD`, `NV_IHD`, and `NV_IAC` zone flags.
 - **Energy Sensor State Restoration**: `ActronCompressorEnergySensor` now inherits from `RestoreSensor` and restores accumulated kWh across Home Assistant restarts.
 
 ### Fixed
 
-- **Malformed Firmware JSON Escapes in Push Payloads**: Added `loads_repairing_escapes()` to repair invalid `\'` apostrophe escape sequences emitted by Actron firmware (`actronneoapi` `v0.5.15` / PR #96).
+- **Malformed Firmware JSON Escapes in Push Payloads**: Added `loads_repairing_escapes()` to repair invalid `\'` apostrophe escape sequences emitted by Actron firmware.
 - **Push Event Path Un-flattening & `full-status-broadcast` Merging**:
-  - Preserved `<serial>` peripheral keys without splitting on internal dots and padded boolean arrays (`EnabledZones[n]`) with `False` instead of `{}` (`actronneoapi` PR #90, #93).
-  - Fixed `_handle_push_update` so `full-status-broadcast` payloads are deep-merged into `lastKnownState` rather than treated as dotted path deltas (`actronneoapi` PR #90).
-- **Integer `OutdoorUnit.ModelNumber` & Numeric `SoftwareVersion` Coercion**: Added Pydantic v2 `@field_validator`s to coerce integer `ModelNumber` (`0`), numeric `SoftwareVersion`, `Signal_of3`, and `3000.0` temperature sentinels (`actronneoapi` PR #89, Issue #99).
-- **NTW-Series Power Telemetry Scaling**: Hardened compressor power (`CompPower`) scaling for `NTW`-series outdoor units when `CompPower < 10.0` kW (`actronneoapi` PR #88).
-- **Proactive OAuth2 Token Refresh Grace Fallback**: If a proactive token refresh fails due to a transient network error while the existing token is still within its unbuffered validity window, the existing token is reused rather than failing the update cycle (`actronneoapi` PR #59).
+  - Preserved `<serial>` peripheral keys without splitting on internal dots and padded boolean arrays (`EnabledZones[n]`) with `False` instead of `{}`.
+  - Fixed `_handle_push_update` so `full-status-broadcast` payloads are deep-merged into `lastKnownState` rather than treated as dotted path deltas.
+- **Integer `OutdoorUnit.ModelNumber` & Numeric `SoftwareVersion` Coercion**: Added Pydantic v2 `@field_validator`s to coerce integer `ModelNumber` (`0`), numeric `SoftwareVersion`, `Signal_of3`, and `3000.0` temperature sentinels.
+- **NTW-Series Power Telemetry Scaling**: Hardened compressor power (`CompPower`) scaling for `NTW`-series outdoor units when `CompPower < 10.0` kW.
+- **Proactive OAuth2 Token Refresh Grace Fallback**: If a proactive token refresh fails due to a transient network error while the existing token is still within its unbuffered validity window, the existing token is reused rather than failing the update cycle.
 - **Bulk Zone Operations Service Logging**: Fixed `KeyError: 'zone'` when logging failed zone operations in `_handle_bulk_zone_operation`.
 - **Diagnostics Redaction**: Added `serial_number`, `SerialNumber`, `MasterSerial`, and `system_id` to `TO_REDACT` in `diagnostics.py` so serial numbers in `entry.data` and nested payloads are never exposed.
 

@@ -243,7 +243,7 @@ The integration successfully extracts and exposes **100+ data points** per syste
    - Plan SignalR implementation (don't implement yet)
 
 2. **Library Evaluation**
-   - Full evaluation of `actronneoapi` v0.5.11
+   - Evaluation of external library options
    - Cost-benefit analysis of migration
    - Risk assessment
 
@@ -254,10 +254,9 @@ The integration successfully extracts and exposes **100+ data points** per syste
 
 ### 🔴 Major Features (1-3 Months)
 
-1. **Migrate to actronneoapi Library**
-   - Refactor to use external library
-   - Implement multi-platform support
-   - Add Neo, Que, ACM-2 simultaneously
+1. **Multi-Platform Library Architecture**
+   - Implement multi-platform architecture
+   - Support Neo, Que, ACM-2 simultaneously
    - Full type safety with Pydantic
    - Reduce maintenance burden
 
@@ -308,7 +307,7 @@ The integration successfully extracts and exposes **100+ data points** per syste
    - Update explorer script README
 
 2. **Short-term** (Month 1):
-   - Evaluate `actronneoapi` migration cost/benefit
+   - Evaluate multi-platform library migration cost/benefit
    - Plan Que platform support
 
 3. **Medium-term** (Month 2-3):
@@ -336,7 +335,7 @@ The integration successfully extracts and exposes **100+ data points** per syste
 ### Future Improvements
 
 - 🔄 **Type Safety**: Migrate from TypedDict to Pydantic (higher assurance)
-- 🔄 **Library**: Evaluate external `actronneoapi` library for maintenance reduction
+- 🔄 **Library**: Evaluate external library options for maintenance reduction
 - 🔄 **Testing**: Add platform-specific test suites for Que/ACM-2
 - 🔄 **Documentation**: Keep MQTT reference current as API evolves
 
@@ -372,11 +371,11 @@ The integration successfully extracts and exposes **100+ data points** per syste
 - **Pros**: Full control, minimal dependencies, proven stable
 - **Cons**: Only Neo support, more maintenance, reimplemented logic
 
-### Alternative: actronneoapi v0.5.11
+### Alternative: External Library Migration
 
 - **Pros**: Multi-platform (Neo/Que/ACM-2), Pydantic types, active maintenance
 - **Cons**: External dependency, potential breaking changes, larger footprint
-- **Status**: Production-ready, actively maintained (latest: May 2026)
+- **Status**: Production-ready, actively maintained
 - **Fit**: 90% - Would solve platform support gap
 
 ### Migration Path (If Chosen)
@@ -388,7 +387,7 @@ Phase 1: Evaluation (Week 1-2)
   → Check Pydantic version conflicts
 
 Phase 2: Preparation (Week 3-4)
-  → Add actronneoapi to requirements
+  → Add library dependency to requirements
   → Create adapter layer (minimal)
   → Prepare test environment
 
@@ -416,7 +415,7 @@ Timeline: ~3 months total
 
 The ActronAir Neo integration is **feature-complete and stable for Neo platform users**. The immediate gap is **Que platform support**, which affects ~5% of potential users. The emerging opportunity is **ACM-2 support** for the new Actron Connect ecosystem.
 
-The external `actronneoapi` library represents a viable path to close both gaps while improving type safety and reducing maintenance burden. A careful migration could position the integration for long-term multi-platform support.
+An external multi-platform library represents a viable path to close both gaps while improving type safety and reducing maintenance burden. A careful migration could position the integration for long-term multi-platform support.
 
 **Current recommendation**: Status quo is fine for Neo users. Plan library migration for Q3 2026 to enable Que/ACM-2 support.
 

@@ -109,8 +109,7 @@ class MqttPushTransport(PushTransport):
         Publish a ``getAll`` request to prompt an immediate full-status broadcast.
 
         Neo wall controllers only emit ``full-status-broadcast`` periodically
-        (~15 min) unless prompted on ``.../app/cmd`` upon connect/reconnect
-        (aligned with kclif9/actronneoapi v0.5.16 / PR #98).
+        (~15 min) unless prompted on ``.../app/cmd`` upon connect/reconnect.
         """
         publish_fn = getattr(client, "publish", None)
         if not callable(publish_fn):

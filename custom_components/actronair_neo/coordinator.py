@@ -650,7 +650,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         if model in NEO_SERIES_WC:
             model = indoor_unit.get("NV_ModelNumber", "")
 
-        # Parse hardware ModeSupport (kclif9/actronneoapi PR #61, #69)
+        # Parse hardware ModeSupport
         raw_mode_support = user_aircon_settings.get("ModeSupport")
         if isinstance(raw_mode_support, dict):
             mode_support = ModeSupport.model_validate(raw_mode_support)
@@ -660,7 +660,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             if self._detect_dry_mode_support(user_aircon_settings):
                 supported_hvac_modes.append("DRY")
 
-        # Parse NV_Limits.UserSetpoint_oC (kclif9/actronneoapi PR #70 & PR #95)
+        # Parse NV_Limits.UserSetpoint_oC
         nv_limits_raw = data_sections.get("nv_limits", {})
         user_setpoint_limits_raw: Any = (
             cast("dict[str, Any]", nv_limits_raw).get("UserSetpoint_oC", {})
@@ -1102,9 +1102,9 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
                 event_type = event_dict.get("type")
                 if event_type == "full-status-broadcast":
                     # Neo /mwc/full-status wraps the nested state dict inside
-                    # payload["event"] with type="full-status-broadcast"
-                    # (kclif9/actronneoapi PR #90). Merge it recursively rather
-                    # than treating keys as flat dotted paths.
+                    # payload["event"] with type="full-status-broadcast".
+                    # Merge it recursively rather than treating keys as
+                    # flat dotted paths.
                     full_event_state = {
                         k: v for k, v in event_dict.items() if k != "type"
                     }

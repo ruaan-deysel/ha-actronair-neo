@@ -2,8 +2,7 @@
 Data models for the ActronAir Neo API.
 
 All API response structures and internal data types are defined here
-as Pydantic BaseModel classes with full validation and coercion aligned
-with kclif9/actronneoapi.
+as Pydantic BaseModel classes with full validation and coercion.
 """
 
 from __future__ import annotations

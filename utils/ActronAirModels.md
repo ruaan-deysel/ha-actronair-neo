@@ -110,7 +110,7 @@ Some Que systems have been upgraded to Neo controllers by Actron. These units:
 - Use the Neo app and Neo cloud API (`nimbus.actronair.com.au`)
 - May have Que outdoor/indoor units with Neo wall controllers
 - Can experience 503 errors on commands (GitHub issue #59: CRQ24AT)
-- The `actronneoapi` library supports both Neo and Que platforms with auto-detection
+- The integration supports both Neo and Que platforms with auto-detection
 
 ## Known Issues by Model
 

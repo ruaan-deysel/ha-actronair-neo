@@ -5,9 +5,8 @@ ActronAir Neo API Explorer.
 This tool connects to the ActronAir Neo cloud API and allows exploration
 of the API responses. Used for documentation and debugging.
 
-Authentication uses OAuth2 Device Code Flow, matching both:
+Authentication uses OAuth2 Device Code Flow, matching:
 - The HA integration (custom_components/actronair_neo/api/auth.py)
-- The actronneoapi library (https://github.com/kclif9/actronneoapi)
 
 Tokens are loaded from (in order):
 1. config/actron_token.json (explorer's own token file)
@@ -358,7 +357,7 @@ class ActronNeoExplorer:
         """Pair a new device using OAuth2 Device Code Flow.
 
         Uses the same client_id, scope, and grant_type as the
-        integration (api/auth.py) and library (actronneoapi/oauth.py).
+        integration (api/auth.py).
         """
         _LOGGER.info("Starting Device Code pairing flow")
         url = f"{API_URL}{TOKEN_ENDPOINT}"
@@ -481,7 +480,7 @@ class ActronNeoExplorer:
         """Get access token using refresh token.
 
         Uses client_id="home_assistant" matching the integration
-        (api/auth.py) and library (actronneoapi/oauth.py).
+        (api/auth.py).
         """
         url = f"{API_URL}{TOKEN_ENDPOINT}"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -751,7 +750,7 @@ class ActronNeoExplorer:
 
         NOTE: The events API was disabled by Actron in July 2025.
         This endpoint may return 401/404 on newer API versions.
-        The actronneoapi library switched to status polling as a result.
+        The integration switched to status polling as a result.
         """
         serial = serial or self.actron_serial
         if not serial:

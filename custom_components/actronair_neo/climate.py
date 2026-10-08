@@ -424,7 +424,7 @@ class ActronZoneClimate(ActronZoneEntity, ClimateEntity):
         """
         Calculate zone min/max temperature bounds.
 
-        Resolution order (aligned with kclif9/actronneoapi PR #101):
+        Resolution order:
         1. The zone's own Min/Max setpoint published by the controller
            (MinHeatSetpoint/MaxHeatSetpoint in heat mode,
             MinCoolSetpoint/MaxCoolSetpoint otherwise).

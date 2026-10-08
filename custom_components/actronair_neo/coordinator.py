@@ -813,6 +813,11 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
                         ),
                         "zone_max_position": zone.get("ZoneMaxPosition"),
                         "zone_min_position": zone.get("ZoneMinPosition"),
+                        # Controller-published zone setpoint limits
+                        "min_cool_setpoint": zone.get("MinCoolSetpoint"),
+                        "max_cool_setpoint": zone.get("MaxCoolSetpoint"),
+                        "min_heat_setpoint": zone.get("MinHeatSetpoint"),
+                        "max_heat_setpoint": zone.get("MaxHeatSetpoint"),
                         # Initialize peripheral data
                         "battery_level": None,
                         "signal_strength": None,
@@ -977,6 +982,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             "capacity_kw": ou_system.get("Capacity_kW", 0),
             "model_number": ou_system.get("ModelNumber", ""),
             "software_version": ou_system.get("SoftwareVersion", ""),
+            "serial_number": ou_system.get("SerialNumber", ""),
         }
         return cast(
             "OutdoorUnitData",
@@ -1109,6 +1115,34 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
                     )
                 else:
                     merged_state = apply_event_paths(prior_state, event_dict)
+            elif payload.get("type") == "full-status-broadcast":
+                # Que sends full-status-broadcast with state keys flat at top level
+                metadata = {
+                    "event",
+                    "type",
+                    "wcFirmware",
+                    "correlationId",
+                    "commandResponse",
+                }
+                full_event_state = {
+                    k: v for k, v in payload.items() if k not in metadata
+                }
+                merged_state = (
+                    deep_merge(prior_state, full_event_state)
+                    if prior_state
+                    else full_event_state
+                )
+            elif payload.get("type") == "status-change-broadcast":
+                # Que sends status-change-broadcast with delta flat at top level
+                metadata = {
+                    "event",
+                    "type",
+                    "wcFirmware",
+                    "correlationId",
+                    "commandResponse",
+                }
+                delta = {k: v for k, v in payload.items() if k not in metadata}
+                merged_state = apply_event_paths(prior_state, delta)
             else:
                 # Tolerate a bare-state payload without a recognised wrapper.
                 bare = {k: v for k, v in payload.items() if k != "lastKnownState"}

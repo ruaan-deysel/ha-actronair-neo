@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.10.0] - 2026-10-08
+
+### Added
+
+- **`actronneoapi` Alignment (PR #100, #101, #102 & #96)**:
+  - **Controller-Published Zone Setpoint Limits (PR #101)**: Parse `MinCoolSetpoint`, `MaxCoolSetpoint`, `MinHeatSetpoint`, and `MaxHeatSetpoint` published on `RemoteZoneInfo` by wall controllers.
+  - **Zone Temperature Bounds Resolution Hierarchy (PR #101)**: Implemented 3-step resolution order for zone climate entities:
+    1. Zone's own published limits (`MinHeatSetpoint`/`MaxHeatSetpoint` in heat mode, `MinCoolSetpoint`/`MaxCoolSetpoint` otherwise).
+    2. Master setpoint +/- `NV_Limits.UserSetpoint_oC` signed variances (`VarianceAboveMaster*`/`VarianceBelowMaster*`).
+    3. Master setpoint +/- legacy `zone_temp_variance`.
+       Always clamped to system min/max limits.
+  - **Outdoor Unit String Coercion for Identification Fields (PR #100)**: Coerce `SerialNumber`, `ModelNumber`, `Family`, and `SoftwareVersion` to string across Pydantic models and coordinator parsing, preventing validation failures when outdoor units return integer or null values (e.g., `"ModelNumber": 561` or numeric serials).
+  - **Que Realtime MQTT Broadcast & Flat Payload Support (PR #102)**: Support Que/NX-Gen `-broadcast` topic channels (`mwc/status-change-broadcast`, `mwc/full-status-broadcast`) and parse top-level flat deltas and bare state blocks.
+  - **Detailed JSON Parse Error Diagnostics (PR #96)**: Log offending fragment and position at warning level when incoming MQTT push payloads fail JSON parsing.
+
+### Changed
+
+- **Home Assistant 2026.10 Best Practices**:
+  - Replaced deprecated `PERCENTAGE` constant with `UnitOfRatio.PERCENTAGE` across all ratio and percentage sensors (`ActronZoneDamperPositionSensor`, `ActronZoneHumiditySensor`, `ActronZoneBatterySensor`, `ActronPerformanceMetricsSensor`).
+
 ## [2026.9.0] - 2026-09-28
 
 ### Added

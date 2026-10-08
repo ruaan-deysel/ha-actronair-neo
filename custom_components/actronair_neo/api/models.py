@@ -211,8 +211,20 @@ class ZoneData(BaseModel):
     airflow_control_locked: bool = False
     zone_max_position: int | None = None
     zone_min_position: int | None = None
+    # Controller-published zone setpoint limits
+    min_cool_setpoint: float | None = Field(default=None, alias="MinCoolSetpoint")
+    max_cool_setpoint: float | None = Field(default=None, alias="MaxCoolSetpoint")
+    min_heat_setpoint: float | None = Field(default=None, alias="MinHeatSetpoint")
+    max_heat_setpoint: float | None = Field(default=None, alias="MaxHeatSetpoint")
 
-    @field_validator("temp", mode="before")
+    @field_validator(
+        "temp",
+        "min_cool_setpoint",
+        "max_cool_setpoint",
+        "min_heat_setpoint",
+        "max_heat_setpoint",
+        mode="before",
+    )
     @classmethod
     def _validate_temp(cls, value: Any) -> float | None:
         return _filter_sentinel_temp(value)
@@ -344,9 +356,15 @@ class OutdoorUnitData(BaseModel):
     capacity_kw: float = 0.0
     model_number: str = ""
     software_version: str = ""
+    serial_number: str = Field(default="", alias="SerialNumber")
 
     @field_validator(
-        "family", "ctrl_board_type", "model_number", "software_version", mode="before"
+        "family",
+        "ctrl_board_type",
+        "model_number",
+        "software_version",
+        "serial_number",
+        mode="before",
     )
     @classmethod
     def _coerce_strings(cls, value: Any) -> str:

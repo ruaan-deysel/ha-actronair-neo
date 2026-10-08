@@ -136,15 +136,29 @@ class MqttPushTransport(PushTransport):
             return
         try:
             data = loads_repairing_escapes(payload.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except UnicodeDecodeError:
             _LOGGER.debug("Dropping undecodable push message on %s", topic)
+            return
+        except json.JSONDecodeError as exc:
+            _LOGGER.warning(
+                "Failed to decode JSON payload on %s at pos %s (fragment: %r): %s",
+                topic,
+                exc.pos,
+                exc.doc[max(0, exc.pos - 10) : min(len(exc.doc), exc.pos + 10)],
+                exc,
+            )
+            _LOGGER.debug("Undecodable payload on %s: %s", topic, exc.doc)
             return
         if not isinstance(data, dict):
             return
         data = cast("dict[str, Any]", data)
-        if topic.endswith(MQTT_TOPIC_FULL_STATUS):
+        if topic.endswith(
+            (MQTT_TOPIC_FULL_STATUS, f"{MQTT_TOPIC_FULL_STATUS}-broadcast")
+        ):
             kind = "full"
-        elif topic.endswith(MQTT_TOPIC_STATUS_CHANGE):
+        elif topic.endswith(
+            (MQTT_TOPIC_STATUS_CHANGE, f"{MQTT_TOPIC_STATUS_CHANGE}-broadcast")
+        ):
             kind = "delta"
         elif MQTT_TOPIC_CMD_RESPONSE in topic:
             # A command response acks/nacks a command and also embeds a

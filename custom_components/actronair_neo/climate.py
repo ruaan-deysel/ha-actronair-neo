@@ -384,10 +384,59 @@ class ActronZoneClimate(ActronZoneEntity, ClimateEntity):
 
         self._attr_supported_features = features
 
+    @staticmethod
+    def _calc_zone_min_bound(
+        zone_min: float | None,
+        master_target: float | None,
+        variance_below: float | None,
+        legacy_variance: float,
+        abs_min: float,
+    ) -> float:
+        """Calculate zone minimum setpoint bound."""
+        if zone_min is not None:
+            return max(abs_min, float(zone_min))
+        if isinstance(master_target, (int, float)):
+            if variance_below is not None:
+                return max(abs_min, float(master_target) - abs(float(variance_below)))
+            if legacy_variance > 0:
+                return max(abs_min, float(master_target) - legacy_variance)
+        return abs_min
+
+    @staticmethod
+    def _calc_zone_max_bound(
+        zone_max: float | None,
+        master_target: float | None,
+        variance_above: float | None,
+        legacy_variance: float,
+        abs_max: float,
+    ) -> float:
+        """Calculate zone maximum setpoint bound."""
+        if zone_max is not None:
+            return min(abs_max, float(zone_max))
+        if isinstance(master_target, (int, float)):
+            if variance_above is not None:
+                return min(abs_max, float(master_target) + abs(float(variance_above)))
+            if legacy_variance > 0:
+                return min(abs_max, float(master_target) + legacy_variance)
+        return abs_max
+
     def _get_zone_temp_bounds(self) -> tuple[float, float]:
-        """Calculate zone min/max temperature bounds from master setpoint."""
+        """
+        Calculate zone min/max temperature bounds.
+
+        Resolution order (aligned with kclif9/actronneoapi PR #101):
+        1. The zone's own Min/Max setpoint published by the controller
+           (MinHeatSetpoint/MaxHeatSetpoint in heat mode,
+            MinCoolSetpoint/MaxCoolSetpoint otherwise).
+        2. Master setpoint +/- NV_Limits signed variances
+           (VarianceAboveMaster*/VarianceBelowMaster*).
+        3. Master setpoint +/- legacy zone_temp_variance.
+        Always clamped to system min/max limits.
+        """
         try:
             main_data = self.coordinator.data["main"]
+            zones_data: dict[str, Any] = self.coordinator.data.get("zones", {})
+            zone_data: dict[str, Any] = zones_data.get(self.zone_id, {})
             mode = str(main_data.get("mode", "COOL")).upper()
             is_heat = mode == "HEAT" or (
                 mode == "AUTO"
@@ -403,42 +452,65 @@ class ActronZoneClimate(ActronZoneEntity, ClimateEntity):
                 if is_heat
                 else main_data.get("max_temp_cool", MAX_TEMP)
             )
-            master_target = (
+            raw_master = (
                 main_data.get("temp_setpoint_heat")
                 if is_heat
                 else main_data.get("temp_setpoint_cool")
             )
-            if not isinstance(master_target, (int, float)):
-                return abs_min, abs_max
+            master_target: float | None = (
+                float(raw_master) if isinstance(raw_master, (int, float)) else None
+            )
+            legacy_variance = float(main_data.get("zone_temp_variance") or 0.0)
 
-            variance = float(main_data.get("zone_temp_variance") or 0.0)
-            if variance > 0:
-                below = -abs(variance)
-                above = abs(variance)
-            else:
-                raw_below = (
-                    main_data.get("variance_below_heat")
-                    if is_heat
-                    else main_data.get("variance_below_cool")
-                )
-                raw_above = (
-                    main_data.get("variance_above_heat")
-                    if is_heat
-                    else main_data.get("variance_above_cool")
-                )
-                below = float(raw_below or 0.0)
-                above = float(raw_above or 0.0)
-                if below == 0.0 and above == 0.0:
-                    return abs_min, abs_max
-                below = -abs(below)
-                above = abs(above)
+            raw_min = (
+                zone_data.get("min_heat_setpoint")
+                if is_heat
+                else zone_data.get("min_cool_setpoint")
+            )
+            zone_min: float | None = (
+                float(raw_min) if isinstance(raw_min, (int, float)) else None
+            )
+            raw_var_below = (
+                main_data.get("variance_below_heat")
+                if is_heat
+                else main_data.get("variance_below_cool")
+            )
+            var_below: float | None = (
+                float(raw_var_below)
+                if isinstance(raw_var_below, (int, float))
+                else None
+            )
+            min_bound = self._calc_zone_min_bound(
+                zone_min, master_target, var_below, legacy_variance, abs_min
+            )
 
-            return (
-                max(abs_min, float(master_target) + below),
-                min(abs_max, float(master_target) + above),
+            raw_max = (
+                zone_data.get("max_heat_setpoint")
+                if is_heat
+                else zone_data.get("max_cool_setpoint")
+            )
+            zone_max: float | None = (
+                float(raw_max) if isinstance(raw_max, (int, float)) else None
+            )
+            raw_var_above = (
+                main_data.get("variance_above_heat")
+                if is_heat
+                else main_data.get("variance_above_cool")
+            )
+            var_above: float | None = (
+                float(raw_var_above)
+                if isinstance(raw_var_above, (int, float))
+                else None
+            )
+            max_bound = self._calc_zone_max_bound(
+                zone_max, master_target, var_above, legacy_variance, abs_max
             )
         except (KeyError, TypeError, ValueError):
             return MIN_TEMP, MAX_TEMP
+        else:
+            if min_bound > max_bound:
+                return abs_min, abs_max
+            return min_bound, max_bound
 
     @property
     def min_temp(self) -> float:

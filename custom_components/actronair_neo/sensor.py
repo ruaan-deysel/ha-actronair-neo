@@ -13,9 +13,9 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import (
-    PERCENTAGE,
     UnitOfEnergy,
     UnitOfPower,
+    UnitOfRatio,
     UnitOfTemperature,
 )
 from homeassistant.helpers.entity import EntityCategory  # type: ignore[import-untyped]
@@ -274,7 +274,7 @@ class ActronZoneSensor(ActronZoneEntity, SensorEntity):
 class ActronZoneDamperPositionSensor(ActronZoneEntity, SensorEntity):
     """Read-only sensor exposing the current zone damper position."""
 
-    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_native_unit_of_measurement = UnitOfRatio.PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: ActronDataCoordinator, zone_id: str) -> None:
@@ -324,7 +324,7 @@ class ActronZoneHumiditySensor(ActronZoneEntity, SensorEntity):
     """Zone humidity sensor."""
 
     _attr_device_class = SensorDeviceClass.HUMIDITY
-    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_native_unit_of_measurement = UnitOfRatio.PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_translation_key = "zone_humidity"
 
@@ -361,7 +361,7 @@ class ActronZoneBatterySensor(ActronZoneEntity, SensorEntity):
     """
 
     _attr_device_class = SensorDeviceClass.BATTERY
-    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_native_unit_of_measurement = UnitOfRatio.PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_translation_key = "zone_battery"
@@ -690,7 +690,7 @@ class ActronPerformanceSensor(ActronAirNeoEntity, SensorEntity):
         super().__init__(
             coordinator, "sensor", "Performance Metrics", is_diagnostic=True
         )
-        self._attr_native_unit_of_measurement = PERCENTAGE
+        self._attr_native_unit_of_measurement = UnitOfRatio.PERCENTAGE
         self._attr_device_class = None
         self._attr_state_class = None
         # Explicitly disable polling - coordinator handles updates

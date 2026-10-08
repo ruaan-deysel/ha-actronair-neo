@@ -302,9 +302,8 @@ class ActronAirNeoAuth:
                 try:
                     await self.refresh_access_token()
                 except AuthenticationError:
-                    # Aligned with kclif9/actronneoapi PR #59: if proactive
-                    # refresh fails while the token is still within its actual
-                    # unbuffered expiry window, log and continue using it.
+                    # If proactive refresh fails while the token is still within its
+                    # actual unbuffered expiry window, log and continue using it.
                     if self._is_token_actually_unexpired:
                         _LOGGER.warning(
                             "Proactive token refresh failed, but current access "

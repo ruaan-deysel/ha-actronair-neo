@@ -52,6 +52,10 @@ class ZoneData(TypedDict):
     airflow_control_locked: bool
     zone_max_position: int | None
     zone_min_position: int | None
+    min_cool_setpoint: NotRequired[float | None]
+    max_cool_setpoint: NotRequired[float | None]
+    min_heat_setpoint: NotRequired[float | None]
+    max_heat_setpoint: NotRequired[float | None]
 
 
 class MainData(TypedDict):
@@ -137,6 +141,7 @@ class OutdoorUnitData(TypedDict):
     capacity_kw: float
     model_number: NotRequired[str]
     software_version: NotRequired[str]
+    serial_number: NotRequired[str]
 
 
 class SystemStatusData(TypedDict):

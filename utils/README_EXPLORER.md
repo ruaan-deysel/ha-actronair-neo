@@ -41,7 +41,7 @@ python actron_neo_explorer.py
 ### Authentication
 
 The tool uses **OAuth 2.0 Device Code Flow** — the same authentication mechanism
-as the Home Assistant integration and the `actronneoapi` Python library.
+as the Home Assistant integration.
 
 **Token sources** (checked in order):
 

@@ -90,6 +90,10 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+_QUE_BROADCAST_METADATA_KEYS: frozenset[str] = frozenset(
+    {"event", "type", "wcFirmware", "correlationId", "commandResponse"}
+)
+
 
 def _now_matching(reference: datetime.datetime | None = None) -> datetime.datetime:
     """Return current datetime matching tz-awareness of reference."""
@@ -650,7 +654,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
         if model in NEO_SERIES_WC:
             model = indoor_unit.get("NV_ModelNumber", "")
 
-        # Parse hardware ModeSupport (kclif9/actronneoapi PR #61, #69)
+        # Parse hardware ModeSupport
         raw_mode_support = user_aircon_settings.get("ModeSupport")
         if isinstance(raw_mode_support, dict):
             mode_support = ModeSupport.model_validate(raw_mode_support)
@@ -660,7 +664,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             if self._detect_dry_mode_support(user_aircon_settings):
                 supported_hvac_modes.append("DRY")
 
-        # Parse NV_Limits.UserSetpoint_oC (kclif9/actronneoapi PR #70 & PR #95)
+        # Parse NV_Limits.UserSetpoint_oC
         nv_limits_raw = data_sections.get("nv_limits", {})
         user_setpoint_limits_raw: Any = (
             cast("dict[str, Any]", nv_limits_raw).get("UserSetpoint_oC", {})
@@ -813,6 +817,11 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
                         ),
                         "zone_max_position": zone.get("ZoneMaxPosition"),
                         "zone_min_position": zone.get("ZoneMinPosition"),
+                        # Controller-published zone setpoint limits
+                        "min_cool_setpoint": zone.get("MinCoolSetpoint"),
+                        "max_cool_setpoint": zone.get("MaxCoolSetpoint"),
+                        "min_heat_setpoint": zone.get("MinHeatSetpoint"),
+                        "max_heat_setpoint": zone.get("MaxHeatSetpoint"),
                         # Initialize peripheral data
                         "battery_level": None,
                         "signal_strength": None,
@@ -977,6 +986,7 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
             "capacity_kw": ou_system.get("Capacity_kW", 0),
             "model_number": ou_system.get("ModelNumber", ""),
             "software_version": ou_system.get("SoftwareVersion", ""),
+            "serial_number": ou_system.get("SerialNumber", ""),
         }
         return cast(
             "OutdoorUnitData",
@@ -1096,9 +1106,9 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
                 event_type = event_dict.get("type")
                 if event_type == "full-status-broadcast":
                     # Neo /mwc/full-status wraps the nested state dict inside
-                    # payload["event"] with type="full-status-broadcast"
-                    # (kclif9/actronneoapi PR #90). Merge it recursively rather
-                    # than treating keys as flat dotted paths.
+                    # payload["event"] with type="full-status-broadcast".
+                    # Merge it recursively rather than treating keys as
+                    # flat dotted paths.
                     full_event_state = {
                         k: v for k, v in event_dict.items() if k != "type"
                     }
@@ -1109,6 +1119,26 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
                     )
                 else:
                     merged_state = apply_event_paths(prior_state, event_dict)
+            elif payload.get("type") == "full-status-broadcast":
+                # Que sends full-status-broadcast with state keys flat at top level
+                full_event_state = {
+                    k: v
+                    for k, v in payload.items()
+                    if k not in _QUE_BROADCAST_METADATA_KEYS
+                }
+                merged_state = (
+                    deep_merge(prior_state, full_event_state)
+                    if prior_state
+                    else full_event_state
+                )
+            elif payload.get("type") == "status-change-broadcast":
+                # Que sends status-change-broadcast with delta flat at top level
+                delta = {
+                    k: v
+                    for k, v in payload.items()
+                    if k not in _QUE_BROADCAST_METADATA_KEYS
+                }
+                merged_state = apply_event_paths(prior_state, delta)
             else:
                 # Tolerate a bare-state payload without a recognised wrapper.
                 bare = {k: v for k, v in payload.items() if k != "lastKnownState"}

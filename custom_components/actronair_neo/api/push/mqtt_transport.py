@@ -109,8 +109,7 @@ class MqttPushTransport(PushTransport):
         Publish a ``getAll`` request to prompt an immediate full-status broadcast.
 
         Neo wall controllers only emit ``full-status-broadcast`` periodically
-        (~15 min) unless prompted on ``.../app/cmd`` upon connect/reconnect
-        (aligned with kclif9/actronneoapi v0.5.16 / PR #98).
+        (~15 min) unless prompted on ``.../app/cmd`` upon connect/reconnect.
         """
         publish_fn = getattr(client, "publish", None)
         if not callable(publish_fn):
@@ -136,8 +135,18 @@ class MqttPushTransport(PushTransport):
             return
         try:
             data = loads_repairing_escapes(payload.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except UnicodeDecodeError:
             _LOGGER.debug("Dropping undecodable push message on %s", topic)
+            return
+        except json.JSONDecodeError as exc:
+            _LOGGER.warning(
+                "Failed to decode JSON payload on %s at pos %s (fragment: %r): %s",
+                topic,
+                exc.pos,
+                exc.doc[max(0, exc.pos - 10) : min(len(exc.doc), exc.pos + 10)],
+                exc,
+            )
+            _LOGGER.debug("Undecodable payload on %s: %s", topic, exc.doc)
             return
         if not isinstance(data, dict):
             return

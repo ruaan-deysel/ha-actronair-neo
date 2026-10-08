@@ -8,7 +8,7 @@ import re
 from typing import Any, cast
 
 # Matches either a key segment (preserving <...> peripheral identifiers with dots)
-# or a bracketed list index like [0]. Aligned with kclif9/actronneoapi.
+# or a bracketed list index like [0].
 _FLAT_KEY_SEGMENT_RE = re.compile(r"(<[^>]+>|[^.\[\]]+)|\[(\d+)\]")
 
 # Matches valid JSON escape sequences first, or an invalid \' escape sequence.

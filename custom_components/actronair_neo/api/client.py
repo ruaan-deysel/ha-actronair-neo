@@ -603,8 +603,7 @@ class ActronAirNeoApiClient:
         """
         Fetch the authenticated user's account email (used as MQTT username).
 
-        Aligned with kclif9/actronneoapi PR #91; falls back to empty string
-        if the endpoint is unavailable.
+        Falls back to empty string if the endpoint is unavailable.
         """
         if self._account_email is not None:
             return self._account_email
@@ -798,7 +797,7 @@ class ActronAirNeoApiClient:
     def get_zone_capabilities(
         self, zone_data: dict[str, str | int | bool | float]
     ) -> ZoneCapabilities:
-        """Extract zone capabilities from zone data (actronneoapi PR #62)."""
+        """Extract zone capabilities from zone data."""
         nv_vav = bool(zone_data.get("NV_VAV", False))
         nv_itc = bool(zone_data.get("NV_ITC", False))
         return ZoneCapabilities(

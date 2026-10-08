@@ -187,7 +187,7 @@ class ZoneCapabilities(BaseModel):
 class ZoneData(BaseModel):
     """Parsed zone data used by the coordinator and entities."""
 
-    model_config = ConfigDict(frozen=False, extra="ignore")
+    model_config = ConfigDict(frozen=False, populate_by_name=True, extra="ignore")
 
     name: str
     temp: float | None = None
@@ -336,7 +336,7 @@ class LiveAirconData(BaseModel):
 class OutdoorUnitData(BaseModel):
     """Outdoor unit live and system data."""
 
-    model_config = ConfigDict(frozen=False, extra="ignore")
+    model_config = ConfigDict(frozen=False, populate_by_name=True, extra="ignore")
 
     comp_power: float = 0.0
     compressor_on: bool = False

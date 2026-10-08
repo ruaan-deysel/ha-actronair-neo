@@ -90,6 +90,10 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+_QUE_BROADCAST_METADATA_KEYS: frozenset[str] = frozenset(
+    {"event", "type", "wcFirmware", "correlationId", "commandResponse"}
+)
+
 
 def _now_matching(reference: datetime.datetime | None = None) -> datetime.datetime:
     """Return current datetime matching tz-awareness of reference."""
@@ -1117,15 +1121,10 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
                     merged_state = apply_event_paths(prior_state, event_dict)
             elif payload.get("type") == "full-status-broadcast":
                 # Que sends full-status-broadcast with state keys flat at top level
-                metadata = {
-                    "event",
-                    "type",
-                    "wcFirmware",
-                    "correlationId",
-                    "commandResponse",
-                }
                 full_event_state = {
-                    k: v for k, v in payload.items() if k not in metadata
+                    k: v
+                    for k, v in payload.items()
+                    if k not in _QUE_BROADCAST_METADATA_KEYS
                 }
                 merged_state = (
                     deep_merge(prior_state, full_event_state)
@@ -1134,14 +1133,11 @@ class ActronDataCoordinator(DataUpdateCoordinator["CoordinatorData"]):
                 )
             elif payload.get("type") == "status-change-broadcast":
                 # Que sends status-change-broadcast with delta flat at top level
-                metadata = {
-                    "event",
-                    "type",
-                    "wcFirmware",
-                    "correlationId",
-                    "commandResponse",
+                delta = {
+                    k: v
+                    for k, v in payload.items()
+                    if k not in _QUE_BROADCAST_METADATA_KEYS
                 }
-                delta = {k: v for k, v in payload.items() if k not in metadata}
                 merged_state = apply_event_paths(prior_state, delta)
             else:
                 # Tolerate a bare-state payload without a recognised wrapper.

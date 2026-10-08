@@ -20,13 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3. Master setpoint +/- legacy `zone_temp_variance`.
      Always clamped to system min/max limits.
 - **Outdoor Unit String Coercion for Identification Fields**: Coerce `SerialNumber`, `ModelNumber`, `Family`, and `SoftwareVersion` to string across Pydantic models and coordinator parsing, preventing validation failures when outdoor units return integer or null values (e.g., `"ModelNumber": 561` or numeric serials).
-- **Que Realtime MQTT Broadcast & Flat Payload Support**: Support Que/NX-Gen `-broadcast` topic channels (`mwc/status-change-broadcast`, `mwc/full-status-broadcast`) and parse top-level flat deltas and bare state blocks.
+- **Que Realtime Broadcast & Flat Payload Support**: Support Que/NX-Gen broadcast payloads (`status-change-broadcast`, `full-status-broadcast`) and parse top-level flat deltas and bare state blocks.
 - **Detailed JSON Parse Error Diagnostics**: Log offending fragment and position at warning level when incoming MQTT push payloads fail JSON parsing.
 
 ### Changed
 
 - **Home Assistant 2026.10 Best Practices**:
-  - Replaced deprecated `PERCENTAGE` constant with `UnitOfRatio.PERCENTAGE` across all ratio and percentage sensors (`ActronZoneDamperPositionSensor`, `ActronZoneHumiditySensor`, `ActronZoneBatterySensor`, `ActronPerformanceMetricsSensor`).
+  - Replaced legacy module-level `PERCENTAGE` constant with `UnitOfRatio.PERCENTAGE` across all ratio and percentage sensors (`ActronZoneDamperPositionSensor`, `ActronZoneHumiditySensor`, `ActronZoneBatterySensor`, `ActronPerformanceSensor`).
 
 ## [2026.9.0] - 2026-09-28
 

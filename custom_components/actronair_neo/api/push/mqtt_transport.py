@@ -151,13 +151,9 @@ class MqttPushTransport(PushTransport):
         if not isinstance(data, dict):
             return
         data = cast("dict[str, Any]", data)
-        if topic.endswith(
-            (MQTT_TOPIC_FULL_STATUS, f"{MQTT_TOPIC_FULL_STATUS}-broadcast")
-        ):
+        if topic.endswith(MQTT_TOPIC_FULL_STATUS):
             kind = "full"
-        elif topic.endswith(
-            (MQTT_TOPIC_STATUS_CHANGE, f"{MQTT_TOPIC_STATUS_CHANGE}-broadcast")
-        ):
+        elif topic.endswith(MQTT_TOPIC_STATUS_CHANGE):
             kind = "delta"
         elif MQTT_TOPIC_CMD_RESPONSE in topic:
             # A command response acks/nacks a command and also embeds a
